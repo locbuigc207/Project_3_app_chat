@@ -1,12 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.dfa.flutterchatdemo">
+    package="hust.appchat">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
         android:icon="@mipmap/ic_launcher"
-        android:label="flutter_chat_demo">
+        android:label="flutter_chat">
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@mipmap/ic_launcher" />
