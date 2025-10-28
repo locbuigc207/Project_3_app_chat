@@ -11,6 +11,7 @@ class LoginPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
+
     switch (authProvider.status) {
       case Status.authenticateError:
         Fluttertoast.showToast(msg: "Sign in fail");
@@ -24,6 +25,7 @@ class LoginPage extends StatelessWidget {
       default:
         break;
     }
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -35,43 +37,114 @@ class LoginPage extends StatelessWidget {
       body: Stack(
         children: [
           Center(
-            child: TextButton(
-              onPressed: () async {
-                authProvider.handleSignIn().then((isSuccess) {
-                  if (isSuccess) {
-                    Navigator.pushReplacement(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Google Sign In Button
+                TextButton(
+                  onPressed: () async {
+                    authProvider.handleSignIn().then((isSuccess) {
+                      if (isSuccess) {
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => HomePage(),
+                          ),
+                        );
+                      }
+                    }).catchError((error, stackTrace) {
+                      Fluttertoast.showToast(msg: error.toString());
+                      authProvider.handleException();
+                    });
+                  },
+                  style: ButtonStyle(
+                    backgroundColor: WidgetStateProperty.resolveWith<Color>(
+                          (Set<WidgetState> states) {
+                        if (states.contains(WidgetState.pressed)) {
+                          return const Color(0xffdd4b39).withValues(alpha: 0.8);
+                        }
+                        return const Color(0xffdd4b39);
+                      },
+                    ),
+                    splashFactory: NoSplash.splashFactory,
+                    padding: WidgetStateProperty.all<EdgeInsets>(
+                      const EdgeInsets.fromLTRB(30, 15, 30, 15),
+                    ),
+                  ),
+                  child: const Text(
+                    'Sign in with Google',
+                    style: TextStyle(fontSize: 16, color: Colors.white),
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                // Divider
+                Row(
+                  children: const [
+                    Expanded(child: Divider(thickness: 1)),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        'OR',
+                        style: TextStyle(
+                          color: ColorConstants.greyColor,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    Expanded(child: Divider(thickness: 1)),
+                  ],
+                ),
+
+                const SizedBox(height: 20),
+
+                // Phone Sign In Button
+                TextButton(
+                  onPressed: () {
+                    Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => HomePage(),
+                        builder: (context) => PhoneLoginPage(),
                       ),
                     );
-                  }
-                }).catchError((error, stackTrace) {
-                  Fluttertoast.showToast(msg: error.toString());
-                  authProvider.handleException();
-                });
-              },
-              child: Text(
-                'Sign in with Google',
-                style: TextStyle(fontSize: 16, color: Colors.white),
-              ),
-              style: ButtonStyle(
-                backgroundColor: WidgetStateProperty.resolveWith<Color>(
-                  (Set<WidgetState> states) {
-                    if (states.contains(WidgetState.pressed)) return Color(0xffdd4b39).withValues(alpha: 0.8);
-                    return Color(0xffdd4b39);
                   },
+                  style: ButtonStyle(
+                    backgroundColor: WidgetStateProperty.resolveWith<Color>(
+                          (Set<WidgetState> states) {
+                        if (states.contains(WidgetState.pressed)) {
+                          return ColorConstants.primaryColor
+                              .withValues(alpha: 0.8);
+                        }
+                        return ColorConstants.primaryColor;
+                      },
+                    ),
+                    splashFactory: NoSplash.splashFactory,
+                    padding: WidgetStateProperty.all<EdgeInsets>(
+                      const EdgeInsets.fromLTRB(30, 15, 30, 15),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(Icons.phone, color: Colors.white),
+                      SizedBox(width: 8),
+                      Text(
+                        'Sign in with Phone',
+                        style: TextStyle(fontSize: 16, color: Colors.white),
+                      ),
+                    ],
+                  ),
                 ),
-                splashFactory: NoSplash.splashFactory,
-                padding: WidgetStateProperty.all<EdgeInsets>(
-                  EdgeInsets.fromLTRB(30, 15, 30, 15),
-                ),
-              ),
+              ],
             ),
           ),
+
           // Loading
           Positioned(
-            child: authProvider.status == Status.authenticating ? LoadingView() : SizedBox.shrink(),
+            child: authProvider.status == Status.authenticating
+                ? const LoadingView()
+                : const SizedBox.shrink(),
           ),
         ],
       ),

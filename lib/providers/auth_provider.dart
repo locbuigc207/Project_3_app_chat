@@ -38,9 +38,20 @@ class AuthProvider extends ChangeNotifier {
     bool isLoggedIn = await googleSignIn.isSignedIn();
     if (isLoggedIn && prefs.getString(FirestoreConstants.id)?.isNotEmpty == true) {
       return true;
-    } else {
-      return false;
     }
+
+    // Check if user logged in with phone
+    final currentUser = firebaseAuth.currentUser;
+    if (currentUser != null && prefs.getString(FirestoreConstants.id)?.isNotEmpty == true) {
+      return true;
+    }
+
+    return false;
+  }
+
+  // Generate unique QR code for user
+  String _generateQRCode(String userId) {
+    return 'CHATAPP_${userId}_${DateTime.now().millisecondsSinceEpoch}';
   }
 
   Future<bool> handleSignIn() async {
@@ -72,14 +83,21 @@ class AuthProvider extends ChangeNotifier {
         .where(FirestoreConstants.id, isEqualTo: firebaseUser.uid)
         .get();
     final documents = result.docs;
+
     if (documents.length == 0) {
+      // Generate QR code for new user
+      final qrCode = _generateQRCode(firebaseUser.uid);
+
       // Writing data to server because here is a new user
       firebaseFirestore.collection(FirestoreConstants.pathUserCollection).doc(firebaseUser.uid).set({
         FirestoreConstants.nickname: firebaseUser.displayName,
         FirestoreConstants.photoUrl: firebaseUser.photoURL,
         FirestoreConstants.id: firebaseUser.uid,
+        FirestoreConstants.phoneNumber: firebaseUser.phoneNumber ?? '',
+        FirestoreConstants.qrCode: qrCode,
         FirestoreConstants.createdAt: DateTime.now().millisecondsSinceEpoch.toString(),
-        FirestoreConstants.chattingWith: null
+        FirestoreConstants.chattingWith: null,
+        FirestoreConstants.aboutMe: '',
       });
 
       // Write data to local storage
@@ -87,15 +105,33 @@ class AuthProvider extends ChangeNotifier {
       await prefs.setString(FirestoreConstants.id, currentUser.uid);
       await prefs.setString(FirestoreConstants.nickname, currentUser.displayName ?? "");
       await prefs.setString(FirestoreConstants.photoUrl, currentUser.photoURL ?? "");
+      await prefs.setString(FirestoreConstants.phoneNumber, currentUser.phoneNumber ?? "");
+      await prefs.setString(FirestoreConstants.qrCode, qrCode);
+      await prefs.setString(FirestoreConstants.aboutMe, "");
     } else {
       // Already sign up, just get data from firestore
       final documentSnapshot = documents.first;
       final userChat = UserChat.fromDocument(documentSnapshot);
+
+      // Check if user has QR code, if not generate one
+      if (userChat.qrCode.isEmpty) {
+        final qrCode = _generateQRCode(firebaseUser.uid);
+        await firebaseFirestore
+            .collection(FirestoreConstants.pathUserCollection)
+            .doc(firebaseUser.uid)
+            .update({FirestoreConstants.qrCode: qrCode});
+
+        await prefs.setString(FirestoreConstants.qrCode, qrCode);
+      } else {
+        await prefs.setString(FirestoreConstants.qrCode, userChat.qrCode);
+      }
+
       // Write data to local
       await prefs.setString(FirestoreConstants.id, userChat.id);
       await prefs.setString(FirestoreConstants.nickname, userChat.nickname);
       await prefs.setString(FirestoreConstants.photoUrl, userChat.photoUrl);
       await prefs.setString(FirestoreConstants.aboutMe, userChat.aboutMe);
+      await prefs.setString(FirestoreConstants.phoneNumber, userChat.phoneNumber);
     }
     _status = Status.authenticated;
     notifyListeners();

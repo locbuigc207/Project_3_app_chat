@@ -12,61 +12,78 @@ import 'constants/color_constants.dart';
 import 'pages/pages.dart';
 import 'providers/providers.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-  SharedPreferences prefs = await SharedPreferences.getInstance();
+  final prefs = await SharedPreferences.getInstance();
   runApp(MyApp(prefs: prefs));
 }
 
 class MyApp extends StatelessWidget {
   final SharedPreferences prefs;
 
-  MyApp({required this.prefs});
+  MyApp({required this.prefs, super.key});
 
-  final _firebaseFirestore = FirebaseFirestore.instance;
-  final _firebaseStorage = FirebaseStorage.instance;
+  final FirebaseFirestore _firebaseFirestore = FirebaseFirestore.instance;
+  final FirebaseStorage _firebaseStorage = FirebaseStorage.instance;
+  final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        /// Google Auth Provider
         ChangeNotifierProvider<AuthProvider>(
           create: (_) => AuthProvider(
-            firebaseAuth: FirebaseAuth.instance,
+            firebaseAuth: _firebaseAuth,
             googleSignIn: GoogleSignIn(),
-            prefs: this.prefs,
-            firebaseFirestore: this._firebaseFirestore,
+            prefs: prefs,
+            firebaseFirestore: _firebaseFirestore,
           ),
         ),
+
+        /// NEW: Phone Auth Provider
+        ChangeNotifierProvider<PhoneAuthProvider>(
+          create: (_) => PhoneAuthProvider(
+            firebaseAuth: _firebaseAuth,
+            firebaseFirestore: _firebaseFirestore,
+            prefs: prefs,
+          ),
+        ),
+
+        /// Settings Provider
         Provider<SettingProvider>(
           create: (_) => SettingProvider(
-            prefs: this.prefs,
-            firebaseFirestore: this._firebaseFirestore,
-            firebaseStorage: this._firebaseStorage,
+            prefs: prefs,
+            firebaseFirestore: _firebaseFirestore,
+            firebaseStorage: _firebaseStorage,
           ),
         ),
+
+        /// Home Provider
         Provider<HomeProvider>(
           create: (_) => HomeProvider(
-            firebaseFirestore: this._firebaseFirestore,
+            firebaseFirestore: _firebaseFirestore,
           ),
         ),
+
+        /// Chat Provider
         Provider<ChatProvider>(
           create: (_) => ChatProvider(
-            prefs: this.prefs,
-            firebaseFirestore: this._firebaseFirestore,
-            firebaseStorage: this._firebaseStorage,
+            prefs: prefs,
+            firebaseFirestore: _firebaseFirestore,
+            firebaseStorage: _firebaseStorage,
           ),
         ),
       ],
       child: MaterialApp(
         title: AppConstants.appTitle,
+        debugShowCheckedModeBanner: false,
         theme: ThemeData(
           useMaterial3: true,
           colorSchemeSeed: ColorConstants.themeColor,
         ),
-        home: SplashPage(),
-        debugShowCheckedModeBanner: false,
+        home: const SplashPage(),
       ),
     );
   }

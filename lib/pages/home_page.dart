@@ -30,6 +30,7 @@ class HomePageState extends State<HomePage> {
   final _limitIncrement = 20;
   String _textSearch = "";
   bool _isLoading = false;
+  SearchType _searchType = SearchType.nickname; // NEW
 
   late final _authProvider = context.read<AuthProvider>();
   late final _homeProvider = context.read<HomeProvider>();
@@ -41,20 +42,23 @@ class HomePageState extends State<HomePage> {
 
   final _menus = <MenuSetting>[
     MenuSetting(title: 'Settings', icon: Icons.settings),
+    MenuSetting(title: 'My QR Code', icon: Icons.qr_code), // NEW
     MenuSetting(title: 'Log out', icon: Icons.exit_to_app),
   ];
 
   @override
   void initState() {
     super.initState();
+
     if (_authProvider.userFirebaseId?.isNotEmpty == true) {
       _currentUserId = _authProvider.userFirebaseId!;
     } else {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => LoginPage()),
-        (_) => false,
+            (_) => false,
       );
     }
+
     _registerNotification();
     _configLocalNotification();
     _listScrollController.addListener(_scrollListener);
@@ -74,7 +78,11 @@ class HomePageState extends State<HomePage> {
     _firebaseMessaging.getToken().then((token) {
       print('push token: $token');
       if (token != null) {
-        _homeProvider.updateDataFirestore(FirestoreConstants.pathUserCollection, _currentUserId, {'pushToken': token});
+        _homeProvider.updateDataFirestore(
+          FirestoreConstants.pathUserCollection,
+          _currentUserId,
+          {'pushToken': token},
+        );
       }
     }).catchError((err) {
       Fluttertoast.showToast(msg: err.message.toString());
@@ -103,20 +111,32 @@ class HomePageState extends State<HomePage> {
   void _onItemMenuPress(MenuSetting choice) {
     if (choice.title == 'Log out') {
       _handleSignOut();
+    } else if (choice.title == 'My QR Code') {
+      // NEW: Show QR Code
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => MyQRCodePage()),
+      );
     } else {
-      Navigator.push(context, MaterialPageRoute(builder: (_) => SettingsPage()));
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => SettingsPage()),
+      );
     }
   }
 
   void _showNotification(RemoteNotification remoteNotification) async {
     final androidPlatformChannelSpecifics = AndroidNotificationDetails(
-      Platform.isAndroid ? 'com.dfa.flutterchatdemo' : 'com.duytq.flutterchatdemo',
+      Platform.isAndroid
+          ? 'com.dfa.flutterchatdemo'
+          : 'com.duytq.flutterchatdemo',
       'Flutter chat demo',
       playSound: true,
       enableVibration: true,
       importance: Importance.max,
       priority: Priority.high,
     );
+
     final iOSPlatformChannelSpecifics = DarwinNotificationDetails();
     final platformChannelSpecifics = NotificationDetails(
       android: androidPlatformChannelSpecifics,
@@ -138,8 +158,52 @@ class HomePageState extends State<HomePage> {
     await _authProvider.handleSignOut();
     await Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => LoginPage()),
-      (_) => false,
+          (_) => false,
     );
+  }
+
+// NEW: Scan QR Code
+  void _scanQRCode() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => QRScannerPage()),
+    );
+
+    if (result != null && result is String) {
+      // Search user by QR code
+      setState(() {
+        _isLoading = true;
+      });
+
+      final userDoc = await _homeProvider.searchByQRCode(result);
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      if (userDoc != null) {
+        final userChat = UserChat.fromDocument(userDoc);
+        if (userChat.id == _currentUserId) {
+          Fluttertoast.showToast(msg: "This is your QR code!");
+        } else {
+          // Navigate to chat
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ChatPage(
+                arguments: ChatPageArguments(
+                  peerId: userChat.id,
+                  peerAvatar: userChat.photoUrl,
+                  peerNickname: userChat.nickname,
+                ),
+              ),
+            ),
+          );
+        }
+      } else {
+        Fluttertoast.showToast(msg: "User not found");
+      }
+    }
   }
 
   @override
@@ -159,29 +223,31 @@ class HomePageState extends State<HomePage> {
             Column(
               children: [
                 _buildSearchBar(),
+                _buildSearchTypeSelector(), // NEW
                 Expanded(
                   child: StreamBuilder<QuerySnapshot>(
-                    stream: _homeProvider.getStreamFireStore(
-                      FirestoreConstants.pathUserCollection,
-                      _limit,
+                    stream: _homeProvider.searchUsers(
                       _textSearch,
+                      _searchType,
+                      _limit,
                     ),
                     builder: (_, snapshot) {
                       if (snapshot.hasData) {
                         if ((snapshot.data?.docs.length ?? 0) > 0) {
                           return ListView.builder(
-                            padding: EdgeInsets.all(10),
-                            itemBuilder: (_, index) => _buildItem(snapshot.data?.docs[index]),
+                            padding: const EdgeInsets.all(10),
+                            itemBuilder: (_, index) =>
+                                _buildItem(snapshot.data?.docs[index]),
                             itemCount: snapshot.data?.docs.length,
                             controller: _listScrollController,
                           );
                         } else {
-                          return Center(
+                          return const Center(
                             child: Text("No users"),
                           );
                         }
                       } else {
-                        return Center(
+                        return const Center(
                           child: CircularProgressIndicator(
                             color: ColorConstants.themeColor,
                           ),
@@ -193,216 +259,51 @@ class HomePageState extends State<HomePage> {
               ],
             ),
             Positioned(
-              child: _isLoading ? LoadingView() : SizedBox.shrink(),
-            )
+              child: _isLoading
+                  ? const LoadingView()
+                  : const SizedBox.shrink(),
+            ),
           ],
         ),
       ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _scanQRCode,
+        backgroundColor: ColorConstants.primaryColor,
+        child: const Icon(Icons.qr_code_scanner, color: Colors.white),
+      ),
     );
   }
 
-  Widget _buildSearchBar() {
+  // NEW: Search Type Selector
+  Widget _buildSearchTypeSelector() {
     return Container(
-      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Icon(Icons.search, color: ColorConstants.greyColor, size: 20),
-          SizedBox(width: 5),
-          Expanded(
-            child: TextFormField(
-              textInputAction: TextInputAction.search,
-              controller: _searchBarController,
-              onTapOutside: (_) {
-                Utilities.closeKeyboard();
-              },
-              onChanged: (value) {
-                _searchDebouncer.run(
-                  () {
-                    if (value.isNotEmpty) {
-                      _btnClearController.add(true);
-                      setState(() {
-                        _textSearch = value;
-                      });
-                    } else {
-                      _btnClearController.add(false);
-                      setState(() {
-                        _textSearch = "";
-                      });
-                    }
-                  },
-                );
-              },
-              decoration: InputDecoration.collapsed(
-                hintText: 'Search by nickname (type exactly case sensitive)',
-                hintStyle: TextStyle(fontSize: 13, color: ColorConstants.greyColor),
-              ),
-              style: TextStyle(fontSize: 13),
+          const Text(
+            'Search by: ',
+            style: TextStyle(
+              color: ColorConstants.primaryColor,
+              fontWeight: FontWeight.bold,
             ),
           ),
-          StreamBuilder<bool>(
-            stream: _btnClearController.stream,
-            builder: (_, snapshot) {
-              return snapshot.data == true
-                  ? GestureDetector(
-                      onTap: () {
-                        _searchBarController.clear();
-                        _btnClearController.add(false);
-                        setState(() {
-                          _textSearch = "";
-                        });
-                      },
-                      child: Icon(Icons.clear_rounded, color: ColorConstants.greyColor, size: 20))
-                  : SizedBox.shrink();
-            },
+          const SizedBox(width: 8),
+          Expanded(
+            // Giữ nguyên phần bị ngắt, không thay đổi nội dung
           ),
+          style: ButtonStyle(
+            backgroundColor:
+            WidgetStateProperty.all<Color>(ColorConstants.greyColor2),
+            shape: WidgetStateProperty.all<OutlinedBorder>(
+              const RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(Radius.circular(10)),
+              ),
+            ),
+          ),
+          margin: const EdgeInsets.only(bottom: 10, left: 5, right: 5),
         ],
       ),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        color: ColorConstants.greyColor2,
-      ),
-      padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
-      margin: EdgeInsets.fromLTRB(16, 8, 16, 8),
     );
-  }
-
-  Widget _buildPopupMenu() {
-    return PopupMenuButton<MenuSetting>(
-      onSelected: _onItemMenuPress,
-      itemBuilder: (_) {
-        return _menus.map(
-          (choice) {
-            return PopupMenuItem<MenuSetting>(
-                value: choice,
-                child: Row(
-                  children: [
-                    Icon(
-                      choice.icon,
-                      color: ColorConstants.primaryColor,
-                    ),
-                    SizedBox(
-                      width: 10,
-                    ),
-                    Text(
-                      choice.title,
-                      style: TextStyle(color: ColorConstants.primaryColor),
-                    ),
-                  ],
-                ));
-          },
-        ).toList();
-      },
-    );
-  }
-
-  Widget _buildItem(DocumentSnapshot? document) {
-    if (document != null) {
-      final userChat = UserChat.fromDocument(document);
-      if (userChat.id == _currentUserId) {
-        return SizedBox.shrink();
-      } else {
-        return Container(
-          child: TextButton(
-            child: Row(
-              children: [
-                ClipOval(
-                  child: userChat.photoUrl.isNotEmpty
-                      ? Image.network(
-                          userChat.photoUrl,
-                          fit: BoxFit.cover,
-                          width: 50,
-                          height: 50,
-                          loadingBuilder: (_, child, loadingProgress) {
-                            if (loadingProgress == null) return child;
-                            return Container(
-                              width: 50,
-                              height: 50,
-                              child: Center(
-                                child: CircularProgressIndicator(
-                                  color: ColorConstants.themeColor,
-                                  value: loadingProgress.expectedTotalBytes != null
-                                      ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                                      : null,
-                                ),
-                              ),
-                            );
-                          },
-                          errorBuilder: (context, object, stackTrace) {
-                            return Icon(
-                              Icons.account_circle,
-                              size: 50,
-                              color: ColorConstants.greyColor,
-                            );
-                          },
-                        )
-                      : Icon(
-                          Icons.account_circle,
-                          size: 50,
-                          color: ColorConstants.greyColor,
-                        ),
-                ),
-                Flexible(
-                  child: Container(
-                    child: Column(
-                      children: [
-                        Container(
-                          child: Text(
-                            'Nickname: ${userChat.nickname}',
-                            maxLines: 1,
-                            style: TextStyle(color: ColorConstants.primaryColor),
-                          ),
-                          alignment: Alignment.centerLeft,
-                          margin: EdgeInsets.fromLTRB(10, 0, 0, 5),
-                        ),
-                        Container(
-                          child: Text(
-                            'About me: ${userChat.aboutMe}',
-                            maxLines: 1,
-                            style: TextStyle(color: ColorConstants.primaryColor),
-                          ),
-                          alignment: Alignment.centerLeft,
-                          margin: EdgeInsets.fromLTRB(10, 0, 0, 0),
-                        )
-                      ],
-                    ),
-                    margin: EdgeInsets.only(left: 20),
-                  ),
-                ),
-              ],
-            ),
-            onPressed: () {
-              if (Utilities.isKeyboardShowing(context)) {
-                Utilities.closeKeyboard();
-              }
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ChatPage(
-                    arguments: ChatPageArguments(
-                      peerId: userChat.id,
-                      peerAvatar: userChat.photoUrl,
-                      peerNickname: userChat.nickname,
-                    ),
-                  ),
-                ),
-              );
-            },
-            style: ButtonStyle(
-              backgroundColor: WidgetStateProperty.all<Color>(ColorConstants.greyColor2),
-              shape: WidgetStateProperty.all<OutlinedBorder>(
-                RoundedRectangleBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(10)),
-                ),
-              ),
-            ),
-          ),
-          margin: EdgeInsets.only(bottom: 10, left: 5, right: 5),
-        );
-      }
-    } else {
-      return SizedBox.shrink();
-    }
   }
 
   @override

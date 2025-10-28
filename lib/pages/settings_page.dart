@@ -27,9 +27,12 @@ class SettingsPageState extends State<SettingsPage> {
   String _nickname = '';
   String _aboutMe = '';
   String _avatarUrl = '';
+  String _phoneNumber = ''; // NEW
+  String _qrCode = ''; // NEW
 
   bool _isLoading = false;
   File? _avatarFile;
+
   late final _settingProvider = context.read<SettingProvider>();
 
   final _focusNodeNickname = FocusNode();
@@ -47,6 +50,9 @@ class SettingsPageState extends State<SettingsPage> {
       _nickname = _settingProvider.getPref(FirestoreConstants.nickname) ?? "";
       _aboutMe = _settingProvider.getPref(FirestoreConstants.aboutMe) ?? "";
       _avatarUrl = _settingProvider.getPref(FirestoreConstants.photoUrl) ?? "";
+      _phoneNumber =
+          _settingProvider.getPref(FirestoreConstants.phoneNumber) ?? ""; // NEW
+      _qrCode = _settingProvider.getPref(FirestoreConstants.qrCode) ?? ""; // NEW
     });
 
     _controllerNickname = TextEditingController(text: _nickname);
@@ -55,10 +61,13 @@ class SettingsPageState extends State<SettingsPage> {
 
   Future<bool> _pickAvatar() async {
     final imagePicker = ImagePicker();
-    final pickedXFile = await imagePicker.pickImage(source: ImageSource.gallery).catchError((err) {
+
+    final pickedXFile = await imagePicker.pickImage(source: ImageSource.gallery)
+        .catchError((err) {
       Fluttertoast.showToast(msg: err.toString());
       return null;
     });
+
     if (pickedXFile != null) {
       final imageFile = File(pickedXFile.path);
       setState(() {
@@ -74,33 +83,37 @@ class SettingsPageState extends State<SettingsPage> {
   Future<void> _uploadFile() async {
     final fileName = _userId;
     final uploadTask = _settingProvider.uploadFile(_avatarFile!, fileName);
+
     try {
       final snapshot = await uploadTask;
       _avatarUrl = await snapshot.ref.getDownloadURL();
+
       final updateInfo = UserChat(
         id: _userId,
         photoUrl: _avatarUrl,
         nickname: _nickname,
         aboutMe: _aboutMe,
+        phoneNumber: _phoneNumber, // NEW
+        qrCode: _qrCode, // NEW
       );
+
       _settingProvider
-          .updateDataFirestore(FirestoreConstants.pathUserCollection, _userId, updateInfo.toJson())
+          .updateDataFirestore(
+        FirestoreConstants.pathUserCollection,
+        _userId,
+        updateInfo.toJson(),
+      )
           .then((_) async {
         await _settingProvider.setPref(FirestoreConstants.photoUrl, _avatarUrl);
-        setState(() {
-          _isLoading = false;
-        });
+
+        setState(() => _isLoading = false);
         Fluttertoast.showToast(msg: "Upload success");
       }).catchError((err) {
-        setState(() {
-          _isLoading = false;
-        });
+        setState(() => _isLoading = false);
         Fluttertoast.showToast(msg: err.toString());
       });
     } on FirebaseException catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
       Fluttertoast.showToast(msg: e.message ?? e.toString());
     }
   }
@@ -109,32 +122,32 @@ class SettingsPageState extends State<SettingsPage> {
     _focusNodeNickname.unfocus();
     _focusNodeAboutMe.unfocus();
 
-    setState(() {
-      _isLoading = true;
-    });
-    UserChat updateInfo = UserChat(
+    setState(() => _isLoading = true);
+
+    final updateInfo = UserChat(
       id: _userId,
       photoUrl: _avatarUrl,
       nickname: _nickname,
       aboutMe: _aboutMe,
+      phoneNumber: _phoneNumber, // NEW
+      qrCode: _qrCode, // NEW
     );
+
     _settingProvider
-        .updateDataFirestore(FirestoreConstants.pathUserCollection, _userId, updateInfo.toJson())
+        .updateDataFirestore(
+      FirestoreConstants.pathUserCollection,
+      _userId,
+      updateInfo.toJson(),
+    )
         .then((_) async {
       await _settingProvider.setPref(FirestoreConstants.nickname, _nickname);
       await _settingProvider.setPref(FirestoreConstants.aboutMe, _aboutMe);
       await _settingProvider.setPref(FirestoreConstants.photoUrl, _avatarUrl);
 
-      setState(() {
-        _isLoading = false;
-      });
-
+      setState(() => _isLoading = false);
       Fluttertoast.showToast(msg: "Update success");
     }).catchError((err) {
-      setState(() {
-        _isLoading = false;
-      });
-
+      setState(() => _isLoading = false);
       Fluttertoast.showToast(msg: err.toString());
     });
   }
@@ -152,10 +165,11 @@ class SettingsPageState extends State<SettingsPage> {
       body: Stack(
         children: [
           SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 15),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Avatar
+                /// Avatar
                 CupertinoButton(
                   onPressed: () {
                     _pickAvatar().then((isSuccess) {
@@ -163,62 +177,68 @@ class SettingsPageState extends State<SettingsPage> {
                     });
                   },
                   child: Container(
-                    margin: EdgeInsets.all(20),
+                    margin: const EdgeInsets.all(20),
                     child: _avatarFile == null
                         ? _avatarUrl.isNotEmpty
-                            ? ClipRRect(
-                                borderRadius: BorderRadius.circular(45),
-                                child: Image.network(
-                                  _avatarUrl,
-                                  fit: BoxFit.cover,
-                                  width: 90,
-                                  height: 90,
-                                  errorBuilder: (_, __, ___) {
-                                    return Icon(
-                                      Icons.account_circle,
-                                      size: 90,
-                                      color: ColorConstants.greyColor,
-                                    );
-                                  },
-                                  loadingBuilder: (_, child, loadingProgress) {
-                                    if (loadingProgress == null) return child;
-                                    return Container(
-                                      width: 90,
-                                      height: 90,
-                                      child: Center(
-                                        child: CircularProgressIndicator(
-                                          color: ColorConstants.themeColor,
-                                          value: loadingProgress.expectedTotalBytes != null
-                                              ? loadingProgress.cumulativeBytesLoaded /
-                                                  loadingProgress.expectedTotalBytes!
-                                              : null,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              )
-                            : Icon(
-                                Icons.account_circle,
-                                size: 90,
-                                color: ColorConstants.greyColor,
-                              )
-                        : ClipOval(
-                            child: Image.file(
-                              _avatarFile!,
-                              width: 90,
-                              height: 90,
-                              fit: BoxFit.cover,
+                        ? ClipRRect(
+                      borderRadius: BorderRadius.circular(45),
+                      child: Image.network(
+                        _avatarUrl,
+                        fit: BoxFit.cover,
+                        width: 90,
+                        height: 90,
+                        errorBuilder: (_, __, ___) => Icon(
+                          Icons.account_circle,
+                          size: 90,
+                          color: ColorConstants.greyColor,
+                        ),
+                        loadingBuilder:
+                            (_, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return SizedBox(
+                            width: 90,
+                            height: 90,
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                color: ColorConstants.themeColor,
+                                value: loadingProgress
+                                    .expectedTotalBytes !=
+                                    null
+                                    ? loadingProgress
+                                    .cumulativeBytesLoaded /
+                                    loadingProgress
+                                        .expectedTotalBytes!
+                                    : null,
+                              ),
                             ),
-                          ),
+                          );
+                        },
+                      ),
+                    )
+                        : Icon(
+                      Icons.account_circle,
+                      size: 90,
+                      color: ColorConstants.greyColor,
+                    )
+                        : ClipOval(
+                      child: Image.file(
+                        _avatarFile!,
+                        width: 90,
+                        height: 90,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
                   ),
                 ),
 
-                // Input
+                /// Input Fields
                 Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Username
+                    /// Nickname
                     Container(
+                      margin:
+                      const EdgeInsets.only(left: 10, bottom: 5, top: 10),
                       child: Text(
                         'Nickname',
                         style: TextStyle(
@@ -227,29 +247,31 @@ class SettingsPageState extends State<SettingsPage> {
                           color: ColorConstants.primaryColor,
                         ),
                       ),
-                      margin: EdgeInsets.only(left: 10, bottom: 5, top: 10),
                     ),
                     Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 30),
                       child: Theme(
-                        data: Theme.of(context).copyWith(primaryColor: ColorConstants.primaryColor),
+                        data: Theme.of(context).copyWith(
+                          primaryColor: ColorConstants.primaryColor,
+                        ),
                         child: TextField(
+                          controller: _controllerNickname,
+                          focusNode: _focusNodeNickname,
                           decoration: InputDecoration(
                             hintText: 'Sweetie',
-                            contentPadding: EdgeInsets.all(5),
-                            hintStyle: TextStyle(color: ColorConstants.greyColor),
+                            contentPadding: const EdgeInsets.all(5),
+                            hintStyle:
+                            TextStyle(color: ColorConstants.greyColor),
                           ),
-                          controller: _controllerNickname,
-                          onChanged: (value) {
-                            _nickname = value;
-                          },
-                          focusNode: _focusNodeNickname,
+                          onChanged: (value) => _nickname = value,
                         ),
                       ),
-                      margin: EdgeInsets.only(left: 30, right: 30),
                     ),
 
-                    // About me
+                    /// About Me
                     Container(
+                      margin:
+                      const EdgeInsets.only(left: 10, top: 30, bottom: 5),
                       child: Text(
                         'About me',
                         style: TextStyle(
@@ -258,54 +280,104 @@ class SettingsPageState extends State<SettingsPage> {
                           color: ColorConstants.primaryColor,
                         ),
                       ),
-                      margin: EdgeInsets.only(left: 10, top: 30, bottom: 5),
                     ),
                     Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 30),
                       child: Theme(
-                        data: Theme.of(context).copyWith(primaryColor: ColorConstants.primaryColor),
+                        data: Theme.of(context).copyWith(
+                          primaryColor: ColorConstants.primaryColor,
+                        ),
                         child: TextField(
+                          controller: _controllerAboutMe,
+                          focusNode: _focusNodeAboutMe,
                           decoration: InputDecoration(
                             hintText: 'Fun, like travel and play PES...',
-                            contentPadding: EdgeInsets.all(5),
-                            hintStyle: TextStyle(color: ColorConstants.greyColor),
+                            contentPadding: const EdgeInsets.all(5),
+                            hintStyle:
+                            TextStyle(color: ColorConstants.greyColor),
                           ),
-                          controller: _controllerAboutMe,
-                          onChanged: (value) {
-                            _aboutMe = value;
-                          },
-                          focusNode: _focusNodeAboutMe,
+                          onChanged: (value) => _aboutMe = value,
                         ),
                       ),
-                      margin: EdgeInsets.only(left: 30, right: 30),
                     ),
+
+                    /// Phone Number (Read-only) - NEW
+                    if (_phoneNumber.isNotEmpty)
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            margin: const EdgeInsets.only(
+                              left: 10,
+                              top: 30,
+                              bottom: 5,
+                            ),
+                            child: Text(
+                              'Phone Number',
+                              style: TextStyle(
+                                fontStyle: FontStyle.italic,
+                                fontWeight: FontWeight.bold,
+                                color: ColorConstants.primaryColor,
+                              ),
+                            ),
+                          ),
+                          Container(
+                            margin:
+                            const EdgeInsets.symmetric(horizontal: 30),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: ColorConstants.greyColor2,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.phone,
+                                    color: ColorConstants.greyColor),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    _phoneNumber,
+                                    style: TextStyle(
+                                      color: ColorConstants.primaryColor,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                   ],
-                  crossAxisAlignment: CrossAxisAlignment.start,
                 ),
 
-                // Button
+                /// Update Button
                 Container(
+                  margin: const EdgeInsets.only(top: 50, bottom: 50),
                   child: TextButton(
                     onPressed: _handleUpdateData,
-                    child: Text(
+                    style: ButtonStyle(
+                      backgroundColor: WidgetStateProperty.all<Color>(
+                        ColorConstants.primaryColor,
+                      ),
+                      padding: WidgetStateProperty.all<EdgeInsets>(
+                        const EdgeInsets.fromLTRB(30, 10, 30, 10),
+                      ),
+                    ),
+                    child: const Text(
                       'Update',
                       style: TextStyle(fontSize: 16, color: Colors.white),
                     ),
-                    style: ButtonStyle(
-                      backgroundColor: WidgetStateProperty.all<Color>(ColorConstants.primaryColor),
-                      padding: WidgetStateProperty.all<EdgeInsets>(
-                        EdgeInsets.fromLTRB(30, 10, 30, 10),
-                      ),
-                    ),
                   ),
-                  margin: EdgeInsets.only(top: 50, bottom: 50),
                 ),
               ],
             ),
-            padding: EdgeInsets.only(left: 15, right: 15),
           ),
 
-          // Loading
-          Positioned(child: _isLoading ? LoadingView() : SizedBox.shrink()),
+          /// Loading Overlay
+          Positioned(
+            child: _isLoading ? const LoadingView() : const SizedBox.shrink(),
+          ),
         ],
       ),
     );

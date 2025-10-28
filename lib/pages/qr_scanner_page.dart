@@ -1,0 +1,273 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_chat_demo/constants/constants.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+
+class QRScannerPage extends StatefulWidget {
+  const QRScannerPage({super.key});
+
+  @override
+  State<QRScannerPage> createState() => _QRScannerPageState();
+}
+
+class _QRScannerPageState extends State<QRScannerPage> {
+  MobileScannerController controller = MobileScannerController(
+    detectionSpeed: DetectionSpeed.noDuplicates,
+    facing: CameraFacing.back,
+    torchEnabled: false,
+  );
+
+  bool _isScanned = false;
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  void _onDetect(BarcodeCapture capture) {
+    if (_isScanned) return;
+
+    final List<Barcode> barcodes = capture.barcodes;
+
+    if (barcodes.isNotEmpty) {
+      final barcode = barcodes.first;
+
+      if (barcode.rawValue != null) {
+        setState(() {
+          _isScanned = true;
+        });
+
+        // Stop scanner and return result
+        controller.stop();
+        Navigator.pop(context, barcode.rawValue);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          'Scan QR Code',
+          style: TextStyle(color: ColorConstants.primaryColor),
+        ),
+        centerTitle: true,
+        actions: [
+          // Toggle flash/torch
+          IconButton(
+            icon: ValueListenableBuilder(
+              valueListenable: controller.torchState,
+              builder: (context, state, child) {
+                switch (state) {
+                  case TorchState.off:
+                    return Icon(Icons.flash_off, color: Colors.grey);
+                  case TorchState.on:
+                    return Icon(Icons.flash_on, color: Colors.yellow);
+                  default:
+                    return Icon(Icons.flash_off, color: Colors.grey);
+                }
+              },
+            ),
+            onPressed: () => controller.toggleTorch(),
+          ),
+          // Switch camera
+          IconButton(
+            icon: ValueListenableBuilder(
+              valueListenable: controller.cameraFacingState,
+              builder: (context, state, child) {
+                return Icon(Icons.cameraswitch);
+              },
+            ),
+            onPressed: () => controller.switchCamera(),
+          ),
+        ],
+      ),
+      body: Stack(
+        children: [
+          // Scanner view
+          MobileScanner(
+            controller: controller,
+            onDetect: _onDetect,
+            errorBuilder: (context, error, child) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.error,
+                      size: 60,
+                      color: Colors.red,
+                    ),
+                    SizedBox(height: 16),
+                    Text(
+                      'Scanner Error',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      error.errorDetails?.message ?? 'Unknown error',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+
+          // Overlay with scanning area
+          CustomPaint(
+            painter: ScannerOverlay(),
+            child: Container(),
+          ),
+
+          // Instructions at bottom
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              color: ColorConstants.primaryColor.withOpacity(0.9),
+              padding: EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.qr_code_scanner,
+                    color: Colors.white,
+                    size: 48,
+                  ),
+                  SizedBox(height: 12),
+                  Text(
+                    'Position the QR code within the frame',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'The scanner will automatically detect the code',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Loading indicator when scanned
+          if (_isScanned)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black54,
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(
+                        color: Colors.white,
+                      ),
+                      SizedBox(height: 16),
+                      Text(
+                        'Processing...',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// Custom painter for scanner overlay
+class ScannerOverlay extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double scanAreaSize = size.width * 0.75;
+    final double left = (size.width - scanAreaSize) / 2;
+    final double top = (size.height - scanAreaSize) / 2;
+    final Rect scanArea = Rect.fromLTWH(left, top, scanAreaSize, scanAreaSize);
+
+    // Draw semi-transparent background
+    final backgroundPaint = Paint()
+      ..color = Colors.black.withOpacity(0.5);
+
+    canvas.drawPath(
+      Path()
+        ..addRect(Rect.fromLTWH(0, 0, size.width, size.height))
+        ..addRRect(RRect.fromRectAndRadius(scanArea, Radius.circular(16)))
+        ..fillType = PathFillType.evenOdd,
+      backgroundPaint,
+    );
+
+    // Draw corner brackets
+    final cornerPaint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 4
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    final cornerLength = 30.0;
+    final cornerRadius = 16.0;
+
+    // Top-left corner
+    canvas.drawPath(
+      Path()
+        ..moveTo(left + cornerRadius, top)
+        ..lineTo(left + cornerLength, top)
+        ..moveTo(left, top + cornerRadius)
+        ..lineTo(left, top + cornerLength),
+      cornerPaint,
+    );
+
+    // Top-right corner
+    canvas.drawPath(
+      Path()
+        ..moveTo(left + scanAreaSize - cornerLength, top)
+        ..lineTo(left + scanAreaSize - cornerRadius, top)
+        ..moveTo(left + scanAreaSize, top + cornerRadius)
+        ..lineTo(left + scanAreaSize, top + cornerLength),
+      cornerPaint,
+    );
+
+    // Bottom-left corner
+    canvas.drawPath(
+      Path()
+        ..moveTo(left, top + scanAreaSize - cornerLength)
+        ..lineTo(left, top + scanAreaSize - cornerRadius)
+        ..moveTo(left + cornerRadius, top + scanAreaSize)
+        ..lineTo(left + cornerLength, top + scanAreaSize),
+      cornerPaint,
+    );
+
+    // Bottom-right corner
+    canvas.drawPath(
+      Path()
+        ..moveTo(left + scanAreaSize, top + scanAreaSize - cornerLength)
+        ..lineTo(left + scanAreaSize, top + scanAreaSize - cornerRadius)
+        ..moveTo(left + scanAreaSize - cornerLength, top + scanAreaSize)
+        ..lineTo(left + scanAreaSize - cornerRadius, top + scanAreaSize),
+      cornerPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
