@@ -506,7 +506,7 @@ class HomePageState extends State<HomePage> {
               ],
             ),
             Positioned(
-              child: _isLoading ? const LoadingView() : const SizedBox.shrink(),
+              child: _isLoading ? LoadingView() : const SizedBox.shrink(),
             ),
           ],
         ),

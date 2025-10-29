@@ -1,5 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:flutter/material.dart';
 import 'package:flutter_chat_demo/constants/constants.dart';
 import 'package:flutter_chat_demo/models/models.dart';
@@ -16,7 +16,7 @@ enum PhoneAuthStatus {
 }
 
 class PhoneAuthProvider extends ChangeNotifier {
-  final FirebaseAuth firebaseAuth;
+  final firebase_auth.FirebaseAuth firebaseAuth;
   final FirebaseFirestore firebaseFirestore;
   final SharedPreferences prefs;
 
@@ -45,11 +45,11 @@ class PhoneAuthProvider extends ChangeNotifier {
 
     await firebaseAuth.verifyPhoneNumber(
       phoneNumber: phoneNumber,
-      verificationCompleted: (PhoneAuthCredential credential) async {
+      verificationCompleted: (firebase_auth.PhoneAuthCredential credential) async {
         // Auto-verification on Android
         await _signInWithCredential(credential, phoneNumber);
       },
-      verificationFailed: (FirebaseAuthException e) {
+      verificationFailed: (firebase_auth.FirebaseAuthException e) {
         print('Verification failed: ${e.message}');
         _status = PhoneAuthStatus.authenticateError;
         notifyListeners();
@@ -74,7 +74,6 @@ class PhoneAuthProvider extends ChangeNotifier {
       _status = PhoneAuthStatus.authenticating;
       notifyListeners();
 
-      // Create credential using firebase_auth's PhoneAuthProvider
       final credential = firebase_auth.PhoneAuthProvider.credential(
         verificationId: _verificationId!,
         smsCode: smsCode,
@@ -91,7 +90,7 @@ class PhoneAuthProvider extends ChangeNotifier {
 
   // Sign in with credential
   Future<bool> _signInWithCredential(
-      PhoneAuthCredential credential,
+      firebase_auth.PhoneAuthCredential credential,
       String phoneNumber,
       ) async {
     try {

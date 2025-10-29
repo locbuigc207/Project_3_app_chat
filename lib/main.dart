@@ -1,5 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
+import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
@@ -11,7 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'constants/color_constants.dart';
 import 'pages/pages.dart';
 import 'providers/providers.dart' hide PhoneAuthProvider;
-import 'providers/phone_auth_provider.dart' as custom;
+import 'providers/phone_auth_provider.dart' as custom_auth;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,9 +27,9 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final FirebaseFirestore firebaseFirestore = FirebaseFirestore.instance;
-    final FirebaseStorage firebaseStorage = FirebaseStorage.instance;
-    final FirebaseAuth firebaseAuth = FirebaseAuth.instance;
+    final firebaseFirestore = FirebaseFirestore.instance;
+    final firebaseStorage = FirebaseStorage.instance;
+    final firebaseAuth = firebase_auth.FirebaseAuth.instance;
 
     return MultiProvider(
       providers: [
@@ -44,8 +44,8 @@ class MyApp extends StatelessWidget {
         ),
 
         /// Phone Auth Provider
-        ChangeNotifierProvider<custom.PhoneAuthProvider>(
-          create: (_) => custom.PhoneAuthProvider(
+        ChangeNotifierProvider<custom_auth.PhoneAuthProvider>(
+          create: (_) => custom_auth.PhoneAuthProvider(
             firebaseAuth: firebaseAuth,
             firebaseFirestore: firebaseFirestore,
             prefs: prefs,
@@ -84,7 +84,7 @@ class MyApp extends StatelessWidget {
           useMaterial3: true,
           colorSchemeSeed: ColorConstants.themeColor,
         ),
-        home: const SplashPage(),
+        home: SplashPage(), // bỏ const nếu SplashPage không const constructor
       ),
     );
   }

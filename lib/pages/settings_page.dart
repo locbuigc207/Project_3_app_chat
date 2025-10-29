@@ -376,7 +376,7 @@ class SettingsPageState extends State<SettingsPage> {
 
           /// Loading Overlay
           Positioned(
-            child: _isLoading ? const LoadingView() : const SizedBox.shrink(),
+            child: _isLoading ? LoadingView() : const SizedBox.shrink(),
           ),
         ],
       ),

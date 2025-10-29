@@ -143,7 +143,7 @@ class LoginPage extends StatelessWidget {
           // Loading
           Positioned(
             child: authProvider.status == Status.authenticating
-                ? const LoadingView()
+                ? LoadingView()
                 : const SizedBox.shrink(),
           ),
         ],
