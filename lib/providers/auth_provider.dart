@@ -36,13 +36,15 @@ class AuthProvider extends ChangeNotifier {
 
   Future<bool> isLoggedIn() async {
     bool isLoggedIn = await googleSignIn.isSignedIn();
-    if (isLoggedIn && prefs.getString(FirestoreConstants.id)?.isNotEmpty == true) {
+    if (isLoggedIn &&
+        prefs.getString(FirestoreConstants.id)?.isNotEmpty == true) {
       return true;
     }
 
     // Check if user logged in with phone
     final currentUser = firebaseAuth.currentUser;
-    if (currentUser != null && prefs.getString(FirestoreConstants.id)?.isNotEmpty == true) {
+    if (currentUser != null &&
+        prefs.getString(FirestoreConstants.id)?.isNotEmpty == true) {
       return true;
     }
 
@@ -71,7 +73,8 @@ class AuthProvider extends ChangeNotifier {
       idToken: googleAuth.idToken,
     );
 
-    final firebaseUser = (await firebaseAuth.signInWithCredential(credential)).user;
+    final firebaseUser =
+        (await firebaseAuth.signInWithCredential(credential)).user;
     if (firebaseUser == null) {
       _status = Status.authenticateError;
       notifyListeners();
@@ -84,18 +87,22 @@ class AuthProvider extends ChangeNotifier {
         .get();
     final documents = result.docs;
 
-    if (documents.length == 0) {
+    if (documents.isEmpty) {
       // Generate QR code for new user
       final qrCode = _generateQRCode(firebaseUser.uid);
 
       // Writing data to server because here is a new user
-      firebaseFirestore.collection(FirestoreConstants.pathUserCollection).doc(firebaseUser.uid).set({
+      await firebaseFirestore
+          .collection(FirestoreConstants.pathUserCollection)
+          .doc(firebaseUser.uid)
+          .set({
         FirestoreConstants.nickname: firebaseUser.displayName,
         FirestoreConstants.photoUrl: firebaseUser.photoURL,
         FirestoreConstants.id: firebaseUser.uid,
         FirestoreConstants.phoneNumber: firebaseUser.phoneNumber ?? '',
         FirestoreConstants.qrCode: qrCode,
-        FirestoreConstants.createdAt: DateTime.now().millisecondsSinceEpoch.toString(),
+        FirestoreConstants.createdAt:
+        DateTime.now().millisecondsSinceEpoch.toString(),
         FirestoreConstants.chattingWith: null,
         FirestoreConstants.aboutMe: '',
       });
@@ -103,9 +110,12 @@ class AuthProvider extends ChangeNotifier {
       // Write data to local storage
       User? currentUser = firebaseUser;
       await prefs.setString(FirestoreConstants.id, currentUser.uid);
-      await prefs.setString(FirestoreConstants.nickname, currentUser.displayName ?? "");
-      await prefs.setString(FirestoreConstants.photoUrl, currentUser.photoURL ?? "");
-      await prefs.setString(FirestoreConstants.phoneNumber, currentUser.phoneNumber ?? "");
+      await prefs.setString(
+          FirestoreConstants.nickname, currentUser.displayName ?? "");
+      await prefs.setString(
+          FirestoreConstants.photoUrl, currentUser.photoURL ?? "");
+      await prefs.setString(
+          FirestoreConstants.phoneNumber, currentUser.phoneNumber ?? "");
       await prefs.setString(FirestoreConstants.qrCode, qrCode);
       await prefs.setString(FirestoreConstants.aboutMe, "");
     } else {
@@ -131,7 +141,8 @@ class AuthProvider extends ChangeNotifier {
       await prefs.setString(FirestoreConstants.nickname, userChat.nickname);
       await prefs.setString(FirestoreConstants.photoUrl, userChat.photoUrl);
       await prefs.setString(FirestoreConstants.aboutMe, userChat.aboutMe);
-      await prefs.setString(FirestoreConstants.phoneNumber, userChat.phoneNumber);
+      await prefs.setString(
+          FirestoreConstants.phoneNumber, userChat.phoneNumber);
     }
     _status = Status.authenticated;
     notifyListeners();

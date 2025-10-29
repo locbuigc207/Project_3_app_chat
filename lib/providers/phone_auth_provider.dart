@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_chat_demo/constants/constants.dart';
 import 'package:flutter_chat_demo/models/models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:math';
 
 enum PhoneAuthStatus {
   uninitialized,
@@ -64,7 +63,7 @@ class PhoneAuthProvider extends ChangeNotifier {
       codeAutoRetrievalTimeout: (String verificationId) {
         _verificationId = verificationId;
       },
-      timeout: Duration(seconds: 60),
+      timeout: const Duration(seconds: 60),
       forceResendingToken: _resendToken,
     );
   }
@@ -75,7 +74,8 @@ class PhoneAuthProvider extends ChangeNotifier {
       _status = PhoneAuthStatus.authenticating;
       notifyListeners();
 
-      PhoneAuthCredential credential = PhoneAuthProvider.credential(
+      // Create credential using firebase_auth's PhoneAuthProvider
+      final credential = firebase_auth.PhoneAuthProvider.credential(
         verificationId: _verificationId!,
         smsCode: smsCode,
       );
@@ -112,7 +112,7 @@ class PhoneAuthProvider extends ChangeNotifier {
 
       final documents = result.docs;
 
-      if (documents.length == 0) {
+      if (documents.isEmpty) {
         // Generate QR code for new user
         final qrCode = _generateQRCode(firebaseUser.uid);
 
@@ -162,7 +162,8 @@ class PhoneAuthProvider extends ChangeNotifier {
         await prefs.setString(FirestoreConstants.nickname, userChat.nickname);
         await prefs.setString(FirestoreConstants.photoUrl, userChat.photoUrl);
         await prefs.setString(FirestoreConstants.aboutMe, userChat.aboutMe);
-        await prefs.setString(FirestoreConstants.phoneNumber, userChat.phoneNumber);
+        await prefs.setString(
+            FirestoreConstants.phoneNumber, userChat.phoneNumber);
       }
 
       _status = PhoneAuthStatus.authenticated;

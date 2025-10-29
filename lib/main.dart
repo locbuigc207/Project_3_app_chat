@@ -10,7 +10,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'constants/color_constants.dart';
 import 'pages/pages.dart';
-import 'providers/providers.dart';
+import 'providers/providers.dart' hide PhoneAuthProvider;
+import 'providers/phone_auth_provider.dart' as custom;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,31 +23,31 @@ Future<void> main() async {
 class MyApp extends StatelessWidget {
   final SharedPreferences prefs;
 
-  MyApp({required this.prefs, super.key});
-
-  final FirebaseFirestore _firebaseFirestore = FirebaseFirestore.instance;
-  final FirebaseStorage _firebaseStorage = FirebaseStorage.instance;
-  final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
+  const MyApp({required this.prefs, super.key});
 
   @override
   Widget build(BuildContext context) {
+    final FirebaseFirestore firebaseFirestore = FirebaseFirestore.instance;
+    final FirebaseStorage firebaseStorage = FirebaseStorage.instance;
+    final FirebaseAuth firebaseAuth = FirebaseAuth.instance;
+
     return MultiProvider(
       providers: [
         /// Google Auth Provider
         ChangeNotifierProvider<AuthProvider>(
           create: (_) => AuthProvider(
-            firebaseAuth: _firebaseAuth,
+            firebaseAuth: firebaseAuth,
             googleSignIn: GoogleSignIn(),
             prefs: prefs,
-            firebaseFirestore: _firebaseFirestore,
+            firebaseFirestore: firebaseFirestore,
           ),
         ),
 
-        /// NEW: Phone Auth Provider
-        ChangeNotifierProvider<PhoneAuthProvider>(
-          create: (_) => PhoneAuthProvider(
-            firebaseAuth: _firebaseAuth,
-            firebaseFirestore: _firebaseFirestore,
+        /// Phone Auth Provider
+        ChangeNotifierProvider<custom.PhoneAuthProvider>(
+          create: (_) => custom.PhoneAuthProvider(
+            firebaseAuth: firebaseAuth,
+            firebaseFirestore: firebaseFirestore,
             prefs: prefs,
           ),
         ),
@@ -55,15 +56,15 @@ class MyApp extends StatelessWidget {
         Provider<SettingProvider>(
           create: (_) => SettingProvider(
             prefs: prefs,
-            firebaseFirestore: _firebaseFirestore,
-            firebaseStorage: _firebaseStorage,
+            firebaseFirestore: firebaseFirestore,
+            firebaseStorage: firebaseStorage,
           ),
         ),
 
         /// Home Provider
         Provider<HomeProvider>(
           create: (_) => HomeProvider(
-            firebaseFirestore: _firebaseFirestore,
+            firebaseFirestore: firebaseFirestore,
           ),
         ),
 
@@ -71,8 +72,8 @@ class MyApp extends StatelessWidget {
         Provider<ChatProvider>(
           create: (_) => ChatProvider(
             prefs: prefs,
-            firebaseFirestore: _firebaseFirestore,
-            firebaseStorage: _firebaseStorage,
+            firebaseFirestore: firebaseFirestore,
+            firebaseStorage: firebaseStorage,
           ),
         ),
       ],

@@ -10,7 +10,7 @@ class QRScannerPage extends StatefulWidget {
 }
 
 class _QRScannerPageState extends State<QRScannerPage> {
-  MobileScannerController controller = MobileScannerController(
+  final MobileScannerController controller = MobileScannerController(
     detectionSpeed: DetectionSpeed.noDuplicates,
     facing: CameraFacing.back,
     torchEnabled: false,
@@ -48,7 +48,7 @@ class _QRScannerPageState extends State<QRScannerPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(
+        title: const Text(
           'Scan QR Code',
           style: TextStyle(color: ColorConstants.primaryColor),
         ),
@@ -56,29 +56,12 @@ class _QRScannerPageState extends State<QRScannerPage> {
         actions: [
           // Toggle flash/torch
           IconButton(
-            icon: ValueListenableBuilder(
-              valueListenable: controller.torchState,
-              builder: (context, state, child) {
-                switch (state) {
-                  case TorchState.off:
-                    return Icon(Icons.flash_off, color: Colors.grey);
-                  case TorchState.on:
-                    return Icon(Icons.flash_on, color: Colors.yellow);
-                  default:
-                    return Icon(Icons.flash_off, color: Colors.grey);
-                }
-              },
-            ),
+            icon: const Icon(Icons.flash_off, color: Colors.grey),
             onPressed: () => controller.toggleTorch(),
           ),
           // Switch camera
           IconButton(
-            icon: ValueListenableBuilder(
-              valueListenable: controller.cameraFacingState,
-              builder: (context, state, child) {
-                return Icon(Icons.cameraswitch);
-              },
-            ),
+            icon: const Icon(Icons.cameraswitch),
             onPressed: () => controller.switchCamera(),
           ),
         ],
@@ -94,24 +77,24 @@ class _QRScannerPageState extends State<QRScannerPage> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.error,
                       size: 60,
                       color: Colors.red,
                     ),
-                    SizedBox(height: 16),
-                    Text(
+                    const SizedBox(height: 16),
+                    const Text(
                       'Scanner Error',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    SizedBox(height: 8),
+                    const SizedBox(height: 8),
                     Text(
                       error.errorDetails?.message ?? 'Unknown error',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.grey),
+                      style: const TextStyle(color: Colors.grey),
                     ),
                   ],
                 ),
@@ -132,8 +115,8 @@ class _QRScannerPageState extends State<QRScannerPage> {
             right: 0,
             child: Container(
               color: ColorConstants.primaryColor.withOpacity(0.9),
-              padding: EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-              child: Column(
+              padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+              child: const Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
@@ -170,7 +153,7 @@ class _QRScannerPageState extends State<QRScannerPage> {
             Positioned.fill(
               child: Container(
                 color: Colors.black54,
-                child: Center(
+                child: const Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -212,7 +195,7 @@ class ScannerOverlay extends CustomPainter {
     canvas.drawPath(
       Path()
         ..addRect(Rect.fromLTWH(0, 0, size.width, size.height))
-        ..addRRect(RRect.fromRectAndRadius(scanArea, Radius.circular(16)))
+        ..addRRect(RRect.fromRectAndRadius(scanArea, const Radius.circular(16)))
         ..fillType = PathFillType.evenOdd,
       backgroundPaint,
     );
@@ -224,8 +207,8 @@ class ScannerOverlay extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
 
-    final cornerLength = 30.0;
-    final cornerRadius = 16.0;
+    const cornerLength = 30.0;
+    const cornerRadius = 16.0;
 
     // Top-left corner
     canvas.drawPath(
