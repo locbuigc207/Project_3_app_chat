@@ -11,7 +11,11 @@ class ChatProvider {
   final FirebaseFirestore firebaseFirestore;
   final FirebaseStorage firebaseStorage;
 
-  ChatProvider({required this.firebaseFirestore, required this.prefs, required this.firebaseStorage});
+  ChatProvider({
+    required this.firebaseFirestore,
+    required this.prefs,
+    required this.firebaseStorage,
+  });
 
   UploadTask uploadFile(File image, String fileName) {
     Reference reference = firebaseStorage.ref().child(fileName);
@@ -19,8 +23,15 @@ class ChatProvider {
     return uploadTask;
   }
 
-  Future<void> updateDataFirestore(String collectionPath, String docPath, Map<String, dynamic> dataNeedUpdate) {
-    return firebaseFirestore.collection(collectionPath).doc(docPath).update(dataNeedUpdate);
+  Future<void> updateDataFirestore(
+      String collectionPath,
+      String docPath,
+      Map<String, dynamic> dataNeedUpdate,
+      ) {
+    return firebaseFirestore
+        .collection(collectionPath)
+        .doc(docPath)
+        .update(dataNeedUpdate);
   }
 
   Stream<QuerySnapshot> getChatStream(String groupChatId, int limit) {
@@ -33,7 +44,13 @@ class ChatProvider {
         .snapshots();
   }
 
-  void sendMessage(String content, int type, String groupChatId, String currentUserId, String peerId) {
+  void sendMessage(
+      String content,
+      int type,
+      String groupChatId,
+      String currentUserId,
+      String peerId,
+      ) {
     final documentReference = firebaseFirestore
         .collection(FirestoreConstants.pathMessageCollection)
         .doc(groupChatId)
@@ -54,6 +71,49 @@ class ChatProvider {
         messageChat.toJson(),
       );
     });
+
+    // Update conversation last message
+    _updateConversationLastMessage(groupChatId, content, type);
+  }
+
+  Future<void> _updateConversationLastMessage(
+      String conversationId,
+      String message,
+      int messageType,
+      ) async {
+    try {
+      final conversationDoc = await firebaseFirestore
+          .collection(FirestoreConstants.pathConversationCollection)
+          .doc(conversationId)
+          .get();
+
+      if (conversationDoc.exists) {
+        await firebaseFirestore
+            .collection(FirestoreConstants.pathConversationCollection)
+            .doc(conversationId)
+            .update({
+          FirestoreConstants.lastMessage: message,
+          FirestoreConstants.lastMessageTime:
+          DateTime.now().millisecondsSinceEpoch.toString(),
+          FirestoreConstants.lastMessageType: messageType,
+        });
+      } else {
+        // If conversation doesn't exist, create it
+        final participants = conversationId.split('-');
+        await firebaseFirestore
+            .collection(FirestoreConstants.pathConversationCollection)
+            .doc(conversationId)
+            .set({
+          FirestoreConstants.isGroup: false,
+          FirestoreConstants.participants: participants,
+          FirestoreConstants.lastMessage: message,
+          FirestoreConstants.lastMessageTime:
+          DateTime.now().millisecondsSinceEpoch.toString(),
+          FirestoreConstants.lastMessageType: messageType,
+        });
+      }
+    } catch (e) {
+      print('Error updating conversation: $e');
+    }
   }
 }
-

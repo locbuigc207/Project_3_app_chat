@@ -12,6 +12,7 @@ import 'constants/color_constants.dart';
 import 'pages/pages.dart';
 import 'providers/providers.dart' hide PhoneAuthProvider;
 import 'providers/phone_auth_provider.dart' as custom_auth;
+import 'providers/friend_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -76,6 +77,13 @@ class MyApp extends StatelessWidget {
             firebaseStorage: firebaseStorage,
           ),
         ),
+
+        /// Friend Provider
+        Provider<FriendProvider>(
+          create: (_) => FriendProvider(
+            firebaseFirestore: firebaseFirestore,
+          ),
+        ),
       ],
       child: MaterialApp(
         title: AppConstants.appTitle,
@@ -84,7 +92,7 @@ class MyApp extends StatelessWidget {
           useMaterial3: true,
           colorSchemeSeed: ColorConstants.themeColor,
         ),
-        home: SplashPage(), // bỏ const nếu SplashPage không const constructor
+        home: SplashPage(),
       ),
     );
   }

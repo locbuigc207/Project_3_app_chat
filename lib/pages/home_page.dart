@@ -7,11 +7,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_chat_demo/constants/constants.dart';
 import 'package:flutter_chat_demo/models/models.dart';
 import 'package:flutter_chat_demo/pages/pages.dart';
+import 'package:flutter_chat_demo/providers/friend_provider.dart';
 import 'package:flutter_chat_demo/providers/providers.dart';
 import 'package:flutter_chat_demo/utils/utils.dart';
 import 'package:flutter_chat_demo/widgets/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 class HomePage extends StatefulWidget {
@@ -26,15 +28,17 @@ class HomePageState extends State<HomePage> {
   final _flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
   final _listScrollController = ScrollController();
 
+  bool _isLoading = false;
+  bool _isSearching = false;
+  String _textSearch = "";
   int _limit = 20;
   final _limitIncrement = 20;
-  String _textSearch = "";
-  bool _isLoading = false;
   SearchType _searchType = SearchType.nickname;
 
   late final _authProvider = context.read<AuthProvider>();
   late final _homeProvider = context.read<HomeProvider>();
   late final String _currentUserId;
+  late final FriendProvider _friendProvider;
 
   final _searchDebouncer = Debouncer(milliseconds: 300);
   final _btnClearController = StreamController<bool>();
@@ -43,6 +47,7 @@ class HomePageState extends State<HomePage> {
   final _menus = <MenuSetting>[
     const MenuSetting(title: 'Settings', icon: Icons.settings),
     const MenuSetting(title: 'My QR Code', icon: Icons.qr_code),
+    const MenuSetting(title: 'Create Group', icon: Icons.group_add),
     const MenuSetting(title: 'Log out', icon: Icons.exit_to_app),
   ];
 
@@ -59,6 +64,8 @@ class HomePageState extends State<HomePage> {
       );
     }
 
+    _friendProvider = FriendProvider(firebaseFirestore: _homeProvider.firebaseFirestore);
+
     _registerNotification();
     _configLocalNotification();
     _listScrollController.addListener(_scrollListener);
@@ -68,15 +75,12 @@ class HomePageState extends State<HomePage> {
     _firebaseMessaging.requestPermission();
 
     FirebaseMessaging.onMessage.listen((message) {
-      print('onMessage: $message');
       if (message.notification != null) {
         _showNotification(message.notification!);
       }
-      return;
     });
 
     _firebaseMessaging.getToken().then((token) {
-      print('push token: $token');
       if (token != null) {
         _homeProvider.updateDataFirestore(
           FirestoreConstants.pathUserCollection,
@@ -108,6 +112,7 @@ class HomePageState extends State<HomePage> {
     }
   }
 
+  // ======================= MENU ============================
   Widget _buildPopupMenu() {
     return PopupMenuButton<MenuSetting>(
       onSelected: _onItemMenuPress,
@@ -117,15 +122,10 @@ class HomePageState extends State<HomePage> {
             value: choice,
             child: Row(
               children: [
-                Icon(
-                  choice.icon,
-                  color: ColorConstants.primaryColor,
-                ),
+                Icon(choice.icon, color: ColorConstants.primaryColor),
                 const SizedBox(width: 10),
-                Text(
-                  choice.title,
-                  style: const TextStyle(color: ColorConstants.primaryColor),
-                ),
+                Text(choice.title,
+                    style: const TextStyle(color: ColorConstants.primaryColor)),
               ],
             ),
           );
@@ -135,46 +135,19 @@ class HomePageState extends State<HomePage> {
   }
 
   void _onItemMenuPress(MenuSetting choice) {
-    if (choice.title == 'Log out') {
-      _handleSignOut();
-    } else if (choice.title == 'My QR Code') {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const MyQRCodePage()),
-      );
-    } else {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const SettingsPage()),
-      );
+    switch (choice.title) {
+      case 'Log out':
+        _handleSignOut();
+        break;
+      case 'My QR Code':
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const MyQRCodePage()));
+        break;
+      case 'Create Group':
+        Navigator.push(context, MaterialPageRoute(builder: (_) => CreateGroupPage()));
+        break;
+      default:
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsPage()));
     }
-  }
-
-  void _showNotification(RemoteNotification remoteNotification) async {
-    final androidPlatformChannelSpecifics = AndroidNotificationDetails(
-      Platform.isAndroid ? 'com.dfa.flutterchatdemo' : 'com.duytq.flutterchatdemo',
-      'Flutter chat demo',
-      playSound: true,
-      enableVibration: true,
-      importance: Importance.max,
-      priority: Priority.high,
-    );
-
-    const iOSPlatformChannelSpecifics = DarwinNotificationDetails();
-    final platformChannelSpecifics = NotificationDetails(
-      android: androidPlatformChannelSpecifics,
-      iOS: iOSPlatformChannelSpecifics,
-    );
-
-    print(remoteNotification);
-
-    await _flutterLocalNotificationsPlugin.show(
-      0,
-      remoteNotification.title,
-      remoteNotification.body,
-      platformChannelSpecifics,
-      payload: null,
-    );
   }
 
   Future<void> _handleSignOut() async {
@@ -185,6 +158,7 @@ class HomePageState extends State<HomePage> {
     );
   }
 
+  // ======================= QR CODE ============================
   void _scanQRCode() async {
     final result = await Navigator.push(
       context,
@@ -192,15 +166,9 @@ class HomePageState extends State<HomePage> {
     );
 
     if (result != null && result is String) {
-      setState(() {
-        _isLoading = true;
-      });
-
+      setState(() => _isLoading = true);
       final userDoc = await _homeProvider.searchByQRCode(result);
-
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
 
       if (userDoc != null) {
         final userChat = UserChat.fromDocument(userDoc);
@@ -210,13 +178,7 @@ class HomePageState extends State<HomePage> {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => ChatPage(
-                arguments: ChatPageArguments(
-                  peerId: userChat.id,
-                  peerAvatar: userChat.photoUrl,
-                  peerNickname: userChat.nickname,
-                ),
-              ),
+              builder: (_) => UserProfilePage(userChat: userChat),
             ),
           );
         }
@@ -226,6 +188,7 @@ class HomePageState extends State<HomePage> {
     }
   }
 
+  // ======================= SEARCH ============================
   Widget _buildSearchBar() {
     return Container(
       height: 40,
@@ -247,14 +210,10 @@ class HomePageState extends State<HomePage> {
                 _searchDebouncer.run(() {
                   if (value.isNotEmpty) {
                     _btnClearController.add(true);
-                    setState(() {
-                      _textSearch = value;
-                    });
+                    setState(() => _textSearch = value);
                   } else {
                     _btnClearController.add(false);
-                    setState(() {
-                      _textSearch = "";
-                    });
+                    setState(() => _textSearch = "");
                   }
                 });
               },
@@ -273,11 +232,10 @@ class HomePageState extends State<HomePage> {
                 onTap: () {
                   _searchBarController.clear();
                   _btnClearController.add(false);
-                  setState(() {
-                    _textSearch = "";
-                  });
+                  setState(() => _textSearch = "");
                 },
-                child: const Icon(Icons.clear, color: ColorConstants.greyColor, size: 20),
+                child: const Icon(Icons.clear,
+                    color: ColorConstants.greyColor, size: 20),
               )
                   : const SizedBox.shrink();
             },
@@ -292,28 +250,18 @@ class HomePageState extends State<HomePage> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
-          const Text(
-            'Search by: ',
-            style: TextStyle(
-              color: ColorConstants.primaryColor,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+          const Text('Search by:',
+              style: TextStyle(
+                  color: ColorConstants.primaryColor, fontWeight: FontWeight.bold)),
           const SizedBox(width: 8),
           Expanded(
             child: Row(
               children: [
-                Expanded(
-                  child: _buildSearchTypeButton(SearchType.nickname, 'Nickname'),
-                ),
+                Expanded(child: _buildSearchTypeButton(SearchType.nickname, 'Nickname')),
                 const SizedBox(width: 5),
-                Expanded(
-                  child: _buildSearchTypeButton(SearchType.phoneNumber, 'Phone'),
-                ),
+                Expanded(child: _buildSearchTypeButton(SearchType.phoneNumber, 'Phone')),
                 const SizedBox(width: 5),
-                Expanded(
-                  child: _buildSearchTypeButton(SearchType.qrCode, 'QR Code'),
-                ),
+                Expanded(child: _buildSearchTypeButton(SearchType.qrCode, 'QR Code')),
               ],
             ),
           ),
@@ -325,11 +273,7 @@ class HomePageState extends State<HomePage> {
   Widget _buildSearchTypeButton(SearchType type, String label) {
     final isSelected = _searchType == type;
     return GestureDetector(
-      onTap: () {
-        setState(() {
-          _searchType = type;
-        });
-      },
+      onTap: () => setState(() => _searchType = type),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
         decoration: BoxDecoration(
@@ -350,14 +294,52 @@ class HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildItem(DocumentSnapshot? document) {
-    if (document != null) {
-      final userChat = UserChat.fromDocument(document);
-      if (userChat.id == _currentUserId) {
-        return const SizedBox.shrink();
+  // ======================= CONVERSATION ============================
+  String _getLastMessagePreview(String message, int type) {
+    if (type == TypeMessage.image) return '📷 Image';
+    if (type == TypeMessage.sticker) return '😊 Sticker';
+    return message.length > 30 ? '${message.substring(0, 30)}...' : message;
+  }
+
+  String _getTimeAgo(String timestamp) {
+    try {
+      final messageTime = DateTime.fromMillisecondsSinceEpoch(int.parse(timestamp));
+      final now = DateTime.now();
+      final diff = now.difference(messageTime);
+
+      if (diff.inDays > 0) {
+        return DateFormat('MMM dd').format(messageTime);
+      } else if (diff.inHours > 0) {
+        return '${diff.inHours}h ago';
+      } else if (diff.inMinutes > 0) {
+        return '${diff.inMinutes}m ago';
       } else {
+        return 'Just now';
+      }
+    } catch (_) {
+      return '';
+    }
+  }
+
+  Widget _buildConversationItem(DocumentSnapshot? doc) {
+    if (doc == null) return const SizedBox.shrink();
+    final conversation = Conversation.fromDocument(doc);
+
+    final otherUserId =
+    conversation.participants.firstWhere((id) => id != _currentUserId, orElse: () => '');
+    if (otherUserId.isEmpty) return const SizedBox.shrink();
+
+    return FutureBuilder<DocumentSnapshot>(
+      future: FirebaseFirestore.instance
+          .collection(FirestoreConstants.pathUserCollection)
+          .doc(otherUserId)
+          .get(),
+      builder: (_, snapshot) {
+        if (!snapshot.hasData) return const SizedBox.shrink();
+        final userChat = UserChat.fromDocument(snapshot.data!);
+
         return Container(
-          margin: const EdgeInsets.only(bottom: 10, left: 5, right: 5),
+          margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 8),
           child: TextButton(
             onPressed: () {
               Navigator.push(
@@ -374,94 +356,136 @@ class HomePageState extends State<HomePage> {
               );
             },
             style: ButtonStyle(
-              backgroundColor: WidgetStateProperty.all<Color>(ColorConstants.greyColor2),
-              shape: WidgetStateProperty.all<OutlinedBorder>(
-                const RoundedRectangleBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(10)),
-                ),
-              ),
-              padding: WidgetStateProperty.all<EdgeInsets>(
-                const EdgeInsets.fromLTRB(25, 10, 25, 10),
-              ),
+              backgroundColor: WidgetStateProperty.all(ColorConstants.greyColor2),
+              shape: WidgetStateProperty.all(
+                  RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             ),
             child: Row(
               children: [
                 ClipOval(
                   child: userChat.photoUrl.isNotEmpty
-                      ? Image.network(
-                    userChat.photoUrl,
-                    fit: BoxFit.cover,
-                    width: 50,
-                    height: 50,
-                    loadingBuilder: (_, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return const SizedBox(
-                        width: 50,
-                        height: 50,
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            color: ColorConstants.themeColor,
+                      ? Image.network(userChat.photoUrl,
+                      fit: BoxFit.cover,
+                      width: 50,
+                      height: 50,
+                      loadingBuilder: (_, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return const SizedBox(
+                          width: 50,
+                          height: 50,
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              color: ColorConstants.themeColor,
+                            ),
                           ),
-                        ),
-                      );
-                    },
-                    errorBuilder: (_, __, ___) {
-                      return const Icon(
-                        Icons.account_circle,
-                        size: 50,
-                        color: ColorConstants.greyColor,
-                      );
-                    },
-                  )
-                      : const Icon(
-                    Icons.account_circle,
-                    size: 50,
-                    color: ColorConstants.greyColor,
-                  ),
+                        );
+                      },
+                      errorBuilder: (_, __, ___) {
+                        return const Icon(Icons.account_circle,
+                            size: 50, color: ColorConstants.greyColor);
+                      })
+                      : const Icon(Icons.account_circle,
+                      size: 50, color: ColorConstants.greyColor),
                 ),
-                const SizedBox(width: 20),
+                const SizedBox(width: 15),
                 Expanded(
                   child: Column(
-                    children: [
-                      Container(
-                        alignment: Alignment.centerLeft,
-                        margin: const EdgeInsets.fromLTRB(10, 0, 0, 5),
-                        child: Text(
-                          'Nickname: ${userChat.nickname}',
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(userChat.nickname,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: ColorConstants.primaryColor,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16)),
+                        const SizedBox(height: 4),
+                        Text(
+                          _getLastMessagePreview(
+                              conversation.lastMessage, conversation.lastMessageType),
                           maxLines: 1,
-                          style: const TextStyle(color: ColorConstants.primaryColor),
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              color: ColorConstants.greyColor, fontSize: 14),
                         ),
-                      ),
-                      Container(
-                        alignment: Alignment.centerLeft,
-                        margin: const EdgeInsets.fromLTRB(10, 0, 0, 0),
-                        child: Text(
-                          'About me: ${userChat.aboutMe}',
-                          maxLines: 1,
-                          style: const TextStyle(color: ColorConstants.primaryColor),
-                        ),
-                      )
-                    ],
-                  ),
+                      ]),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  _getTimeAgo(conversation.lastMessageTime),
+                  style:
+                  const TextStyle(color: ColorConstants.greyColor, fontSize: 12),
                 ),
               ],
             ),
           ),
         );
-      }
-    } else {
-      return const SizedBox.shrink();
-    }
+      },
+    );
+  }
+
+  // ======================= SEARCH RESULT ITEM ============================
+  Widget _buildItem(DocumentSnapshot? document) {
+    if (document == null) return const SizedBox.shrink();
+    final userChat = UserChat.fromDocument(document);
+    if (userChat.id == _currentUserId) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+      child: TextButton(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ChatPage(
+                arguments: ChatPageArguments(
+                  peerId: userChat.id,
+                  peerAvatar: userChat.photoUrl,
+                  peerNickname: userChat.nickname,
+                ),
+              ),
+            ),
+          );
+        },
+        style: ButtonStyle(
+          backgroundColor: WidgetStateProperty.all(ColorConstants.greyColor2),
+          shape: WidgetStateProperty.all(
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+        ),
+        child: Row(
+          children: [
+            ClipOval(
+              child: userChat.photoUrl.isNotEmpty
+                  ? Image.network(userChat.photoUrl,
+                  fit: BoxFit.cover, width: 50, height: 50,
+                  errorBuilder: (_, __, ___) =>
+                  const Icon(Icons.account_circle, size: 50))
+                  : const Icon(Icons.account_circle, size: 50),
+            ),
+            const SizedBox(width: 15),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Nickname: ${userChat.nickname}',
+                      style: const TextStyle(color: ColorConstants.primaryColor)),
+                  Text('About: ${userChat.aboutMe}',
+                      style: const TextStyle(color: ColorConstants.primaryColor)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          AppConstants.homeTitle,
-          style: TextStyle(color: ColorConstants.primaryColor),
-        ),
+        title: const Text(AppConstants.homeTitle,
+            style: TextStyle(color: ColorConstants.primaryColor)),
         centerTitle: true,
         actions: [_buildPopupMenu()],
       ),
@@ -473,31 +497,68 @@ class HomePageState extends State<HomePage> {
                 _buildSearchBar(),
                 _buildSearchTypeSelector(),
                 Expanded(
-                  child: StreamBuilder<QuerySnapshot>(
-                    stream: _homeProvider.searchUsers(
-                      _textSearch,
-                      _searchType,
-                      _limit,
-                    ),
+                  child: _textSearch.isEmpty
+                      ? StreamBuilder<QuerySnapshot>(
+                    stream: _friendProvider.getConversations(_currentUserId),
                     builder: (_, snapshot) {
                       if (snapshot.hasData) {
-                        if ((snapshot.data?.docs.length ?? 0) > 0) {
+                        if (snapshot.data!.docs.isNotEmpty) {
                           return ListView.builder(
-                            padding: const EdgeInsets.all(10),
-                            itemBuilder: (_, index) => _buildItem(snapshot.data?.docs[index]),
-                            itemCount: snapshot.data?.docs.length,
                             controller: _listScrollController,
+                            padding: const EdgeInsets.all(10),
+                            itemBuilder: (_, i) =>
+                                _buildConversationItem(snapshot.data?.docs[i]),
+                            itemCount: snapshot.data!.docs.length,
                           );
                         } else {
                           return const Center(
-                            child: Text("No users"),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.chat_bubble_outline,
+                                    size: 80, color: ColorConstants.greyColor),
+                                SizedBox(height: 16),
+                                Text("No conversations yet",
+                                    style: TextStyle(
+                                        color: ColorConstants.greyColor,
+                                        fontSize: 16)),
+                                SizedBox(height: 8),
+                                Text("Scan QR code to add friends",
+                                    style: TextStyle(
+                                        color: ColorConstants.greyColor,
+                                        fontSize: 14)),
+                              ],
+                            ),
                           );
                         }
                       } else {
                         return const Center(
                           child: CircularProgressIndicator(
-                            color: ColorConstants.themeColor,
-                          ),
+                              color: ColorConstants.themeColor),
+                        );
+                      }
+                    },
+                  )
+                      : StreamBuilder<QuerySnapshot>(
+                    stream: _homeProvider.searchUsers(
+                        _textSearch, _searchType, _limit),
+                    builder: (_, snapshot) {
+                      if (snapshot.hasData) {
+                        if (snapshot.data!.docs.isNotEmpty) {
+                          return ListView.builder(
+                            controller: _listScrollController,
+                            padding: const EdgeInsets.all(10),
+                            itemCount: snapshot.data!.docs.length,
+                            itemBuilder: (_, i) =>
+                                _buildItem(snapshot.data?.docs[i]),
+                          );
+                        } else {
+                          return const Center(child: Text("No users"));
+                        }
+                      } else {
+                        return const Center(
+                          child: CircularProgressIndicator(
+                              color: ColorConstants.themeColor),
                         );
                       }
                     },
@@ -505,9 +566,7 @@ class HomePageState extends State<HomePage> {
                 ),
               ],
             ),
-            Positioned(
-              child: _isLoading ? LoadingView() : const SizedBox.shrink(),
-            ),
+            if (_isLoading) LoadingView(),
           ],
         ),
       ),
@@ -527,5 +586,26 @@ class HomePageState extends State<HomePage> {
       ..removeListener(_scrollListener)
       ..dispose();
     super.dispose();
+  }
+
+
+  void _showNotification(RemoteNotification remoteNotification) async {
+    final androidDetails = AndroidNotificationDetails(
+      Platform.isAndroid ? 'com.dfa.flutterchatdemo' : 'com.duytq.flutterchatdemo',
+      'Flutter chat demo',
+      playSound: true,
+      enableVibration: true,
+      importance: Importance.max,
+      priority: Priority.high,
+    );
+    const iosDetails = DarwinNotificationDetails();
+    final details =
+    NotificationDetails(android: androidDetails, iOS: iosDetails);
+    await _flutterLocalNotificationsPlugin.show(
+      0,
+      remoteNotification.title,
+      remoteNotification.body,
+      details,
+    );
   }
 }
