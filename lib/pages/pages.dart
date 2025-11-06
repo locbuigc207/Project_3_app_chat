@@ -9,3 +9,4 @@ export 'qr_scanner_page.dart';
 export 'settings_page.dart';
 export 'splash_page.dart';
 export 'user_profile_page.dart';
+export 'notifications_page.dart';

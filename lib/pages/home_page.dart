@@ -434,16 +434,11 @@ class HomePageState extends State<HomePage> {
       margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
       child: TextButton(
         onPressed: () {
+          // Navigate to user profile instead of chat
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => ChatPage(
-                arguments: ChatPageArguments(
-                  peerId: userChat.id,
-                  peerAvatar: userChat.photoUrl,
-                  peerNickname: userChat.nickname,
-                ),
-              ),
+              builder: (_) => UserProfilePage(userChat: userChat),
             ),
           );
         },
@@ -487,7 +482,59 @@ class HomePageState extends State<HomePage> {
         title: const Text(AppConstants.homeTitle,
             style: TextStyle(color: ColorConstants.primaryColor)),
         centerTitle: true,
-        actions: [_buildPopupMenu()],
+        actions: [
+          // Notification button
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection(FirestoreConstants.pathFriendRequestCollection)
+                .where(FirestoreConstants.receiverId, isEqualTo: _currentUserId)
+                .where(FirestoreConstants.status, isEqualTo: 'pending')
+                .snapshots(),
+            builder: (_, snapshot) {
+              final pendingCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
+
+              return Stack(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.notifications),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const NotificationsPage()),
+                      );
+                    },
+                  ),
+                  if (pendingCount > 0)
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 18,
+                          minHeight: 18,
+                        ),
+                        child: Text(
+                          pendingCount > 9 ? '9+' : '$pendingCount',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+          _buildPopupMenu(),
+        ],
       ),
       body: SafeArea(
         child: Stack(
