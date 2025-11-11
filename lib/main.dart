@@ -4,15 +4,19 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_chat_demo/constants/app_constants.dart';
+import 'package:flutter_chat_demo/constants/color_constants.dart';
+import 'package:flutter_chat_demo/constants/app_themes.dart';
+import 'package:flutter_chat_demo/pages/pages.dart';
+import 'package:flutter_chat_demo/providers/providers.dart' hide PhoneAuthProvider;
+import 'package:flutter_chat_demo/providers/phone_auth_provider.dart' as custom_auth;
+import 'package:flutter_chat_demo/providers/friend_provider.dart';
+import 'package:flutter_chat_demo/providers/reaction_provider.dart';
+import 'package:flutter_chat_demo/providers/message_provider.dart';
+import 'package:flutter_chat_demo/providers/conversation_provider.dart';
+import 'package:flutter_chat_demo/providers/theme_provider.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-import 'constants/color_constants.dart';
-import 'pages/pages.dart';
-import 'providers/providers.dart' hide PhoneAuthProvider;
-import 'providers/phone_auth_provider.dart' as custom_auth;
-import 'providers/friend_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,7 +38,7 @@ class MyApp extends StatelessWidget {
 
     return MultiProvider(
       providers: [
-        /// Google Auth Provider
+        /// Auth Provider (Google)
         ChangeNotifierProvider<AuthProvider>(
           create: (_) => AuthProvider(
             firebaseAuth: firebaseAuth,
@@ -44,7 +48,7 @@ class MyApp extends StatelessWidget {
           ),
         ),
 
-        /// Phone Auth Provider
+        /// Phone Auth Provider (Custom)
         ChangeNotifierProvider<custom_auth.PhoneAuthProvider>(
           create: (_) => custom_auth.PhoneAuthProvider(
             firebaseAuth: firebaseAuth,
@@ -64,9 +68,7 @@ class MyApp extends StatelessWidget {
 
         /// Home Provider
         Provider<HomeProvider>(
-          create: (_) => HomeProvider(
-            firebaseFirestore: firebaseFirestore,
-          ),
+          create: (_) => HomeProvider(firebaseFirestore: firebaseFirestore),
         ),
 
         /// Chat Provider
@@ -80,19 +82,41 @@ class MyApp extends StatelessWidget {
 
         /// Friend Provider
         Provider<FriendProvider>(
-          create: (_) => FriendProvider(
-            firebaseFirestore: firebaseFirestore,
-          ),
+          create: (_) => FriendProvider(firebaseFirestore: firebaseFirestore),
+        ),
+
+        /// Reaction Provider (NEW)
+        Provider<ReactionProvider>(
+          create: (_) => ReactionProvider(firebaseFirestore: firebaseFirestore),
+        ),
+
+        /// Message Provider (NEW)
+        Provider<MessageProvider>(
+          create: (_) => MessageProvider(firebaseFirestore: firebaseFirestore),
+        ),
+
+        /// Conversation Provider (NEW)
+        Provider<ConversationProvider>(
+          create: (_) =>
+              ConversationProvider(firebaseFirestore: firebaseFirestore),
+        ),
+
+        /// Theme Provider (NEW)
+        ChangeNotifierProvider<ThemeProvider>(
+          create: (_) => ThemeProvider(prefs: prefs),
         ),
       ],
-      child: MaterialApp(
-        title: AppConstants.appTitle,
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          useMaterial3: true,
-          colorSchemeSeed: ColorConstants.themeColor,
-        ),
-        home: SplashPage(),
+      child: Consumer<ThemeProvider>(
+        builder: (context, themeProvider, child) {
+          return MaterialApp(
+            title: AppConstants.appTitle,
+            debugShowCheckedModeBanner: false,
+            themeMode: themeProvider.getFlutterThemeMode(context),
+            theme: AppThemes.lightTheme(themeProvider.getPrimaryColor()),
+            darkTheme: AppThemes.darkTheme(themeProvider.getPrimaryColor()),
+            home: SplashPage(),
+          );
+        },
       ),
     );
   }
