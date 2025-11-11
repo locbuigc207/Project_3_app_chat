@@ -1,6 +1,5 @@
 // lib/widgets/reaction_picker.dart
 import 'package:flutter/material.dart';
-import 'package:flutter_chat_demo/constants/constants.dart';
 
 class ReactionPicker extends StatelessWidget {
   final Function(String emoji) onEmojiSelected;
