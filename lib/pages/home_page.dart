@@ -6,11 +6,15 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_chat_demo/constants/constants.dart';
 import 'package:flutter_chat_demo/models/models.dart';
+import 'package:flutter_chat_demo/models/conversation.dart';
 import 'package:flutter_chat_demo/pages/pages.dart';
+import 'package:flutter_chat_demo/pages/theme_settings_page.dart';
 import 'package:flutter_chat_demo/providers/friend_provider.dart';
 import 'package:flutter_chat_demo/providers/providers.dart';
+import 'package:flutter_chat_demo/providers/conversation_provider.dart';
 import 'package:flutter_chat_demo/utils/utils.dart';
 import 'package:flutter_chat_demo/widgets/widgets.dart';
+import 'package:flutter_chat_demo/widgets/conversation_options_dialog.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:intl/intl.dart';
@@ -39,17 +43,13 @@ class HomePageState extends State<HomePage> {
   late final _homeProvider = context.read<HomeProvider>();
   late final String _currentUserId;
   late final FriendProvider _friendProvider;
+  late final ConversationProvider _conversationProvider;
 
   final _searchDebouncer = Debouncer(milliseconds: 300);
   final _btnClearController = StreamController<bool>();
   final _searchBarController = TextEditingController();
 
-  final _menus = <MenuSetting>[
-    const MenuSetting(title: 'Settings', icon: Icons.settings),
-    const MenuSetting(title: 'My QR Code', icon: Icons.qr_code),
-    const MenuSetting(title: 'Create Group', icon: Icons.group_add),
-    const MenuSetting(title: 'Log out', icon: Icons.exit_to_app),
-  ];
+  late final List<MenuSetting> _menus;
 
   @override
   void initState() {
@@ -65,6 +65,15 @@ class HomePageState extends State<HomePage> {
     }
 
     _friendProvider = FriendProvider(firebaseFirestore: _homeProvider.firebaseFirestore);
+    _conversationProvider = ConversationProvider(firebaseFirestore: _homeProvider.firebaseFirestore);
+
+    _menus = [
+      const MenuSetting(title: 'Settings', icon: Icons.settings),
+      const MenuSetting(title: 'Theme', icon: Icons.palette),
+      const MenuSetting(title: 'My QR Code', icon: Icons.qr_code),
+      const MenuSetting(title: 'Create Group', icon: Icons.group_add),
+      const MenuSetting(title: 'Log out', icon: Icons.exit_to_app),
+    ];
 
     _registerNotification();
     _configLocalNotification();
@@ -142,6 +151,9 @@ class HomePageState extends State<HomePage> {
         break;
       case 'Create Group':
         Navigator.push(context, MaterialPageRoute(builder: (_) => CreateGroupPage()));
+        break;
+      case 'Theme':
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const ThemeSettingsPage()));
         break;
       default:
         Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsPage()));
@@ -314,11 +326,59 @@ class HomePageState extends State<HomePage> {
     }
   }
 
+  void _showConversationOptions(Conversation conversation) {
+    showModalBottomSheet(
+      context: context,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => ConversationOptionsDialog(
+        isPinned: conversation.isPinned,
+        isMuted: conversation.isMuted,
+        onPin: () => _togglePinConversation(conversation),
+        onMute: () => _toggleMuteConversation(conversation),
+        onDelete: () => _deleteConversation(conversation.id),
+        onMarkAsRead: () {
+          // TODO: Implement mark as read
+          Fluttertoast.showToast(msg: 'Mark as read');
+        },
+      ),
+    );
+  }
+
+  Future<void> _togglePinConversation(Conversation conversation) async {
+    final success = await _conversationProvider.togglePinConversation(
+      conversation.id,
+      conversation.isPinned,
+    );
+    if (success) {
+      Fluttertoast.showToast(
+        msg: conversation.isPinned ? 'Conversation unpinned' : 'Conversation pinned',
+      );
+    }
+  }
+
+  Future<void> _toggleMuteConversation(Conversation conversation) async {
+    final success = await _conversationProvider.toggleMuteConversation(
+      conversation.id,
+      conversation.isMuted,
+    );
+    if (success) {
+      Fluttertoast.showToast(
+        msg: conversation.isMuted ? 'Conversation unmuted' : 'Conversation muted',
+      );
+    }
+  }
+
+  Future<void> _deleteConversation(String conversationId) async {
+    // TODO: Implement delete conversation
+    Fluttertoast.showToast(msg: 'Delete conversation');
+  }
+
   Widget _buildConversationItem(DocumentSnapshot? doc) {
     if (doc == null) return const SizedBox.shrink();
     final conversation = Conversation.fromDocument(doc);
 
-    // Check if this is a group conversation
     if (conversation.isGroup) {
       return FutureBuilder<DocumentSnapshot>(
         future: FirebaseFirestore.instance
@@ -331,64 +391,126 @@ class HomePageState extends State<HomePage> {
 
           return Container(
             margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 8),
-            child: TextButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => GroupChatPage(group: group),
-                  ),
-                );
-              },
-              style: ButtonStyle(
-                backgroundColor: WidgetStateProperty.all(ColorConstants.greyColor2),
-                shape: WidgetStateProperty.all(
-                    RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-              ),
-              child: Row(
-                children: [
-                  ClipOval(
-                    child: group.groupPhotoUrl.isNotEmpty
-                        ? Image.network(group.groupPhotoUrl,
-                        fit: BoxFit.cover,
-                        width: 50,
-                        height: 50,
-                        errorBuilder: (_, __, ___) => const Icon(
-                          Icons.group,
-                          size: 50,
-                          color: ColorConstants.primaryColor,
-                        ))
-                        : const Icon(Icons.group, size: 50, color: ColorConstants.primaryColor),
-                  ),
-                  const SizedBox(width: 15),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(group.groupName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                color: ColorConstants.primaryColor,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16)),
-                        const SizedBox(height: 4),
-                        Text(
-                          _getLastMessagePreview(
-                              conversation.lastMessage, conversation.lastMessageType),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: ColorConstants.greyColor, fontSize: 14),
-                        ),
-                      ],
+            decoration: BoxDecoration(
+              color: conversation.isPinned ? ColorConstants.primaryColor.withOpacity(0.05) : null,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => GroupChatPage(group: group),
                     ),
+                  );
+                },
+                onLongPress: () => _showConversationOptions(conversation),
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      Stack(
+                        children: [
+                          ClipOval(
+                            child: group.groupPhotoUrl.isNotEmpty
+                                ? Image.network(
+                              group.groupPhotoUrl,
+                              fit: BoxFit.cover,
+                              width: 50,
+                              height: 50,
+                              errorBuilder: (_, __, ___) => const Icon(
+                                Icons.group,
+                                size: 50,
+                                color: ColorConstants.primaryColor,
+                              ),
+                            )
+                                : const Icon(
+                              Icons.group,
+                              size: 50,
+                              color: ColorConstants.primaryColor,
+                            ),
+                          ),
+                          if (conversation.isMuted)
+                            Positioned(
+                              right: 0,
+                              bottom: 0,
+                              child: Container(
+                                padding: const EdgeInsets.all(2),
+                                decoration: const BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.volume_off,
+                                  size: 14,
+                                  color: ColorConstants.greyColor,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(width: 15),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                if (conversation.isPinned)
+                                  const Padding(
+                                    padding: EdgeInsets.only(right: 4),
+                                    child: Icon(
+                                      Icons.push_pin,
+                                      size: 14,
+                                      color: ColorConstants.primaryColor,
+                                    ),
+                                  ),
+                                Expanded(
+                                  child: Text(
+                                    group.groupName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: ColorConstants.primaryColor,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _getLastMessagePreview(
+                                conversation.lastMessage,
+                                conversation.lastMessageType,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: conversation.isMuted
+                                    ? ColorConstants.greyColor
+                                    : ColorConstants.greyColor,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _getTimeAgo(conversation.lastMessageTime),
+                        style: const TextStyle(
+                          color: ColorConstants.greyColor,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _getTimeAgo(conversation.lastMessageTime),
-                    style: const TextStyle(color: ColorConstants.greyColor, fontSize: 12),
-                  ),
-                ],
+                ),
               ),
             ),
           );
@@ -396,7 +518,6 @@ class HomePageState extends State<HomePage> {
       );
     }
 
-    // 1-1 conversation
     final otherUserId =
     conversation.participants.firstWhere((id) => id != _currentUserId, orElse: () => '');
     if (otherUserId.isEmpty) return const SizedBox.shrink();
@@ -412,81 +533,146 @@ class HomePageState extends State<HomePage> {
 
         return Container(
           margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 8),
-          child: TextButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ChatPage(
-                    arguments: ChatPageArguments(
-                      peerId: userChat.id,
-                      peerAvatar: userChat.photoUrl,
-                      peerNickname: userChat.nickname,
+          decoration: BoxDecoration(
+            color: conversation.isPinned ? ColorConstants.primaryColor.withOpacity(0.05) : null,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ChatPage(
+                      arguments: ChatPageArguments(
+                        peerId: userChat.id,
+                        peerAvatar: userChat.photoUrl,
+                        peerNickname: userChat.nickname,
+                      ),
                     ),
                   ),
-                ),
-              );
-            },
-            style: ButtonStyle(
-              backgroundColor: WidgetStateProperty.all(ColorConstants.greyColor2),
-              shape: WidgetStateProperty.all(
-                  RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-            ),
-            child: Row(
-              children: [
-                ClipOval(
-                  child: userChat.photoUrl.isNotEmpty
-                      ? Image.network(userChat.photoUrl,
-                      fit: BoxFit.cover,
-                      width: 50,
-                      height: 50,
-                      loadingBuilder: (_, child, loadingProgress) {
-                        if (loadingProgress == null) return child;
-                        return const SizedBox(
-                          width: 50,
-                          height: 50,
-                          child: Center(
-                            child: CircularProgressIndicator(
-                              color: ColorConstants.themeColor,
+                );
+              },
+              onLongPress: () => _showConversationOptions(conversation),
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    Stack(
+                      children: [
+                        ClipOval(
+                          child: userChat.photoUrl.isNotEmpty
+                              ? Image.network(
+                            userChat.photoUrl,
+                            fit: BoxFit.cover,
+                            width: 50,
+                            height: 50,
+                            loadingBuilder: (_, child, loadingProgress) {
+                              if (loadingProgress == null) return child;
+                              return const SizedBox(
+                                width: 50,
+                                height: 50,
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    color: ColorConstants.themeColor,
+                                  ),
+                                ),
+                              );
+                            },
+                            errorBuilder: (_, __, ___) {
+                              return const Icon(
+                                Icons.account_circle,
+                                size: 50,
+                                color: ColorConstants.greyColor,
+                              );
+                            },
+                          )
+                              : const Icon(
+                            Icons.account_circle,
+                            size: 50,
+                            color: ColorConstants.greyColor,
+                          ),
+                        ),
+                        if (conversation.isMuted)
+                          Positioned(
+                            right: 0,
+                            bottom: 0,
+                            child: Container(
+                              padding: const EdgeInsets.all(2),
+                              decoration: const BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.volume_off,
+                                size: 14,
+                                color: ColorConstants.greyColor,
+                              ),
                             ),
                           ),
-                        );
-                      },
-                      errorBuilder: (_, __, ___) {
-                        return const Icon(Icons.account_circle,
-                            size: 50, color: ColorConstants.greyColor);
-                      })
-                      : const Icon(Icons.account_circle, size: 50, color: ColorConstants.greyColor),
-                ),
-                const SizedBox(width: 15),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(userChat.nickname,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              color: ColorConstants.primaryColor,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16)),
-                      const SizedBox(height: 4),
-                      Text(
-                        _getLastMessagePreview(
-                            conversation.lastMessage, conversation.lastMessageType),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: ColorConstants.greyColor, fontSize: 14),
+                      ],
+                    ),
+                    const SizedBox(width: 15),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              if (conversation.isPinned)
+                                const Padding(
+                                  padding: EdgeInsets.only(right: 4),
+                                  child: Icon(
+                                    Icons.push_pin,
+                                    size: 14,
+                                    color: ColorConstants.primaryColor,
+                                  ),
+                                ),
+                              Expanded(
+                                child: Text(
+                                  userChat.nickname,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: ColorConstants.primaryColor,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _getLastMessagePreview(
+                              conversation.lastMessage,
+                              conversation.lastMessageType,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: conversation.isMuted
+                                  ? ColorConstants.greyColor
+                                  : ColorConstants.greyColor,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _getTimeAgo(conversation.lastMessageTime),
+                      style: const TextStyle(
+                        color: ColorConstants.greyColor,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  _getTimeAgo(conversation.lastMessageTime),
-                  style: const TextStyle(color: ColorConstants.greyColor, fontSize: 12),
-                ),
-              ],
+              ),
             ),
           ),
         );
@@ -545,11 +731,14 @@ class HomePageState extends State<HomePage> {
   }
 
   @override
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(AppConstants.homeTitle,
-            style: TextStyle(color: ColorConstants.primaryColor)),
+        title: const Text(
+          AppConstants.homeTitle,
+          style: TextStyle(color: ColorConstants.primaryColor),
+        ),
         centerTitle: true,
         actions: [
           StreamBuilder<QuerySnapshot>(
@@ -613,17 +802,17 @@ class HomePageState extends State<HomePage> {
                 _buildSearchTypeSelector(),
                 Expanded(
                   child: _textSearch.isEmpty
-                      ? StreamBuilder<QuerySnapshot>(
-                    stream: _friendProvider.getConversations(_currentUserId),
+                      ? StreamBuilder<List<QueryDocumentSnapshot>>(
+                    stream: _conversationProvider.getConversationsWithPinned(_currentUserId),
                     builder: (_, snapshot) {
                       if (snapshot.hasData) {
-                        if (snapshot.data!.docs.isNotEmpty) {
+                        final conversations = snapshot.data!;
+                        if (conversations.isNotEmpty) {
                           return ListView.builder(
                             controller: _listScrollController,
                             padding: const EdgeInsets.all(10),
-                            itemBuilder: (_, i) =>
-                                _buildConversationItem(snapshot.data?.docs[i]),
-                            itemCount: snapshot.data!.docs.length,
+                            itemCount: conversations.length,
+                            itemBuilder: (_, i) => _buildConversationItem(conversations[i]),
                           );
                         } else {
                           return const Center(
@@ -633,26 +822,32 @@ class HomePageState extends State<HomePage> {
                                 Icon(Icons.chat_bubble_outline,
                                     size: 80, color: ColorConstants.greyColor),
                                 SizedBox(height: 16),
-                                Text("No conversations yet",
-                                    style: TextStyle(
-                                        color: ColorConstants.greyColor, fontSize: 16)),
+                                Text(
+                                  "No conversations yet",
+                                  style: TextStyle(
+                                      color: ColorConstants.greyColor, fontSize: 16),
+                                ),
                                 SizedBox(height: 8),
-                                Text("Scan QR code to add friends",
-                                    style: TextStyle(
-                                        color: ColorConstants.greyColor, fontSize: 14)),
+                                Text(
+                                  "Scan QR code to add friends",
+                                  style: TextStyle(
+                                      color: ColorConstants.greyColor, fontSize: 14),
+                                ),
                               ],
                             ),
                           );
                         }
                       } else {
                         return const Center(
-                          child: CircularProgressIndicator(color: ColorConstants.themeColor),
+                          child: CircularProgressIndicator(
+                              color: ColorConstants.themeColor),
                         );
                       }
                     },
                   )
                       : StreamBuilder<QuerySnapshot>(
-                    stream: _homeProvider.searchUsers(_textSearch, _searchType, _limit),
+                    stream: _homeProvider.searchUsers(
+                        _textSearch, _searchType, _limit),
                     builder: (_, snapshot) {
                       if (snapshot.hasData) {
                         if (snapshot.data!.docs.isNotEmpty) {
@@ -660,14 +855,16 @@ class HomePageState extends State<HomePage> {
                             controller: _listScrollController,
                             padding: const EdgeInsets.all(10),
                             itemCount: snapshot.data!.docs.length,
-                            itemBuilder: (_, i) => _buildItem(snapshot.data?.docs[i]),
+                            itemBuilder: (_, i) =>
+                                _buildItem(snapshot.data?.docs[i]),
                           );
                         } else {
                           return const Center(child: Text("No users"));
                         }
                       } else {
                         return const Center(
-                          child: CircularProgressIndicator(color: ColorConstants.themeColor),
+                          child: CircularProgressIndicator(
+                              color: ColorConstants.themeColor),
                         );
                       }
                     },
@@ -686,6 +883,7 @@ class HomePageState extends State<HomePage> {
       ),
     );
   }
+
 
   @override
   void dispose() {
