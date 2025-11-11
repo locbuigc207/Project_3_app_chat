@@ -1,6 +1,7 @@
 export 'chat_page.dart';
 export 'create_group_page.dart';
 export 'full_photo_page.dart';
+export 'group_chat_page.dart';
 export 'home_page.dart';
 export 'login_page.dart';
 export 'phone_login_page.dart';

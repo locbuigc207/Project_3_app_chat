@@ -99,7 +99,40 @@ class _NotificationsPageState extends State<NotificationsPage> {
           .doc(request.requesterId)
           .get(),
       builder: (_, userSnapshot) {
-        if (!userSnapshot.hasData) {
+        if (userSnapshot.connectionState == ConnectionState.waiting) {
+          // Hiển thị khi đang tải dữ liệu người gửi
+          return Container(
+            margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 5,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: const Row(
+              children: [
+                CircularProgressIndicator(
+                  color: ColorConstants.themeColor,
+                ),
+                SizedBox(width: 12),
+                Text(
+                  'Loading...',
+                  style: TextStyle(
+                    color: ColorConstants.greyColor,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        if (!userSnapshot.hasData || userSnapshot.data == null) {
           return const SizedBox.shrink();
         }
 
@@ -149,7 +182,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      requester.nickname,
+                      requester.nickname.isEmpty ? 'User' : requester.nickname,
                       style: const TextStyle(
                         color: ColorConstants.primaryColor,
                         fontWeight: FontWeight.bold,
@@ -255,6 +288,29 @@ class _NotificationsPageState extends State<NotificationsPage> {
                 return const Center(
                   child: CircularProgressIndicator(
                     color: ColorConstants.themeColor,
+                  ),
+                );
+              }
+
+              if (snapshot.hasError) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        size: 60,
+                        color: Colors.red,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Error: ${snapshot.error}',
+                        style: const TextStyle(
+                          color: ColorConstants.greyColor,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
                   ),
                 );
               }

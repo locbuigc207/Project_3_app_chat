@@ -112,7 +112,6 @@ class HomePageState extends State<HomePage> {
     }
   }
 
-  // ======================= MENU ============================
   Widget _buildPopupMenu() {
     return PopupMenuButton<MenuSetting>(
       onSelected: _onItemMenuPress,
@@ -124,8 +123,7 @@ class HomePageState extends State<HomePage> {
               children: [
                 Icon(choice.icon, color: ColorConstants.primaryColor),
                 const SizedBox(width: 10),
-                Text(choice.title,
-                    style: const TextStyle(color: ColorConstants.primaryColor)),
+                Text(choice.title, style: const TextStyle(color: ColorConstants.primaryColor)),
               ],
             ),
           );
@@ -158,7 +156,6 @@ class HomePageState extends State<HomePage> {
     );
   }
 
-  // ======================= QR CODE ============================
   void _scanQRCode() async {
     final result = await Navigator.push(
       context,
@@ -188,7 +185,6 @@ class HomePageState extends State<HomePage> {
     }
   }
 
-  // ======================= SEARCH ============================
   Widget _buildSearchBar() {
     return Container(
       height: 40,
@@ -234,8 +230,7 @@ class HomePageState extends State<HomePage> {
                   _btnClearController.add(false);
                   setState(() => _textSearch = "");
                 },
-                child: const Icon(Icons.clear,
-                    color: ColorConstants.greyColor, size: 20),
+                child: const Icon(Icons.clear, color: ColorConstants.greyColor, size: 20),
               )
                   : const SizedBox.shrink();
             },
@@ -251,8 +246,7 @@ class HomePageState extends State<HomePage> {
       child: Row(
         children: [
           const Text('Search by:',
-              style: TextStyle(
-                  color: ColorConstants.primaryColor, fontWeight: FontWeight.bold)),
+              style: TextStyle(color: ColorConstants.primaryColor, fontWeight: FontWeight.bold)),
           const SizedBox(width: 8),
           Expanded(
             child: Row(
@@ -294,7 +288,6 @@ class HomePageState extends State<HomePage> {
     );
   }
 
-  // ======================= CONVERSATION ============================
   String _getLastMessagePreview(String message, int type) {
     if (type == TypeMessage.image) return '📷 Image';
     if (type == TypeMessage.sticker) return '😊 Sticker';
@@ -325,6 +318,85 @@ class HomePageState extends State<HomePage> {
     if (doc == null) return const SizedBox.shrink();
     final conversation = Conversation.fromDocument(doc);
 
+    // Check if this is a group conversation
+    if (conversation.isGroup) {
+      return FutureBuilder<DocumentSnapshot>(
+        future: FirebaseFirestore.instance
+            .collection(FirestoreConstants.pathGroupCollection)
+            .doc(conversation.id)
+            .get(),
+        builder: (_, snapshot) {
+          if (!snapshot.hasData) return const SizedBox.shrink();
+          final group = Group.fromDocument(snapshot.data!);
+
+          return Container(
+            margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 8),
+            child: TextButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => GroupChatPage(group: group),
+                  ),
+                );
+              },
+              style: ButtonStyle(
+                backgroundColor: WidgetStateProperty.all(ColorConstants.greyColor2),
+                shape: WidgetStateProperty.all(
+                    RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+              ),
+              child: Row(
+                children: [
+                  ClipOval(
+                    child: group.groupPhotoUrl.isNotEmpty
+                        ? Image.network(group.groupPhotoUrl,
+                        fit: BoxFit.cover,
+                        width: 50,
+                        height: 50,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.group,
+                          size: 50,
+                          color: ColorConstants.primaryColor,
+                        ))
+                        : const Icon(Icons.group, size: 50, color: ColorConstants.primaryColor),
+                  ),
+                  const SizedBox(width: 15),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(group.groupName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: ColorConstants.primaryColor,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16)),
+                        const SizedBox(height: 4),
+                        Text(
+                          _getLastMessagePreview(
+                              conversation.lastMessage, conversation.lastMessageType),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: ColorConstants.greyColor, fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _getTimeAgo(conversation.lastMessageTime),
+                    style: const TextStyle(color: ColorConstants.greyColor, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    }
+
+    // 1-1 conversation
     final otherUserId =
     conversation.participants.firstWhere((id) => id != _currentUserId, orElse: () => '');
     if (otherUserId.isEmpty) return const SizedBox.shrink();
@@ -384,37 +456,35 @@ class HomePageState extends State<HomePage> {
                         return const Icon(Icons.account_circle,
                             size: 50, color: ColorConstants.greyColor);
                       })
-                      : const Icon(Icons.account_circle,
-                      size: 50, color: ColorConstants.greyColor),
+                      : const Icon(Icons.account_circle, size: 50, color: ColorConstants.greyColor),
                 ),
                 const SizedBox(width: 15),
                 Expanded(
                   child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(userChat.nickname,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                color: ColorConstants.primaryColor,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16)),
-                        const SizedBox(height: 4),
-                        Text(
-                          _getLastMessagePreview(
-                              conversation.lastMessage, conversation.lastMessageType),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(userChat.nickname,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                              color: ColorConstants.greyColor, fontSize: 14),
-                        ),
-                      ]),
+                              color: ColorConstants.primaryColor,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16)),
+                      const SizedBox(height: 4),
+                      Text(
+                        _getLastMessagePreview(
+                            conversation.lastMessage, conversation.lastMessageType),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: ColorConstants.greyColor, fontSize: 14),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(width: 8),
                 Text(
                   _getTimeAgo(conversation.lastMessageTime),
-                  style:
-                  const TextStyle(color: ColorConstants.greyColor, fontSize: 12),
+                  style: const TextStyle(color: ColorConstants.greyColor, fontSize: 12),
                 ),
               ],
             ),
@@ -424,7 +494,6 @@ class HomePageState extends State<HomePage> {
     );
   }
 
-  // ======================= SEARCH RESULT ITEM ============================
   Widget _buildItem(DocumentSnapshot? document) {
     if (document == null) return const SizedBox.shrink();
     final userChat = UserChat.fromDocument(document);
@@ -434,7 +503,6 @@ class HomePageState extends State<HomePage> {
       margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
       child: TextButton(
         onPressed: () {
-          // Navigate to user profile instead of chat
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -452,9 +520,10 @@ class HomePageState extends State<HomePage> {
             ClipOval(
               child: userChat.photoUrl.isNotEmpty
                   ? Image.network(userChat.photoUrl,
-                  fit: BoxFit.cover, width: 50, height: 50,
-                  errorBuilder: (_, __, ___) =>
-                  const Icon(Icons.account_circle, size: 50))
+                  fit: BoxFit.cover,
+                  width: 50,
+                  height: 50,
+                  errorBuilder: (_, __, ___) => const Icon(Icons.account_circle, size: 50))
                   : const Icon(Icons.account_circle, size: 50),
             ),
             const SizedBox(width: 15),
@@ -483,7 +552,6 @@ class HomePageState extends State<HomePage> {
             style: TextStyle(color: ColorConstants.primaryColor)),
         centerTitle: true,
         actions: [
-          // Notification button
           StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
                 .collection(FirestoreConstants.pathFriendRequestCollection)
@@ -567,28 +635,24 @@ class HomePageState extends State<HomePage> {
                                 SizedBox(height: 16),
                                 Text("No conversations yet",
                                     style: TextStyle(
-                                        color: ColorConstants.greyColor,
-                                        fontSize: 16)),
+                                        color: ColorConstants.greyColor, fontSize: 16)),
                                 SizedBox(height: 8),
                                 Text("Scan QR code to add friends",
                                     style: TextStyle(
-                                        color: ColorConstants.greyColor,
-                                        fontSize: 14)),
+                                        color: ColorConstants.greyColor, fontSize: 14)),
                               ],
                             ),
                           );
                         }
                       } else {
                         return const Center(
-                          child: CircularProgressIndicator(
-                              color: ColorConstants.themeColor),
+                          child: CircularProgressIndicator(color: ColorConstants.themeColor),
                         );
                       }
                     },
                   )
                       : StreamBuilder<QuerySnapshot>(
-                    stream: _homeProvider.searchUsers(
-                        _textSearch, _searchType, _limit),
+                    stream: _homeProvider.searchUsers(_textSearch, _searchType, _limit),
                     builder: (_, snapshot) {
                       if (snapshot.hasData) {
                         if (snapshot.data!.docs.isNotEmpty) {
@@ -596,16 +660,14 @@ class HomePageState extends State<HomePage> {
                             controller: _listScrollController,
                             padding: const EdgeInsets.all(10),
                             itemCount: snapshot.data!.docs.length,
-                            itemBuilder: (_, i) =>
-                                _buildItem(snapshot.data?.docs[i]),
+                            itemBuilder: (_, i) => _buildItem(snapshot.data?.docs[i]),
                           );
                         } else {
                           return const Center(child: Text("No users"));
                         }
                       } else {
                         return const Center(
-                          child: CircularProgressIndicator(
-                              color: ColorConstants.themeColor),
+                          child: CircularProgressIndicator(color: ColorConstants.themeColor),
                         );
                       }
                     },
@@ -635,7 +697,6 @@ class HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-
   void _showNotification(RemoteNotification remoteNotification) async {
     final androidDetails = AndroidNotificationDetails(
       Platform.isAndroid ? 'com.dfa.flutterchatdemo' : 'com.duytq.flutterchatdemo',
@@ -646,8 +707,7 @@ class HomePageState extends State<HomePage> {
       priority: Priority.high,
     );
     const iosDetails = DarwinNotificationDetails();
-    final details =
-    NotificationDetails(android: androidDetails, iOS: iosDetails);
+    final details = NotificationDetails(android: androidDetails, iOS: iosDetails);
     await _flutterLocalNotificationsPlugin.show(
       0,
       remoteNotification.title,
