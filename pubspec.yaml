@@ -1,5 +1,4 @@
 name: flutter_chat_demo
-description: This is the demo for chat app by Flutter
 publish_to: 'none'
 
 version: 1.0.0
@@ -25,6 +24,9 @@ dependencies:
   qr_flutter: ^4.1.0
   mobile_scanner: ^5.0.0
   permission_handler: ^12.0.1
+  local_auth: ^2.3.0
+  timezone: ^0.10.1
+  http: ^1.5.0
 
 dev_dependencies:
   flutter_test:

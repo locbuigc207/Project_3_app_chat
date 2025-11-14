@@ -1,4 +1,3 @@
-// lib/pages/theme_settings_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_chat_demo/providers/theme_provider.dart';
 import 'package:provider/provider.dart';

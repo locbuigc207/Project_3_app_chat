@@ -1,4 +1,3 @@
-// lib/models/message_chat.dart (Updated)
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_chat_demo/constants/constants.dart';
 

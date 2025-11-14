@@ -7,22 +7,47 @@ import 'package:flutter_chat_demo/constants/constants.dart';
 import 'package:flutter_chat_demo/pages/pages.dart';
 import 'package:flutter_chat_demo/providers/providers.dart' hide PhoneAuthProvider;
 import 'package:flutter_chat_demo/providers/phone_auth_provider.dart' as custom_auth;
-import 'package:flutter_chat_demo/providers/providers.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:timezone/data/latest.dart' as tz;
+
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+
+  // Initialize timezone for scheduled notifications
+  tz.initializeTimeZones();
+
   final prefs = await SharedPreferences.getInstance();
-  runApp(MyApp(prefs: prefs));
+
+  // Initialize notifications
+  final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+  const initializationSettingsAndroid = AndroidInitializationSettings('app_icon');
+  const initializationSettingsIOS = DarwinInitializationSettings();
+  const initializationSettings = InitializationSettings(
+    android: initializationSettingsAndroid,
+    iOS: initializationSettingsIOS,
+  );
+  await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+
+  runApp(MyApp(
+    prefs: prefs,
+    notificationsPlugin: flutterLocalNotificationsPlugin,
+  ));
 }
 
 class MyApp extends StatelessWidget {
   final SharedPreferences prefs;
+  final FlutterLocalNotificationsPlugin notificationsPlugin;
 
-  const MyApp({required this.prefs, super.key});
+  const MyApp({
+    required this.prefs,
+    required this.notificationsPlugin,
+    super.key,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -79,25 +104,62 @@ class MyApp extends StatelessWidget {
           create: (_) => FriendProvider(firebaseFirestore: firebaseFirestore),
         ),
 
-        /// Reaction Provider (NEW)
+        /// Reaction Provider
         Provider<ReactionProvider>(
           create: (_) => ReactionProvider(firebaseFirestore: firebaseFirestore),
         ),
 
-        /// Message Provider (NEW)
+        /// Message Provider
         Provider<MessageProvider>(
           create: (_) => MessageProvider(firebaseFirestore: firebaseFirestore),
         ),
 
-        /// Conversation Provider (NEW)
+        /// Conversation Provider
         Provider<ConversationProvider>(
           create: (_) =>
               ConversationProvider(firebaseFirestore: firebaseFirestore),
         ),
 
-        /// Theme Provider (NEW)
+        /// Theme Provider
         ChangeNotifierProvider<ThemeProvider>(
           create: (_) => ThemeProvider(prefs: prefs),
+        ),
+
+        /// NEW PROVIDERS ///
+
+        /// Reminder Provider
+        Provider<ReminderProvider>(
+          create: (_) => ReminderProvider(
+            firebaseFirestore: firebaseFirestore,
+            notificationsPlugin: notificationsPlugin,
+          ),
+        ),
+
+        /// Auto Delete Provider
+        Provider<AutoDeleteProvider>(
+          create: (_) => AutoDeleteProvider(
+            firebaseFirestore: firebaseFirestore,
+          ),
+        ),
+
+        /// Conversation Lock Provider
+        Provider<ConversationLockProvider>(
+          create: (_) => ConversationLockProvider(
+            firebaseFirestore: firebaseFirestore,
+            prefs: prefs,
+          ),
+        ),
+
+        /// View Once Provider
+        Provider<ViewOnceProvider>(
+          create: (_) => ViewOnceProvider(
+            firebaseFirestore: firebaseFirestore,
+          ),
+        ),
+
+        /// Smart Reply Provider
+        Provider<SmartReplyProvider>(
+          create: (_) => SmartReplyProvider(),
         ),
       ],
       child: Consumer<ThemeProvider>(

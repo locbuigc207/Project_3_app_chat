@@ -1,4 +1,3 @@
-// lib/widgets/reaction_picker.dart
 import 'package:flutter/material.dart';
 
 class ReactionPicker extends StatelessWidget {
