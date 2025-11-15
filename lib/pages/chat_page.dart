@@ -482,117 +482,37 @@ class ChatPageState extends State<ChatPage> {
     }
   }
 
-  // Add new method for PIN verification:
-  Future<void> _showPINVerificationDialog({int failedAttempts = 0}) async {
-    final result = await showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => PINInputDialog(
-        title: 'Enter PIN to unlock',
-        errorMessage: failedAttempts > 0 ? 'Previous attempt failed' : null,
-        remainingAttempts: failedAttempts > 0 ? (5 - failedAttempts) : null,
-        onComplete: (pin) async {
-          // Verify PIN
-          final verifyResult = await _lockProvider.verifyPIN(
-            conversationId: _groupChatId,
-            enteredPin: pin,
-          );
+  // CRITICAL FIX for _checkConversationLock and _showPINVerificationDialog
+// Replace these methods in chat_page.dart
 
-          if (!mounted) return pin;
-
-          if (verifyResult['success'] == true) {
-            // PIN correct
-            Navigator.pop(context, pin);
-            _conversationLockedChecked = true;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Access granted'),
-                backgroundColor: Colors.green,
-                duration: Duration(seconds: 1),
-              ),
-            );
-          } else {
-            // PIN incorrect
-            Navigator.pop(context, null);
-
-            final newFailedAttempts = verifyResult['failedAttempts'] as int;
-
-            // Check if should auto-delete (5 failed attempts)
-            if (newFailedAttempts >= 5) {
-              // Show warning dialog
-              await showDialog(
-                context: context,
-                barrierDismissible: false,
-                builder: (context) => AlertDialog(
-                  title: Row(
-                    children: [
-                      Icon(Icons.warning, color: Colors.red),
-                      SizedBox(width: 8),
-                      Text('Security Alert'),
-                    ],
-                  ),
-                  content: Text(
-                    'Too many failed attempts.\nAll messages will be deleted for security.',
-                    style: TextStyle(color: Colors.red),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                      },
-                      child: Text('OK'),
-                    ),
-                  ],
-                ),
-              );
-
-              // Auto-delete messages
-              await _lockProvider.autoDeleteMessagesAfterFailedAttempts(
-                conversationId: _groupChatId,
-              );
-
-              if (mounted) {
-                Navigator.pop(context);
-              }
-              return null;
-            }
-
-            // Show error and retry
-            await _showPINVerificationDialog(
-              failedAttempts: newFailedAttempts,
-            );
-          }
-
-          return pin;
-        },
-      ),
-    );
-
-    if (result == null && mounted) {
-      // User cancelled
-      Navigator.pop(context);
-    }
-  }
-
-// Replace _checkConversationLock method:
   Future<void> _checkConversationLock() async {
-    if (_conversationLockedChecked) return;
+    if (_conversationLockedChecked) {
+      print('✅ Already checked lock status');
+      return;
+    }
 
     try {
+      print('🔍 Checking conversation lock...');
+
       final lockStatus =
           await _lockProvider.getConversationLockStatus(_groupChatId);
 
       if (lockStatus == null || lockStatus['isLocked'] != true) {
+        print('✅ No lock found or conversation not locked');
         _conversationLockedChecked = true;
         return;
       }
+
+      print('🔒 Conversation is locked');
 
       // Check if temporarily locked
       if (lockStatus['temporarilyLocked'] == true) {
         final lockedUntil = lockStatus['lockedUntil'] as DateTime?;
         if (lockedUntil != null && mounted) {
-          final remaining = lockedUntil.difference(DateTime.now()).inMinutes;
-          showDialog(
+          final remaining =
+              lockedUntil.difference(DateTime.now()).inMinutes + 1;
+
+          await showDialog(
             context: context,
             barrierDismissible: false,
             builder: (context) => AlertDialog(
@@ -609,8 +529,8 @@ class ChatPageState extends State<ChatPage> {
               actions: [
                 TextButton(
                   onPressed: () {
-                    Navigator.pop(context);
-                    Navigator.pop(context);
+                    Navigator.pop(context); // Close dialog
+                    Navigator.pop(context); // Exit chat page
                   },
                   child: Text('OK'),
                 ),
@@ -622,12 +542,135 @@ class ChatPageState extends State<ChatPage> {
       }
 
       // Show PIN input dialog
+      print('🔑 Showing PIN verification dialog...');
       await _showPINVerificationDialog(
         failedAttempts: lockStatus['failedAttempts'] ?? 0,
       );
     } catch (e) {
-      print('Error checking lock: $e');
+      print('❌ Error checking lock: $e');
       _conversationLockedChecked = true;
+    }
+  }
+
+  Future<void> _showPINVerificationDialog({int failedAttempts = 0}) async {
+    if (!mounted) return;
+
+    print('🔐 Showing PIN dialog with $failedAttempts failed attempts');
+
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => WillPopScope(
+        onWillPop: () async => false, // Prevent back button
+        child: PINInputDialog(
+          title: 'Enter PIN to unlock',
+          errorMessage: failedAttempts > 0 ? 'Previous attempt failed' : null,
+          remainingAttempts: failedAttempts > 0 ? (5 - failedAttempts) : null,
+          onComplete: (pin) async {
+            print('🔑 Verifying PIN: $pin');
+
+            // Verify PIN
+            final verifyResult = await _lockProvider.verifyPIN(
+              conversationId: _groupChatId,
+              enteredPin: pin,
+            );
+
+            print('🔍 Verify result: $verifyResult');
+
+            if (!mounted) return pin;
+
+            if (verifyResult['success'] == true) {
+              // PIN correct - CRITICAL: Close dialog with success
+              print('✅ PIN verified, closing dialog');
+              Navigator.pop(context, true); // Return true for success
+
+              if (mounted) {
+                _conversationLockedChecked = true;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Row(
+                      children: [
+                        Icon(Icons.check_circle, color: Colors.white),
+                        SizedBox(width: 8),
+                        Text('Access granted'),
+                      ],
+                    ),
+                    backgroundColor: Colors.green,
+                    duration: Duration(seconds: 1),
+                  ),
+                );
+              }
+            } else {
+              // PIN incorrect
+              print('❌ PIN incorrect');
+              Navigator.pop(context, false); // Return false for failure
+
+              final newFailedAttempts = verifyResult['failedAttempts'] as int;
+
+              // Check if should auto-delete (5 failed attempts)
+              if (newFailedAttempts >= 5) {
+                if (mounted) {
+                  // Show warning dialog
+                  await showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (context) => AlertDialog(
+                      title: Row(
+                        children: [
+                          Icon(Icons.warning, color: Colors.red),
+                          SizedBox(width: 8),
+                          Text('Security Alert'),
+                        ],
+                      ),
+                      content: Text(
+                        'Too many failed attempts.\nAll messages will be deleted for security.',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+                          },
+                          child: Text('OK'),
+                        ),
+                      ],
+                    ),
+                  );
+
+                  // Auto-delete messages
+                  print('🗑️ Triggering auto-delete...');
+                  await _lockProvider.autoDeleteMessagesAfterFailedAttempts(
+                    conversationId: _groupChatId,
+                  );
+
+                  if (mounted) {
+                    Navigator.pop(context); // Exit chat page
+                  }
+                }
+                return pin;
+              }
+
+              // Show error and retry
+              if (mounted) {
+                await Future.delayed(Duration(milliseconds: 300));
+                await _showPINVerificationDialog(
+                  failedAttempts: newFailedAttempts,
+                );
+              }
+            }
+
+            return pin;
+          },
+        ),
+      ),
+    );
+
+    // Handle dialog result
+    if (result != true && mounted) {
+      print('❌ PIN verification failed or cancelled');
+      Navigator.pop(context); // Exit chat page
+    } else {
+      print('✅ PIN verification successful');
     }
   }
 
