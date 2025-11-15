@@ -1,6 +1,7 @@
 // Smart Reply Widget
 import 'package:flutter/material.dart';
 import 'package:flutter_chat_demo/constants/constants.dart';
+import 'package:flutter_chat_demo/providers/providers.dart';
 
 class SmartReplyWidget extends StatelessWidget {
   final List<SmartReply> replies;

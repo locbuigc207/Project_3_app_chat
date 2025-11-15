@@ -1,4 +1,4 @@
-// lib/providers/reminder_provider.dart
+// lib/providers/reminder_provider.dart (FIXED - Working Notifications)
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
@@ -51,7 +51,7 @@ class ReminderProvider {
     required this.notificationsPlugin,
   });
 
-  // Schedule reminder
+  // Schedule reminder with proper notification
   Future<bool> scheduleReminder({
     required String userId,
     required String messageId,
@@ -60,6 +60,13 @@ class ReminderProvider {
     required String message,
   }) async {
     try {
+      // Ensure reminderTime is in the future
+      if (reminderTime.isBefore(DateTime.now())) {
+        print('Reminder time is in the past');
+        return false;
+      }
+
+      // Create reminder document
       final reminderDoc = await firebaseFirestore
           .collection('reminders')
           .add({
@@ -76,48 +83,66 @@ class ReminderProvider {
       await _scheduleNotification(
         id: reminderDoc.id.hashCode,
         title: 'Message Reminder',
-        body: message,
+        body: message.length > 50 ? '${message.substring(0, 50)}...' : message,
         scheduledDate: reminderTime,
       );
 
+      print(' Reminder scheduled for: $reminderTime');
       return true;
     } catch (e) {
-      print('Error scheduling reminder: $e');
+      print(' Error scheduling reminder: $e');
       return false;
     }
   }
 
-  // Schedule notification
+  // Schedule notification with timezone support
   Future<void> _scheduleNotification({
     required int id,
     required String title,
     required String body,
     required DateTime scheduledDate,
   }) async {
-    await notificationsPlugin.zonedSchedule(
-      id,
-      title,
-      body,
-      tz.TZDateTime.from(scheduledDate, tz.local),
-      const NotificationDetails(
-        android: AndroidNotificationDetails(
-          'message_reminders',
-          'Message Reminders',
-          channelDescription: 'Reminders for messages',
-          importance: Importance.high,
-          priority: Priority.high,
-          icon: 'app_icon',
+    try {
+      // Convert to TZ DateTime
+      final tz.TZDateTime scheduledTZ = tz.TZDateTime.from(
+        scheduledDate,
+        tz.local,
+      );
+
+      print(' Scheduling notification for: $scheduledTZ');
+
+      await notificationsPlugin.zonedSchedule(
+        id,
+        title,
+        body,
+        scheduledTZ,
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'message_reminders',
+            'Message Reminders',
+            channelDescription: 'Reminders for messages',
+            importance: Importance.high,
+            priority: Priority.high,
+            icon: 'app_icon',
+            playSound: true,
+            enableVibration: true,
+          ),
+          iOS: DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+            sound: 'default',
+          ),
         ),
-        iOS: DarwinNotificationDetails(
-          presentAlert: true,
-          presentBadge: true,
-          presentSound: true,
-        ),
-      ),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-      UILocalNotificationDateInterpretation.absoluteTime,
-    );
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      );
+
+
+      print(' Notification scheduled successfully');
+    } catch (e) {
+      print(' Error scheduling notification: $e');
+      rethrow;
+    }
   }
 
   // Get user reminders
@@ -141,9 +166,10 @@ class ReminderProvider {
       // Cancel notification
       await notificationsPlugin.cancel(reminderId.hashCode);
 
+      print(' Reminder completed');
       return true;
     } catch (e) {
-      print('Error completing reminder: $e');
+      print(' Error completing reminder: $e');
       return false;
     }
   }
@@ -160,29 +186,34 @@ class ReminderProvider {
 
       return true;
     } catch (e) {
-      print('Error deleting reminder: $e');
+      print(' Error deleting reminder: $e');
       return false;
     }
   }
 
-  // Check and trigger expired reminders
+  // Check and clean expired reminders
   Future<void> checkExpiredReminders(String userId) async {
-    final now = DateTime.now();
-    final reminders = await firebaseFirestore
-        .collection('reminders')
-        .where('userId', isEqualTo: userId)
-        .where('isCompleted', isEqualTo: false)
-        .get();
+    try {
+      final now = DateTime.now();
+      final reminders = await firebaseFirestore
+          .collection('reminders')
+          .where('userId', isEqualTo: userId)
+          .where('isCompleted', isEqualTo: false)
+          .get();
 
-    for (var doc in reminders.docs) {
-      final reminder = MessageReminder.fromDocument(doc);
-      final reminderTime = DateTime.fromMillisecondsSinceEpoch(
-        int.parse(reminder.reminderTime),
-      );
+      for (var doc in reminders.docs) {
+        final reminder = MessageReminder.fromDocument(doc);
+        final reminderTime = DateTime.fromMillisecondsSinceEpoch(
+          int.parse(reminder.reminderTime),
+        );
 
-      if (reminderTime.isBefore(now)) {
-        await completeReminder(reminder.id);
+        // Auto-complete if time has passed
+        if (reminderTime.isBefore(now)) {
+          await completeReminder(reminder.id);
+        }
       }
+    } catch (e) {
+      print('Error checking expired reminders: $e');
     }
   }
 }

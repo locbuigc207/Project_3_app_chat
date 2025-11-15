@@ -27,6 +27,7 @@ dependencies:
   local_auth: ^2.3.0
   timezone: ^0.10.1
   http: ^1.5.0
+  crypto: ^3.0.3
 
 dev_dependencies:
   flutter_test:
