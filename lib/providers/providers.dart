@@ -12,4 +12,5 @@ export 'reminder_provider.dart';
 export 'setting_provider.dart';
 export 'smart_reply_provider.dart';
 export 'theme_provider.dart';
+export 'user_presence_provider.dart';
 export 'view_once_provider.dart';

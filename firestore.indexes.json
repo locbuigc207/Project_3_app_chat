@@ -335,6 +335,14 @@
         { "fieldPath": "conversationId", "order": "ASCENDING" },
         { "fieldPath": "failedAttempts", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isOnline", "order": "DESCENDING" },
+        { "fieldPath": "lastSeen", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

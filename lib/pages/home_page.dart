@@ -55,12 +55,14 @@ class HomePageState extends State<HomePage> {
     } else {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => LoginPage()),
-            (_) => false,
+        (_) => false,
       );
     }
 
-    _friendProvider = FriendProvider(firebaseFirestore: _homeProvider.firebaseFirestore);
-    _conversationProvider = ConversationProvider(firebaseFirestore: _homeProvider.firebaseFirestore);
+    _friendProvider =
+        FriendProvider(firebaseFirestore: _homeProvider.firebaseFirestore);
+    _conversationProvider = ConversationProvider(
+        firebaseFirestore: _homeProvider.firebaseFirestore);
 
     _menus = [
       const MenuSetting(title: 'Settings', icon: Icons.settings),
@@ -98,7 +100,8 @@ class HomePageState extends State<HomePage> {
   }
 
   void _configLocalNotification() {
-    const initializationSettingsAndroid = AndroidInitializationSettings('app_icon');
+    const initializationSettingsAndroid =
+        AndroidInitializationSettings('app_icon');
     const initializationSettingsIOS = DarwinInitializationSettings();
     const initializationSettings = InitializationSettings(
       android: initializationSettingsAndroid,
@@ -108,7 +111,8 @@ class HomePageState extends State<HomePage> {
   }
 
   void _scrollListener() {
-    if (_listScrollController.offset >= _listScrollController.position.maxScrollExtent &&
+    if (_listScrollController.offset >=
+            _listScrollController.position.maxScrollExtent &&
         !_listScrollController.position.outOfRange) {
       setState(() {
         _limit += _limitIncrement;
@@ -127,7 +131,8 @@ class HomePageState extends State<HomePage> {
               children: [
                 Icon(choice.icon, color: ColorConstants.primaryColor),
                 const SizedBox(width: 10),
-                Text(choice.title, style: const TextStyle(color: ColorConstants.primaryColor)),
+                Text(choice.title,
+                    style: const TextStyle(color: ColorConstants.primaryColor)),
               ],
             ),
           );
@@ -142,16 +147,20 @@ class HomePageState extends State<HomePage> {
         _handleSignOut();
         break;
       case 'My QR Code':
-        Navigator.push(context, MaterialPageRoute(builder: (_) => const MyQRCodePage()));
+        Navigator.push(
+            context, MaterialPageRoute(builder: (_) => const MyQRCodePage()));
         break;
       case 'Create Group':
-        Navigator.push(context, MaterialPageRoute(builder: (_) => CreateGroupPage()));
+        Navigator.push(
+            context, MaterialPageRoute(builder: (_) => CreateGroupPage()));
         break;
       case 'Theme':
-        Navigator.push(context, MaterialPageRoute(builder: (_) => const ThemeSettingsPage()));
+        Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const ThemeSettingsPage()));
         break;
       default:
-        Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsPage()));
+        Navigator.push(
+            context, MaterialPageRoute(builder: (_) => const SettingsPage()));
     }
   }
 
@@ -159,7 +168,7 @@ class HomePageState extends State<HomePage> {
     await _authProvider.handleSignOut();
     await Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => LoginPage()),
-          (_) => false,
+      (_) => false,
     );
   }
 
@@ -222,7 +231,8 @@ class HomePageState extends State<HomePage> {
               },
               decoration: const InputDecoration.collapsed(
                 hintText: 'Search...',
-                hintStyle: TextStyle(fontSize: 13, color: ColorConstants.greyColor),
+                hintStyle:
+                    TextStyle(fontSize: 13, color: ColorConstants.greyColor),
               ),
               style: const TextStyle(fontSize: 13),
             ),
@@ -232,13 +242,14 @@ class HomePageState extends State<HomePage> {
             builder: (_, snapshot) {
               return snapshot.data == true
                   ? GestureDetector(
-                onTap: () {
-                  _searchBarController.clear();
-                  _btnClearController.add(false);
-                  setState(() => _textSearch = "");
-                },
-                child: const Icon(Icons.clear, color: ColorConstants.greyColor, size: 20),
-              )
+                      onTap: () {
+                        _searchBarController.clear();
+                        _btnClearController.add(false);
+                        setState(() => _textSearch = "");
+                      },
+                      child: const Icon(Icons.clear,
+                          color: ColorConstants.greyColor, size: 20),
+                    )
                   : const SizedBox.shrink();
             },
           ),
@@ -253,16 +264,24 @@ class HomePageState extends State<HomePage> {
       child: Row(
         children: [
           const Text('Search by:',
-              style: TextStyle(color: ColorConstants.primaryColor, fontWeight: FontWeight.bold)),
+              style: TextStyle(
+                  color: ColorConstants.primaryColor,
+                  fontWeight: FontWeight.bold)),
           const SizedBox(width: 8),
           Expanded(
             child: Row(
               children: [
-                Expanded(child: _buildSearchTypeButton(SearchType.nickname, 'Nickname')),
+                Expanded(
+                    child: _buildSearchTypeButton(
+                        SearchType.nickname, 'Nickname')),
                 const SizedBox(width: 5),
-                Expanded(child: _buildSearchTypeButton(SearchType.phoneNumber, 'Phone')),
+                Expanded(
+                    child: _buildSearchTypeButton(
+                        SearchType.phoneNumber, 'Phone')),
                 const SizedBox(width: 5),
-                Expanded(child: _buildSearchTypeButton(SearchType.qrCode, 'QR Code')),
+                Expanded(
+                    child:
+                        _buildSearchTypeButton(SearchType.qrCode, 'QR Code')),
               ],
             ),
           ),
@@ -278,7 +297,9 @@ class HomePageState extends State<HomePage> {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
         decoration: BoxDecoration(
-          color: isSelected ? ColorConstants.primaryColor : ColorConstants.greyColor2,
+          color: isSelected
+              ? ColorConstants.primaryColor
+              : ColorConstants.greyColor2,
           borderRadius: BorderRadius.circular(10),
         ),
         child: Center(
@@ -295,6 +316,38 @@ class HomePageState extends State<HomePage> {
     );
   }
 
+  Widget _buildOnlineFriendsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              Icon(
+                Icons.people,
+                size: 20,
+                color: ColorConstants.primaryColor,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Online Friends',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: ColorConstants.primaryColor,
+                ),
+              ),
+            ],
+          ),
+        ),
+        OnlineFriendsBar(currentUserId: _currentUserId),
+        const SizedBox(height: 8),
+        Divider(height: 1, thickness: 1),
+      ],
+    );
+  }
+
   String _getLastMessagePreview(String message, int type) {
     if (type == TypeMessage.image) return '📷 Image';
     if (type == TypeMessage.sticker) return '😊 Sticker';
@@ -303,7 +356,8 @@ class HomePageState extends State<HomePage> {
 
   String _getTimeAgo(String timestamp) {
     try {
-      final messageTime = DateTime.fromMillisecondsSinceEpoch(int.parse(timestamp));
+      final messageTime =
+          DateTime.fromMillisecondsSinceEpoch(int.parse(timestamp));
       final now = DateTime.now();
       final diff = now.difference(messageTime);
 
@@ -348,7 +402,9 @@ class HomePageState extends State<HomePage> {
     );
     if (success) {
       Fluttertoast.showToast(
-        msg: conversation.isPinned ? 'Conversation unpinned' : 'Conversation pinned',
+        msg: conversation.isPinned
+            ? 'Conversation unpinned'
+            : 'Conversation pinned',
       );
     }
   }
@@ -360,7 +416,9 @@ class HomePageState extends State<HomePage> {
     );
     if (success) {
       Fluttertoast.showToast(
-        msg: conversation.isMuted ? 'Conversation unmuted' : 'Conversation muted',
+        msg: conversation.isMuted
+            ? 'Conversation unmuted'
+            : 'Conversation muted',
       );
     }
   }
@@ -387,7 +445,9 @@ class HomePageState extends State<HomePage> {
           return Container(
             margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 8),
             decoration: BoxDecoration(
-              color: conversation.isPinned ? ColorConstants.primaryColor.withOpacity(0.05) : null,
+              color: conversation.isPinned
+                  ? ColorConstants.primaryColor.withOpacity(0.05)
+                  : null,
               borderRadius: BorderRadius.circular(10),
             ),
             child: Material(
@@ -412,21 +472,21 @@ class HomePageState extends State<HomePage> {
                           ClipOval(
                             child: group.groupPhotoUrl.isNotEmpty
                                 ? Image.network(
-                              group.groupPhotoUrl,
-                              fit: BoxFit.cover,
-                              width: 50,
-                              height: 50,
-                              errorBuilder: (_, __, ___) => const Icon(
-                                Icons.group,
-                                size: 50,
-                                color: ColorConstants.primaryColor,
-                              ),
-                            )
+                                    group.groupPhotoUrl,
+                                    fit: BoxFit.cover,
+                                    width: 50,
+                                    height: 50,
+                                    errorBuilder: (_, __, ___) => const Icon(
+                                      Icons.group,
+                                      size: 50,
+                                      color: ColorConstants.primaryColor,
+                                    ),
+                                  )
                                 : const Icon(
-                              Icons.group,
-                              size: 50,
-                              color: ColorConstants.primaryColor,
-                            ),
+                                    Icons.group,
+                                    size: 50,
+                                    color: ColorConstants.primaryColor,
+                                  ),
                           ),
                           if (conversation.isMuted)
                             Positioned(
@@ -513,8 +573,8 @@ class HomePageState extends State<HomePage> {
       );
     }
 
-    final otherUserId =
-    conversation.participants.firstWhere((id) => id != _currentUserId, orElse: () => '');
+    final otherUserId = conversation.participants
+        .firstWhere((id) => id != _currentUserId, orElse: () => '');
     if (otherUserId.isEmpty) return const SizedBox.shrink();
 
     return FutureBuilder<DocumentSnapshot>(
@@ -529,7 +589,9 @@ class HomePageState extends State<HomePage> {
         return Container(
           margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 8),
           decoration: BoxDecoration(
-            color: conversation.isPinned ? ColorConstants.primaryColor.withOpacity(0.05) : null,
+            color: conversation.isPinned
+                ? ColorConstants.primaryColor.withOpacity(0.05)
+                : null,
             borderRadius: BorderRadius.circular(10),
           ),
           child: Material(
@@ -560,35 +622,35 @@ class HomePageState extends State<HomePage> {
                         ClipOval(
                           child: userChat.photoUrl.isNotEmpty
                               ? Image.network(
-                            userChat.photoUrl,
-                            fit: BoxFit.cover,
-                            width: 50,
-                            height: 50,
-                            loadingBuilder: (_, child, loadingProgress) {
-                              if (loadingProgress == null) return child;
-                              return const SizedBox(
-                                width: 50,
-                                height: 50,
-                                child: Center(
-                                  child: CircularProgressIndicator(
-                                    color: ColorConstants.themeColor,
-                                  ),
-                                ),
-                              );
-                            },
-                            errorBuilder: (_, __, ___) {
-                              return const Icon(
-                                Icons.account_circle,
-                                size: 50,
-                                color: ColorConstants.greyColor,
-                              );
-                            },
-                          )
+                                  userChat.photoUrl,
+                                  fit: BoxFit.cover,
+                                  width: 50,
+                                  height: 50,
+                                  loadingBuilder: (_, child, loadingProgress) {
+                                    if (loadingProgress == null) return child;
+                                    return const SizedBox(
+                                      width: 50,
+                                      height: 50,
+                                      child: Center(
+                                        child: CircularProgressIndicator(
+                                          color: ColorConstants.themeColor,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  errorBuilder: (_, __, ___) {
+                                    return const Icon(
+                                      Icons.account_circle,
+                                      size: 50,
+                                      color: ColorConstants.greyColor,
+                                    );
+                                  },
+                                )
                               : const Icon(
-                            Icons.account_circle,
-                            size: 50,
-                            color: ColorConstants.greyColor,
-                          ),
+                                  Icons.account_circle,
+                                  size: 50,
+                                  color: ColorConstants.greyColor,
+                                ),
                         ),
                         if (conversation.isMuted)
                           Positioned(
@@ -701,10 +763,11 @@ class HomePageState extends State<HomePage> {
             ClipOval(
               child: userChat.photoUrl.isNotEmpty
                   ? Image.network(userChat.photoUrl,
-                  fit: BoxFit.cover,
-                  width: 50,
-                  height: 50,
-                  errorBuilder: (_, __, ___) => const Icon(Icons.account_circle, size: 50))
+                      fit: BoxFit.cover,
+                      width: 50,
+                      height: 50,
+                      errorBuilder: (_, __, ___) =>
+                          const Icon(Icons.account_circle, size: 50))
                   : const Icon(Icons.account_circle, size: 50),
             ),
             const SizedBox(width: 15),
@@ -713,9 +776,11 @@ class HomePageState extends State<HomePage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('Nickname: ${userChat.nickname}',
-                      style: const TextStyle(color: ColorConstants.primaryColor)),
+                      style:
+                          const TextStyle(color: ColorConstants.primaryColor)),
                   Text('About: ${userChat.aboutMe}',
-                      style: const TextStyle(color: ColorConstants.primaryColor)),
+                      style:
+                          const TextStyle(color: ColorConstants.primaryColor)),
                 ],
               ),
             ),
@@ -743,7 +808,8 @@ class HomePageState extends State<HomePage> {
                 .where(FirestoreConstants.status, isEqualTo: 'pending')
                 .snapshots(),
             builder: (_, snapshot) {
-              final pendingCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
+              final pendingCount =
+                  snapshot.hasData ? snapshot.data!.docs.length : 0;
 
               return Stack(
                 children: [
@@ -752,7 +818,8 @@ class HomePageState extends State<HomePage> {
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const NotificationsPage()),
+                        MaterialPageRoute(
+                            builder: (_) => const NotificationsPage()),
                       );
                     },
                   ),
@@ -795,75 +862,81 @@ class HomePageState extends State<HomePage> {
               children: [
                 _buildSearchBar(),
                 _buildSearchTypeSelector(),
+                if (_textSearch.isEmpty) _buildOnlineFriendsSection(),
                 Expanded(
                   child: _textSearch.isEmpty
                       ? StreamBuilder<List<QueryDocumentSnapshot>>(
-                    stream: _conversationProvider.getConversationsWithPinned(_currentUserId),
-                    builder: (_, snapshot) {
-                      if (snapshot.hasData) {
-                        final conversations = snapshot.data!;
-                        if (conversations.isNotEmpty) {
-                          return ListView.builder(
-                            controller: _listScrollController,
-                            padding: const EdgeInsets.all(10),
-                            itemCount: conversations.length,
-                            itemBuilder: (_, i) => _buildConversationItem(conversations[i]),
-                          );
-                        } else {
-                          return const Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.chat_bubble_outline,
-                                    size: 80, color: ColorConstants.greyColor),
-                                SizedBox(height: 16),
-                                Text(
-                                  "No conversations yet",
-                                  style: TextStyle(
-                                      color: ColorConstants.greyColor, fontSize: 16),
-                                ),
-                                SizedBox(height: 8),
-                                Text(
-                                  "Scan QR code to add friends",
-                                  style: TextStyle(
-                                      color: ColorConstants.greyColor, fontSize: 14),
-                                ),
-                              ],
-                            ),
-                          );
-                        }
-                      } else {
-                        return const Center(
-                          child: CircularProgressIndicator(
-                              color: ColorConstants.themeColor),
-                        );
-                      }
-                    },
-                  )
+                          stream: _conversationProvider
+                              .getConversationsWithPinned(_currentUserId),
+                          builder: (_, snapshot) {
+                            if (snapshot.hasData) {
+                              final conversations = snapshot.data!;
+                              if (conversations.isNotEmpty) {
+                                return ListView.builder(
+                                  controller: _listScrollController,
+                                  padding: const EdgeInsets.all(10),
+                                  itemCount: conversations.length,
+                                  itemBuilder: (_, i) =>
+                                      _buildConversationItem(conversations[i]),
+                                );
+                              } else {
+                                return const Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.chat_bubble_outline,
+                                          size: 80,
+                                          color: ColorConstants.greyColor),
+                                      SizedBox(height: 16),
+                                      Text(
+                                        "No conversations yet",
+                                        style: TextStyle(
+                                            color: ColorConstants.greyColor,
+                                            fontSize: 16),
+                                      ),
+                                      SizedBox(height: 8),
+                                      Text(
+                                        "Scan QR code to add friends",
+                                        style: TextStyle(
+                                            color: ColorConstants.greyColor,
+                                            fontSize: 14),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }
+                            } else {
+                              return const Center(
+                                child: CircularProgressIndicator(
+                                    color: ColorConstants.themeColor),
+                              );
+                            }
+                          },
+                        )
                       : StreamBuilder<QuerySnapshot>(
-                    stream: _homeProvider.searchUsers(
-                        _textSearch, _searchType, _limit),
-                    builder: (_, snapshot) {
-                      if (snapshot.hasData) {
-                        if (snapshot.data!.docs.isNotEmpty) {
-                          return ListView.builder(
-                            controller: _listScrollController,
-                            padding: const EdgeInsets.all(10),
-                            itemCount: snapshot.data!.docs.length,
-                            itemBuilder: (_, i) =>
-                                _buildItem(snapshot.data?.docs[i]),
-                          );
-                        } else {
-                          return const Center(child: Text("No users"));
-                        }
-                      } else {
-                        return const Center(
-                          child: CircularProgressIndicator(
-                              color: ColorConstants.themeColor),
-                        );
-                      }
-                    },
-                  ),
+                          stream: _homeProvider.searchUsers(
+                              _textSearch, _searchType, _limit),
+                          builder: (_, snapshot) {
+                            if (snapshot.hasData) {
+                              if (snapshot.data!.docs.isNotEmpty) {
+                                return ListView.builder(
+                                  controller: _listScrollController,
+                                  padding: const EdgeInsets.all(10),
+                                  itemCount: snapshot.data!.docs.length,
+                                  itemBuilder: (_, i) =>
+                                      _buildItem(snapshot.data?.docs[i]),
+                                );
+                              } else {
+                                return const Center(child: Text("No users"));
+                              }
+                            } else {
+                              return const Center(
+                                child: CircularProgressIndicator(
+                                    color: ColorConstants.themeColor),
+                              );
+                            }
+                          },
+                        ),
                 ),
               ],
             ),
@@ -879,7 +952,6 @@ class HomePageState extends State<HomePage> {
     );
   }
 
-
   @override
   void dispose() {
     _btnClearController.close();
@@ -892,7 +964,9 @@ class HomePageState extends State<HomePage> {
 
   void _showNotification(RemoteNotification remoteNotification) async {
     final androidDetails = AndroidNotificationDetails(
-      Platform.isAndroid ? 'com.dfa.flutterchatdemo' : 'com.duytq.flutterchatdemo',
+      Platform.isAndroid
+          ? 'com.dfa.flutterchatdemo'
+          : 'com.duytq.flutterchatdemo',
       'Flutter chat demo',
       playSound: true,
       enableVibration: true,
@@ -900,7 +974,8 @@ class HomePageState extends State<HomePage> {
       priority: Priority.high,
     );
     const iosDetails = DarwinNotificationDetails();
-    final details = NotificationDetails(android: androidDetails, iOS: iosDetails);
+    final details =
+        NotificationDetails(android: androidDetails, iOS: iosDetails);
     await _flutterLocalNotificationsPlugin.show(
       0,
       remoteNotification.title,

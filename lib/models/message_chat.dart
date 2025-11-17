@@ -10,6 +10,8 @@ class MessageChat {
   final bool isDeleted;
   final String? editedAt;
   final bool isPinned;
+  final bool isRead; // THÊM FIELD MỚI
+  final String? readAt; // THÊM FIELD MỚI
 
   const MessageChat({
     required this.idFrom,
@@ -20,6 +22,8 @@ class MessageChat {
     this.isDeleted = false,
     this.editedAt,
     this.isPinned = false,
+    this.isRead = false, // THÊM FIELD MỚI
+    this.readAt, // THÊM FIELD MỚI
   });
 
   Map<String, dynamic> toJson() {
@@ -32,25 +36,32 @@ class MessageChat {
       'isDeleted': isDeleted,
       'editedAt': editedAt,
       'isPinned': isPinned,
+      'isRead': isRead, // THÊM FIELD MỚI
+      'readAt': readAt, // THÊM FIELD MỚI
     };
   }
 
   factory MessageChat.fromDocument(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>?;
+
     return MessageChat(
       idFrom: doc.get(FirestoreConstants.idFrom),
       idTo: doc.get(FirestoreConstants.idTo),
       timestamp: doc.get(FirestoreConstants.timestamp),
       content: doc.get(FirestoreConstants.content),
       type: doc.get(FirestoreConstants.type),
-      isDeleted: doc.data().toString().contains('isDeleted')
-          ? doc.get('isDeleted')
+      isDeleted:
+          data?.containsKey('isDeleted') == true ? doc.get('isDeleted') : false,
+      editedAt:
+          data?.containsKey('editedAt') == true ? doc.get('editedAt') : null,
+      isPinned:
+          data?.containsKey('isPinned') == true ? doc.get('isPinned') : false,
+      isRead: data?.containsKey('isRead') == true // THÊM FIELD MỚI
+          ? doc.get('isRead')
           : false,
-      editedAt: doc.data().toString().contains('editedAt')
-          ? doc.get('editedAt')
+      readAt: data?.containsKey('readAt') == true // THÊM FIELD MỚI
+          ? doc.get('readAt')
           : null,
-      isPinned: doc.data().toString().contains('isPinned')
-          ? doc.get('isPinned')
-          : false,
     );
   }
 }

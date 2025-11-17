@@ -1,4 +1,3 @@
-// chat_page.dart (FIXED VERSION)
 import 'dart:async';
 import 'dart:io';
 
@@ -27,8 +26,10 @@ class ChatPage extends StatefulWidget {
 }
 
 class ChatPageState extends State<ChatPage> {
-  // Basic state from original file
   late final String _currentUserId;
+  late UserPresenceProvider _presenceProvider;
+  Timer? _typingTimer;
+  bool _isTyping = false;
 
   List<QueryDocumentSnapshot> _listMessage = [];
   int _limit = 20;
@@ -44,7 +45,6 @@ class ChatPageState extends State<ChatPage> {
   final _listScrollController = ScrollController();
   final _focusNode = FocusNode();
 
-  // Providers
   late ChatProvider _chatProvider;
   late AuthProvider _authProvider;
   late MessageProvider _messageProvider;
@@ -77,6 +77,15 @@ class ChatPageState extends State<ChatPage> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeProviders(context);
+      _setupAutoReadMarking();
+      // Set user online
+      _presenceProvider.setUserOnline(_currentUserId);
+
+      // Mark messages as read
+      _presenceProvider.markMessagesAsRead(
+        conversationId: _groupChatId,
+        userId: _currentUserId,
+      );
     });
   }
 
@@ -90,6 +99,7 @@ class ChatPageState extends State<ChatPage> {
     _lockProvider = context.read<ConversationLockProvider>();
     _viewOnceProvider = context.read<ViewOnceProvider>();
     _smartReplyProvider = context.read<SmartReplyProvider>();
+    _presenceProvider = context.read<UserPresenceProvider>();
 
     _readLocal();
     _loadPinnedMessages();
@@ -139,6 +149,10 @@ class ChatPageState extends State<ChatPage> {
       _currentUserId,
       {FirestoreConstants.chattingWith: peerId},
     );
+
+    Future.delayed(Duration(milliseconds: 500), () {
+      _markMessagesAsRead();
+    });
   }
 
   void _loadPinnedMessages() {
@@ -179,6 +193,72 @@ class ChatPageState extends State<ChatPage> {
     _focusNode.unfocus();
     setState(() {
       _isShowSticker = !_isShowSticker;
+    });
+  }
+
+  void _handleTyping(String text) {
+    if (text.isEmpty) {
+      if (_isTyping) {
+        _isTyping = false;
+        _presenceProvider.setTypingStatus(
+          conversationId: _groupChatId,
+          userId: _currentUserId,
+          isTyping: false,
+        );
+      }
+      return;
+    }
+
+    if (!_isTyping) {
+      _isTyping = true;
+      _presenceProvider.setTypingStatus(
+        conversationId: _groupChatId,
+        userId: _currentUserId,
+        isTyping: true,
+      );
+    }
+
+    // Reset timer
+    _typingTimer?.cancel();
+    _typingTimer = Timer(const Duration(seconds: 3), () {
+      _isTyping = false;
+      _presenceProvider.setTypingStatus(
+        conversationId: _groupChatId,
+        userId: _currentUserId,
+        isTyping: false,
+      );
+    });
+  }
+
+  Widget _buildTypingIndicator() {
+    return StreamBuilder<Map<String, bool>>(
+      stream: _presenceProvider.getTypingStatus(_groupChatId),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SizedBox.shrink();
+
+        final typingUsers = snapshot.data!;
+        final peerTyping = typingUsers[widget.arguments.peerId] ?? false;
+
+        if (!peerTyping) return const SizedBox.shrink();
+
+        return TypingIndicator(userName: widget.arguments.peerNickname);
+      },
+    );
+  }
+
+  void _setupAutoReadMarking() {
+    // Listen to new messages and mark them as read
+    FirebaseFirestore.instance
+        .collection(FirestoreConstants.pathMessageCollection)
+        .doc(_groupChatId)
+        .collection(_groupChatId)
+        .where(FirestoreConstants.idTo, isEqualTo: _currentUserId)
+        .where('isRead', isEqualTo: false)
+        .snapshots()
+        .listen((snapshot) {
+      if (snapshot.docs.isNotEmpty) {
+        _markMessagesAsRead();
+      }
     });
   }
 
@@ -246,6 +326,34 @@ class ChatPageState extends State<ChatPage> {
     if (_listScrollController.hasClients) {
       _listScrollController.animateTo(0,
           duration: Duration(milliseconds: 300), curve: Curves.easeOut);
+    }
+  }
+
+  Future<void> _markMessagesAsRead() async {
+    try {
+      final unreadMessages = await FirebaseFirestore.instance
+          .collection(FirestoreConstants.pathMessageCollection)
+          .doc(_groupChatId)
+          .collection(_groupChatId)
+          .where(FirestoreConstants.idTo, isEqualTo: _currentUserId)
+          .where('isRead', isEqualTo: false)
+          .get();
+
+      if (unreadMessages.docs.isEmpty) return;
+
+      final batch = FirebaseFirestore.instance.batch();
+
+      for (var doc in unreadMessages.docs) {
+        batch.update(doc.reference, {
+          'isRead': true,
+          'readAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      await batch.commit();
+      print('✅ Marked ${unreadMessages.docs.length} messages as read');
+    } catch (e) {
+      print('❌ Error marking messages as read: $e');
     }
   }
 
@@ -827,6 +935,48 @@ class ChatPageState extends State<ChatPage> {
     ];
   }
 
+  Widget _buildAppBar() {
+    return AppBar(
+      title: InkWell(
+        onTap: () {
+          // Navigate to user profile
+        },
+        child: Row(
+          children: [
+            AvatarWithStatus(
+              userId: widget.arguments.peerId,
+              photoUrl: widget.arguments.peerAvatar,
+              size: 40,
+              indicatorSize: 12,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.arguments.peerNickname,
+                    style: TextStyle(
+                      color: ColorConstants.primaryColor,
+                      fontSize: 16,
+                    ),
+                  ),
+                  UserStatusIndicator(
+                    userId: widget.arguments.peerId,
+                    showText: true,
+                    size: 8,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      centerTitle: false,
+      actions: _buildAppBarActions(),
+    );
+  }
+
 // Add this new method for lock options:
   void _showLockOptions() {
     showModalBottomSheet(
@@ -1092,6 +1242,7 @@ class ChatPageState extends State<ChatPage> {
                           _chatInputController.text, TypeMessage.text);
                     },
                     onChanged: (text) {
+                      _handleTyping(text);
                       if (text.isNotEmpty && _smartReplies.isNotEmpty) {
                         setState(() => _smartReplies = []);
                       }
@@ -1164,6 +1315,17 @@ class ChatPageState extends State<ChatPage> {
 
     final isMyMessage = messageChat.idFrom == _currentUserId;
 
+    // ĐỌC isRead từ DocumentSnapshot (KHÔNG phải từ MessageChat)
+    bool isRead = false;
+    try {
+      if (document.data() != null) {
+        final data = document.data() as Map<String, dynamic>;
+        isRead = data['isRead'] ?? false;
+      }
+    } catch (e) {
+      isRead = false;
+    }
+
     return GestureDetector(
       onLongPress: () => _showAdvancedMessageOptions(document),
       child: Row(
@@ -1207,6 +1369,7 @@ class ChatPageState extends State<ChatPage> {
                   ? CrossAxisAlignment.end
                   : CrossAxisAlignment.start,
               children: [
+                // Message bubble
                 Container(
                   constraints: BoxConstraints(
                       maxWidth: MediaQuery.of(context).size.width * 0.7),
@@ -1312,6 +1475,8 @@ class ChatPageState extends State<ChatPage> {
                               ),
                             ),
                 ),
+
+                // Reactions
                 StreamBuilder<QuerySnapshot>(
                   stream:
                       _reactionProvider.getReactions(_groupChatId, document.id),
@@ -1351,6 +1516,8 @@ class ChatPageState extends State<ChatPage> {
                     );
                   },
                 ),
+
+                // Timestamp and read receipt - FIXED
                 if (_isLastMessageLeft(index) || _isLastMessageRight(index))
                   Padding(
                     padding: EdgeInsets.only(
@@ -1360,6 +1527,7 @@ class ChatPageState extends State<ChatPage> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        // Reaction button
                         InkWell(
                           onTap: () => _showReactionPicker(document),
                           child: Container(
@@ -1372,6 +1540,19 @@ class ChatPageState extends State<ChatPage> {
                           ),
                         ),
                         SizedBox(width: 8),
+
+                        // Read receipt - CHỈ CHO TIN NHẮN CỦA MÌNH
+                        if (isMyMessage) ...[
+                          ReadReceiptWidget(
+                            isRead:
+                                isRead, // SỬ DỤNG biến isRead đã đọc từ document
+                            isSent: true,
+                            size: 14,
+                          ),
+                          SizedBox(width: 8),
+                        ],
+
+                        // Timestamp
                         Text(
                           _formatTimestamp(messageChat.timestamp),
                           style: TextStyle(
@@ -1578,6 +1759,7 @@ class ChatPageState extends State<ChatPage> {
                 children: [
                   _buildPinnedMessages(),
                   _buildListMessage(),
+                  _buildTypingIndicator(),
                   _isShowSticker ? _buildStickers() : SizedBox.shrink(),
                   _buildAdvancedInput(),
                 ],
@@ -1599,6 +1781,14 @@ class ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
+    _typingTimer?.cancel();
+    _presenceProvider.setUserOffline(_currentUserId);
+    _presenceProvider.setTypingStatus(
+      conversationId: _groupChatId,
+      userId: _currentUserId,
+      isTyping: false,
+    );
+
     _pinnedSub?.cancel();
     _chatInputController.dispose();
     _listScrollController

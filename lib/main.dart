@@ -205,6 +205,13 @@ class MyApp extends StatelessWidget {
         Provider<SmartReplyProvider>(
           create: (_) => SmartReplyProvider(),
         ),
+
+        /// User Presence Provider - THÊM PROVIDER NÀY
+        Provider<UserPresenceProvider>(
+          create: (_) => UserPresenceProvider(
+            firebaseFirestore: firebaseFirestore,
+          ),
+        ),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, child) {
