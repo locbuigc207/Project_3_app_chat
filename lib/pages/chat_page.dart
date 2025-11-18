@@ -1,9 +1,10 @@
-// lib/pages/chat_page.dart (COMPLETE - PART 1/2)
+// lib/pages/chat_page.dart (COMPLETE - ALL METHODS IMPLEMENTED)
 import 'dart:async';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_chat_demo/constants/constants.dart';
 import 'package:flutter_chat_demo/models/models.dart';
 import 'package:flutter_chat_demo/pages/pages.dart';
@@ -12,6 +13,7 @@ import 'package:flutter_chat_demo/utils/utils.dart';
 import 'package:flutter_chat_demo/widgets/widgets.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 class ChatPage extends StatefulWidget {
@@ -25,8 +27,6 @@ class ChatPage extends StatefulWidget {
 
 class ChatPageState extends State<ChatPage> {
   late final String _currentUserId;
-
-  // ✅ FIX: Nullable để tránh late initialization error
   UserPresenceProvider? _presenceProvider;
 
   Timer? _typingTimer;
@@ -56,21 +56,15 @@ class ChatPageState extends State<ChatPage> {
   late ViewOnceProvider _viewOnceProvider;
   late SmartReplyProvider _smartReplyProvider;
 
-  // Pinned messages
   List<DocumentSnapshot> _pinnedMessages = [];
   StreamSubscription<QuerySnapshot>? _pinnedSub;
 
-  // Smart replies
   List<SmartReply> _smartReplies = [];
   String _lastReceivedMessage = '';
 
-  // Reply feature
   MessageChat? _replyingTo;
-
-  // Lock check
   bool _conversationLockedChecked = false;
 
-  // ✅ FIX: Subscription để dispose properly
   StreamSubscription<QuerySnapshot>? _unreadMessagesSubscription;
 
   @override
@@ -94,8 +88,6 @@ class ChatPageState extends State<ChatPage> {
     _lockProvider = context.read<ConversationLockProvider>();
     _viewOnceProvider = context.read<ViewOnceProvider>();
     _smartReplyProvider = context.read<SmartReplyProvider>();
-
-    // ✅ FIX: Khởi tạo presence provider
     _presenceProvider = context.read<UserPresenceProvider>();
 
     _readLocal();
@@ -104,7 +96,6 @@ class ChatPageState extends State<ChatPage> {
     _loadSmartReplies();
     _setupAutoReadMarking();
 
-    // ✅ FIX: Set user online với null check
     if (_presenceProvider != null) {
       _presenceProvider!.setUserOnline(_currentUserId);
       _presenceProvider!.markMessagesAsRead(
@@ -113,7 +104,6 @@ class ChatPageState extends State<ChatPage> {
       );
     }
 
-    // ✅ Log screen view
     ErrorLogger.logScreenView('chat_page');
   }
 
@@ -213,7 +203,6 @@ class ChatPageState extends State<ChatPage> {
   }
 
   void _handleTyping(String text) {
-    // ✅ FIX: Null check
     if (_presenceProvider == null) return;
 
     if (text.isEmpty) {
@@ -249,7 +238,6 @@ class ChatPageState extends State<ChatPage> {
   }
 
   Widget _buildTypingIndicator() {
-    // ✅ FIX: Null check
     if (_presenceProvider == null) return const SizedBox.shrink();
 
     return StreamBuilder<Map<String, bool>>(
@@ -267,7 +255,6 @@ class ChatPageState extends State<ChatPage> {
     );
   }
 
-  // ✅ FIX: Sử dụng subscription thay vì multiple listeners
   void _setupAutoReadMarking() {
     _unreadMessagesSubscription = FirebaseFirestore.instance
         .collection(FirestoreConstants.pathMessageCollection)
@@ -312,8 +299,6 @@ class ChatPageState extends State<ChatPage> {
     }
   }
 
-  // lib/pages/chat_page.dart (COMPLETE - PART 2/2)
-
   Future<void> _onSendMessageWithAutoDelete(String content, int type) async {
     if (content.trim().isEmpty) {
       Fluttertoast.showToast(
@@ -343,7 +328,6 @@ class ChatPageState extends State<ChatPage> {
         widget.arguments.peerId,
       );
 
-      // ✅ Log event
       ErrorLogger.logMessageSent(
         conversationId: _groupChatId,
         messageType: type,
@@ -399,7 +383,6 @@ class ChatPageState extends State<ChatPage> {
 
       await batch.commit();
 
-      // ✅ Log event
       ErrorLogger.logMessageRead(conversationId: _groupChatId);
 
       print('✅ Marked ${unreadMessages.docs.length} messages as read');
@@ -408,12 +391,798 @@ class ChatPageState extends State<ChatPage> {
     }
   }
 
-  // ... [Các phương thức khác giữ nguyên như: _showAdvancedMessageOptions,
-  // _editMessage, _deleteMessage, _togglePinMessage, _copyMessage,
-  // _setReplyToMessage, _showReactionPicker, _pickTimeWithWheel,
-  // _setMessageReminder, _checkConversationLock, _showPINVerificationDialog,
-  // _loadSmartReplies, _showReminders, _buildAppBarActions, _buildAppBar,
-  // _showLockOptions, _showSetPINDialog, _showConfirmPINDialog]
+  // ✅ MISSING METHOD 1: Show Advanced Message Options
+  void _showAdvancedMessageOptions(MessageChat message, String messageId) {
+    showModalBottomSheet(
+      context: context,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => MessageOptionsDialog(
+        isOwnMessage: message.idFrom == _currentUserId,
+        isPinned: message.isPinned,
+        isDeleted: message.isDeleted,
+        onEdit: () => _editMessage(messageId, message.content),
+        onDelete: () => _deleteMessage(messageId),
+        onPin: () => _togglePinMessage(messageId, message.isPinned),
+        onCopy: () => _copyMessage(message.content),
+        onReply: () => _setReplyToMessage(message),
+      ),
+    );
+  }
+
+  // ✅ MISSING METHOD 2: Edit Message
+  Future<void> _editMessage(String messageId, String currentContent) async {
+    showDialog(
+      context: context,
+      builder: (context) => EditMessageDialog(
+        originalContent: currentContent,
+        onSave: (newContent) async {
+          final success = await _messageProvider.editMessage(
+            _groupChatId,
+            messageId,
+            newContent,
+          );
+          if (success) {
+            Fluttertoast.showToast(msg: 'Message edited');
+          }
+        },
+      ),
+    );
+  }
+
+  // ✅ MISSING METHOD 3: Delete Message
+  Future<void> _deleteMessage(String messageId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Delete Message'),
+        content: Text('Are you sure you want to delete this message?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      final success = await _messageProvider.deleteMessage(
+        _groupChatId,
+        messageId,
+      );
+      if (success) {
+        Fluttertoast.showToast(msg: 'Message deleted');
+      }
+    }
+  }
+
+  // ✅ MISSING METHOD 4: Toggle Pin Message
+  Future<void> _togglePinMessage(String messageId, bool currentStatus) async {
+    final success = await _messageProvider.togglePinMessage(
+      _groupChatId,
+      messageId,
+      currentStatus,
+    );
+    if (success) {
+      Fluttertoast.showToast(
+        msg: currentStatus ? 'Message unpinned' : 'Message pinned',
+      );
+    }
+  }
+
+  // ✅ MISSING METHOD 5: Copy Message
+  void _copyMessage(String content) {
+    Clipboard.setData(ClipboardData(text: content));
+    Fluttertoast.showToast(msg: 'Copied to clipboard');
+  }
+
+  // ✅ MISSING METHOD 6: Set Reply To Message
+  void _setReplyToMessage(MessageChat message) {
+    setState(() {
+      _replyingTo = message;
+    });
+    _focusNode.requestFocus();
+  }
+
+  // ✅ MISSING METHOD 7: Show Reaction Picker
+  void _showReactionPicker(String messageId) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: ReactionPicker(
+          onEmojiSelected: (emoji) {
+            _reactionProvider.toggleReaction(
+              _groupChatId,
+              messageId,
+              _currentUserId,
+              emoji,
+            );
+            Navigator.pop(context);
+          },
+        ),
+      ),
+    );
+  }
+
+  // ✅ MISSING METHOD 8: Pick Time with Wheel
+  Future<DateTime?> _pickTimeWithWheel() async {
+    DateTime selectedTime = DateTime.now().add(Duration(hours: 1));
+
+    final result = await showDialog<DateTime>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: Text('Set Reminder Time'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Date Picker
+                  ListTile(
+                    title: Text('Date'),
+                    subtitle:
+                        Text(DateFormat('MMM dd, yyyy').format(selectedTime)),
+                    trailing: Icon(Icons.calendar_today),
+                    onTap: () async {
+                      final date = await showDatePicker(
+                        context: context,
+                        initialDate: selectedTime,
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(Duration(days: 365)),
+                      );
+                      if (date != null) {
+                        setState(() {
+                          selectedTime = DateTime(
+                            date.year,
+                            date.month,
+                            date.day,
+                            selectedTime.hour,
+                            selectedTime.minute,
+                          );
+                        });
+                      }
+                    },
+                  ),
+                  // Time Picker
+                  ListTile(
+                    title: Text('Time'),
+                    subtitle: Text(DateFormat('HH:mm').format(selectedTime)),
+                    trailing: Icon(Icons.access_time),
+                    onTap: () async {
+                      final time = await showTimePicker(
+                        context: context,
+                        initialTime: TimeOfDay.fromDateTime(selectedTime),
+                      );
+                      if (time != null) {
+                        setState(() {
+                          selectedTime = DateTime(
+                            selectedTime.year,
+                            selectedTime.month,
+                            selectedTime.day,
+                            time.hour,
+                            time.minute,
+                          );
+                        });
+                      }
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, selectedTime),
+                  child: Text('Set'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    return result;
+  }
+
+  // ✅ MISSING METHOD 9: Set Message Reminder
+  Future<void> _setMessageReminder(
+      MessageChat message, String messageId) async {
+    final reminderTime = await _pickTimeWithWheel();
+
+    if (reminderTime != null) {
+      final success = await _reminderProvider.scheduleReminder(
+        userId: _currentUserId,
+        messageId: messageId,
+        conversationId: _groupChatId,
+        reminderTime: reminderTime,
+        message: message.content,
+      );
+
+      if (success) {
+        Fluttertoast.showToast(msg: 'Reminder set successfully');
+      } else {
+        Fluttertoast.showToast(msg: 'Failed to set reminder');
+      }
+    }
+  }
+
+  // ✅ MISSING METHOD 10: Check Conversation Lock
+  Future<void> _checkConversationLock() async {
+    final lockStatus =
+        await _lockProvider.getConversationLockStatus(_groupChatId);
+
+    if (lockStatus != null && lockStatus['isLocked'] == true) {
+      if (!mounted) return;
+
+      final verified = await _showPINVerificationDialog();
+
+      if (verified != true) {
+        Navigator.pop(context);
+      }
+    }
+
+    setState(() {
+      _conversationLockedChecked = true;
+    });
+  }
+
+  // ✅ MISSING METHOD 11: Show PIN Verification Dialog
+  Future<bool> _showPINVerificationDialog() async {
+    String? errorMessage;
+    int remainingAttempts = 5;
+
+    while (remainingAttempts > 0) {
+      final pin = await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => PINInputDialog(
+          title: 'Enter PIN',
+          onComplete: (pin) => Navigator.pop(context, pin),
+          errorMessage: errorMessage,
+          remainingAttempts: remainingAttempts,
+        ),
+      );
+
+      if (pin == null) return false;
+
+      final result = await _lockProvider.verifyPIN(
+        conversationId: _groupChatId,
+        enteredPin: pin,
+      );
+
+      if (result['success'] == true) {
+        return true;
+      }
+
+      remainingAttempts = 5 - (result['failedAttempts'] as int);
+      errorMessage = result['message'] as String;
+
+      if (remainingAttempts <= 0 || result['locked'] == true) {
+        await _lockProvider.autoDeleteMessagesAfterFailedAttempts(
+          conversationId: _groupChatId,
+        );
+        Fluttertoast.showToast(
+          msg: 'All messages deleted due to security breach',
+          backgroundColor: Colors.red,
+        );
+        return false;
+      }
+    }
+
+    return false;
+  }
+
+  // ✅ MISSING METHOD 12: Load Smart Replies
+  Future<void> _loadSmartReplies() async {
+    if (_listMessage.isEmpty) return;
+
+    final lastMessage = _listMessage.first;
+    final messageChat = MessageChat.fromDocument(lastMessage);
+
+    if (messageChat.idFrom != _currentUserId &&
+        messageChat.type == TypeMessage.text) {
+      final replies =
+          _smartReplyProvider.getRuleBasedReplies(messageChat.content);
+
+      if (mounted) {
+        setState(() {
+          _smartReplies = replies;
+          _lastReceivedMessage = messageChat.content;
+        });
+      }
+    }
+  }
+
+  // ✅ MISSING METHOD 13: Show Reminders
+  void _showReminders() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          appBar: AppBar(
+            title: Text('Reminders'),
+          ),
+          body: StreamBuilder<QuerySnapshot>(
+            stream: _reminderProvider.getUserReminders(_currentUserId),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return Center(child: CircularProgressIndicator());
+              }
+
+              final reminders = snapshot.data!.docs;
+
+              if (reminders.isEmpty) {
+                return Center(
+                  child: Text('No reminders'),
+                );
+              }
+
+              return ListView.builder(
+                itemCount: reminders.length,
+                itemBuilder: (context, index) {
+                  final reminder =
+                      MessageReminder.fromDocument(reminders[index]);
+
+                  return ListTile(
+                    title: Text(reminder.message),
+                    subtitle: Text(
+                      DateFormat('MMM dd, HH:mm').format(
+                        DateTime.fromMillisecondsSinceEpoch(
+                          int.parse(reminder.reminderTime),
+                        ),
+                      ),
+                    ),
+                    trailing: IconButton(
+                      icon: Icon(Icons.delete, color: Colors.red),
+                      onPressed: () {
+                        _reminderProvider.deleteReminder(reminder.id);
+                      },
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ✅ MISSING METHOD 14: Build App Bar Actions
+  List<Widget> _buildAppBarActions() {
+    return [
+      IconButton(
+        icon: Icon(Icons.search),
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => SearchMessagesPage(
+                groupChatId: _groupChatId,
+                peerName: widget.arguments.peerNickname,
+              ),
+            ),
+          );
+        },
+      ),
+      IconButton(
+        icon: Icon(Icons.notifications),
+        onPressed: _showReminders,
+      ),
+      PopupMenuButton<String>(
+        onSelected: (value) {
+          switch (value) {
+            case 'lock':
+              _showLockOptions();
+              break;
+            case 'auto_delete':
+              showDialog(
+                context: context,
+                builder: (_) => AutoDeleteSettingsDialog(
+                  conversationId: _groupChatId,
+                  provider: _autoDeleteProvider,
+                ),
+              );
+              break;
+          }
+        },
+        itemBuilder: (context) => [
+          PopupMenuItem(
+            value: 'lock',
+            child: Row(
+              children: [
+                Icon(Icons.lock, color: ColorConstants.primaryColor),
+                SizedBox(width: 8),
+                Text('Lock Conversation'),
+              ],
+            ),
+          ),
+          PopupMenuItem(
+            value: 'auto_delete',
+            child: Row(
+              children: [
+                Icon(Icons.timer, color: ColorConstants.primaryColor),
+                SizedBox(width: 8),
+                Text('Auto-Delete Settings'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ];
+  }
+
+  // ✅ MISSING METHOD 15: Show Lock Options
+  void _showLockOptions() async {
+    final action = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Lock Conversation'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(Icons.lock_outline),
+              title: Text('Set PIN'),
+              onTap: () => Navigator.pop(context, 'set_pin'),
+            ),
+            ListTile(
+              leading: Icon(Icons.lock_open),
+              title: Text('Remove Lock'),
+              onTap: () => Navigator.pop(context, 'remove'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (action == 'set_pin') {
+      _showSetPINDialog();
+    } else if (action == 'remove') {
+      await _lockProvider.removeConversationLock(_groupChatId);
+      Fluttertoast.showToast(msg: 'Lock removed');
+    }
+  }
+
+  // ✅ MISSING METHOD 16: Show Set PIN Dialog
+  void _showSetPINDialog() async {
+    final pin = await showDialog<String>(
+      context: context,
+      builder: (context) => PINInputDialog(
+        title: 'Set New PIN',
+        onComplete: (pin) => Navigator.pop(context, pin),
+      ),
+    );
+
+    if (pin != null) {
+      _showConfirmPINDialog(pin);
+    }
+  }
+
+  // ✅ MISSING METHOD 17: Show Confirm PIN Dialog
+  void _showConfirmPINDialog(String originalPin) async {
+    final confirmPin = await showDialog<String>(
+      context: context,
+      builder: (context) => PINInputDialog(
+        title: 'Confirm PIN',
+        onComplete: (pin) => Navigator.pop(context, pin),
+      ),
+    );
+
+    if (confirmPin == originalPin) {
+      final success = await _lockProvider.setConversationPIN(
+        conversationId: _groupChatId,
+        pin: originalPin,
+      );
+
+      if (success) {
+        Fluttertoast.showToast(msg: 'PIN set successfully');
+      }
+    } else {
+      Fluttertoast.showToast(msg: 'PINs do not match');
+    }
+  }
+
+  // ✅ BUILD METHODS
+  Widget _buildPinnedMessages() {
+    if (_pinnedMessages.isEmpty) return SizedBox.shrink();
+
+    return Container(
+      height: 60,
+      color: ColorConstants.greyColor2.withOpacity(0.3),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: EdgeInsets.symmetric(horizontal: 8),
+        itemCount: _pinnedMessages.length,
+        itemBuilder: (context, index) {
+          final message = MessageChat.fromDocument(_pinnedMessages[index]);
+          return GestureDetector(
+            onTap: () {
+              // Scroll to message
+            },
+            child: Container(
+              margin: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+              padding: EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.push_pin,
+                      size: 16, color: ColorConstants.primaryColor),
+                  SizedBox(width: 8),
+                  Text(
+                    message.content.length > 20
+                        ? '${message.content.substring(0, 20)}...'
+                        : message.content,
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildListMessage() {
+    return Flexible(
+      child: _groupChatId.isNotEmpty
+          ? StreamBuilder<QuerySnapshot>(
+              stream: _chatProvider.getChatStream(_groupChatId, _limit),
+              builder: (_, snapshot) {
+                if (snapshot.hasData) {
+                  _listMessage = snapshot.data!.docs;
+                  if (_listMessage.isNotEmpty) {
+                    return ListView.builder(
+                      padding: EdgeInsets.all(10),
+                      itemBuilder: (_, index) =>
+                          _buildItemMessage(index, snapshot.data?.docs[index]),
+                      itemCount: snapshot.data?.docs.length,
+                      reverse: true,
+                      controller: _listScrollController,
+                    );
+                  } else {
+                    return Center(child: Text("No message here yet..."));
+                  }
+                } else {
+                  return Center(
+                    child: CircularProgressIndicator(
+                      color: ColorConstants.themeColor,
+                    ),
+                  );
+                }
+              },
+            )
+          : Center(
+              child: CircularProgressIndicator(
+                color: ColorConstants.themeColor,
+              ),
+            ),
+    );
+  }
+
+  Widget _buildItemMessage(int index, DocumentSnapshot? document) {
+    if (document == null) return SizedBox.shrink();
+
+    final messageChat = MessageChat.fromDocument(document);
+    final isMyMessage = messageChat.idFrom == _currentUserId;
+
+    if (messageChat.type == TypeMessage.text) {
+      return Container(
+        margin: EdgeInsets.only(bottom: 10),
+        child: Row(
+          mainAxisAlignment:
+              isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
+          children: [
+            GestureDetector(
+              onLongPress: () =>
+                  _showAdvancedMessageOptions(messageChat, document.id),
+              child: Container(
+                padding: EdgeInsets.all(12),
+                constraints: BoxConstraints(maxWidth: 250),
+                decoration: BoxDecoration(
+                  color: isMyMessage
+                      ? ColorConstants.primaryColor
+                      : ColorConstants.greyColor2,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (messageChat.isDeleted)
+                      Text(
+                        messageChat.content,
+                        style: TextStyle(
+                          color: isMyMessage
+                              ? Colors.white70
+                              : ColorConstants.greyColor,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      )
+                    else
+                      Text(
+                        messageChat.content,
+                        style: TextStyle(
+                          color: isMyMessage ? Colors.white : Colors.black87,
+                        ),
+                      ),
+                    if (messageChat.editedAt != null)
+                      Text(
+                        '(edited)',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: isMyMessage
+                              ? Colors.white70
+                              : ColorConstants.greyColor,
+                        ),
+                      ),
+                    if (isMyMessage && !messageChat.isDeleted)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: ReadReceiptWidget(
+                          isRead: messageChat.isRead,
+                          size: 14,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    } else if (messageChat.type == TypeMessage.image) {
+      return Container(
+        margin: EdgeInsets.only(bottom: 10),
+        child: Row(
+          mainAxisAlignment:
+              isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
+          children: [
+            GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => FullPhotoPage(url: messageChat.content),
+                  ),
+                );
+              },
+              onLongPress: () =>
+                  _showAdvancedMessageOptions(messageChat, document.id),
+              child: Container(
+                clipBehavior: Clip.hardEdge,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Image.network(
+                  messageChat.content,
+                  width: 200,
+                  height: 200,
+                  fit: BoxFit.cover,
+                  loadingBuilder: (_, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return Container(
+                      width: 200,
+                      height: 200,
+                      color: ColorConstants.greyColor2,
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          value: loadingProgress.expectedTotalBytes != null
+                              ? loadingProgress.cumulativeBytesLoaded /
+                                  loadingProgress.expectedTotalBytes!
+                              : null,
+                        ),
+                      ),
+                    );
+                  },
+                  errorBuilder: (_, __, ___) => Container(
+                    width: 200,
+                    height: 200,
+                    color: ColorConstants.greyColor2,
+                    child: Icon(Icons.error),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    } else {
+      // Sticker
+      return Container(
+        margin: EdgeInsets.only(bottom: 10),
+        child: Row(
+          mainAxisAlignment:
+              isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
+          children: [
+            GestureDetector(
+              onLongPress: () =>
+                  _showAdvancedMessageOptions(messageChat, document.id),
+              child: Image.asset(
+                'images/${messageChat.content}.gif',
+                width: 100,
+                height: 100,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  width: 100,
+                  height: 100,
+                  color: ColorConstants.greyColor2,
+                  child: Icon(Icons.error),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  Widget _buildStickers() {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(color: ColorConstants.greyColor2, width: 0.5),
+        ),
+        color: Colors.white,
+      ),
+      padding: EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildItemSticker("mimi1"),
+              _buildItemSticker("mimi2"),
+              _buildItemSticker("mimi3"),
+            ],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildItemSticker("mimi4"),
+              _buildItemSticker("mimi5"),
+              _buildItemSticker("mimi6"),
+            ],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildItemSticker("mimi7"),
+              _buildItemSticker("mimi8"),
+              _buildItemSticker("mimi9"),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildItemSticker(String stickerName) {
+    return TextButton(
+      onPressed: () =>
+          _onSendMessageWithAutoDelete(stickerName, TypeMessage.sticker),
+      child: Image.asset(
+        'images/$stickerName.gif',
+        width: 50,
+        height: 50,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Icon(Icons.error),
+      ),
+    );
+  }
 
   Widget _buildAdvancedInput() {
     return Column(
@@ -453,9 +1222,18 @@ class ChatPageState extends State<ChatPage> {
             ),
           ),
         Container(
+          width: double.infinity,
+          height: 50,
+          decoration: BoxDecoration(
+            border: Border(
+              top: BorderSide(color: ColorConstants.greyColor2, width: 0.5),
+            ),
+            color: Colors.white,
+          ),
           child: Row(
             children: [
               Material(
+                color: Colors.white,
                 child: Container(
                   margin: EdgeInsets.symmetric(horizontal: 1),
                   child: IconButton(
@@ -468,9 +1246,9 @@ class ChatPageState extends State<ChatPage> {
                     color: ColorConstants.primaryColor,
                   ),
                 ),
-                color: Colors.white,
               ),
               Material(
+                color: Colors.white,
                 child: Container(
                   margin: EdgeInsets.symmetric(horizontal: 1),
                   child: IconButton(
@@ -495,9 +1273,9 @@ class ChatPageState extends State<ChatPage> {
                     color: ColorConstants.primaryColor,
                   ),
                 ),
-                color: Colors.white,
               ),
               Material(
+                color: Colors.white,
                 child: Container(
                   margin: EdgeInsets.symmetric(horizontal: 1),
                   child: IconButton(
@@ -506,40 +1284,38 @@ class ChatPageState extends State<ChatPage> {
                     color: ColorConstants.primaryColor,
                   ),
                 ),
-                color: Colors.white,
               ),
               Flexible(
-                child: Container(
-                  child: TextField(
-                    onTapOutside: (_) {
-                      Utilities.closeKeyboard();
-                    },
-                    onSubmitted: (_) {
-                      _onSendMessageWithAutoDelete(
-                        _chatInputController.text,
-                        TypeMessage.text,
-                      );
-                    },
-                    onChanged: (text) {
-                      _handleTyping(text);
-                      if (text.isNotEmpty && _smartReplies.isNotEmpty) {
-                        setState(() => _smartReplies = []);
-                      }
-                    },
-                    style: TextStyle(
-                      color: ColorConstants.primaryColor,
-                      fontSize: 15,
-                    ),
-                    controller: _chatInputController,
-                    decoration: InputDecoration.collapsed(
-                      hintText: 'Type your message...',
-                      hintStyle: TextStyle(color: ColorConstants.greyColor),
-                    ),
-                    focusNode: _focusNode,
+                child: TextField(
+                  onTapOutside: (_) {
+                    Utilities.closeKeyboard();
+                  },
+                  onSubmitted: (_) {
+                    _onSendMessageWithAutoDelete(
+                      _chatInputController.text,
+                      TypeMessage.text,
+                    );
+                  },
+                  onChanged: (text) {
+                    _handleTyping(text);
+                    if (text.isNotEmpty && _smartReplies.isNotEmpty) {
+                      setState(() => _smartReplies = []);
+                    }
+                  },
+                  style: TextStyle(
+                    color: ColorConstants.primaryColor,
+                    fontSize: 15,
                   ),
+                  controller: _chatInputController,
+                  decoration: InputDecoration.collapsed(
+                    hintText: 'Type your message...',
+                    hintStyle: TextStyle(color: ColorConstants.greyColor),
+                  ),
+                  focusNode: _focusNode,
                 ),
               ),
               Material(
+                color: Colors.white,
                 child: Container(
                   margin: EdgeInsets.symmetric(horizontal: 8),
                   child: IconButton(
@@ -551,24 +1327,28 @@ class ChatPageState extends State<ChatPage> {
                     color: ColorConstants.primaryColor,
                   ),
                 ),
-                color: Colors.white,
               ),
             ],
-          ),
-          width: double.infinity,
-          height: 50,
-          decoration: BoxDecoration(
-            border: Border(
-              top: BorderSide(color: ColorConstants.greyColor2, width: 0.5),
-            ),
-            color: Colors.white,
           ),
         ),
       ],
     );
   }
 
-  // ... [Các widget builders khác giữ nguyên]
+  void _onBackPress() {
+    if (_isShowSticker) {
+      setState(() {
+        _isShowSticker = false;
+      });
+    } else {
+      _chatProvider.updateDataFirestore(
+        FirestoreConstants.pathUserCollection,
+        _currentUserId,
+        {FirestoreConstants.chattingWith: null},
+      );
+      Navigator.pop(context);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -614,6 +1394,11 @@ class ChatPageState extends State<ChatPage> {
       ),
       body: SafeArea(
         child: PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, result) {
+            if (didPop) return;
+            _onBackPress();
+          },
           child: Stack(
             children: [
               Column(
@@ -630,11 +1415,6 @@ class ChatPageState extends State<ChatPage> {
               ),
             ],
           ),
-          canPop: false,
-          onPopInvokedWithResult: (didPop, result) {
-            if (didPop) return;
-            _onBackPress();
-          },
         ),
       ),
     );
@@ -642,12 +1422,10 @@ class ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
-    // ✅ FIX: Cancel all subscriptions
     _unreadMessagesSubscription?.cancel();
     _pinnedSub?.cancel();
     _typingTimer?.cancel();
 
-    // ✅ FIX: Safe disposal với null check
     if (_presenceProvider != null) {
       _presenceProvider!.setUserOffline(_currentUserId);
       _presenceProvider!.setTypingStatus(

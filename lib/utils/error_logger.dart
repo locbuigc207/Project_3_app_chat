@@ -1,6 +1,9 @@
-// lib/utils/error_logger.dart
+// lib/utils/error_logger.dart - FIXED
+import 'dart:async';
+
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:flutter/foundation.dart'; // ✅ ADD THIS
 
 class ErrorLogger {
   static final FirebaseCrashlytics _crashlytics = FirebaseCrashlytics.instance;
@@ -11,9 +14,15 @@ class ErrorLogger {
     // Enable Crashlytics collection
     await _crashlytics.setCrashlyticsCollectionEnabled(true);
 
-    // Pass Flutter errors to Crashlytics
-    FlutterError.onError = (errorDetails) {
+    // ✅ FIX: Pass Flutter errors to Crashlytics
+    FlutterError.onError = (FlutterErrorDetails errorDetails) {
       _crashlytics.recordFlutterFatalError(errorDetails);
+    };
+
+    // ✅ ADD: Catch async errors
+    PlatformDispatcher.instance.onError = (error, stack) {
+      _crashlytics.recordError(error, stack, fatal: true);
+      return true;
     };
 
     print('✅ Error logging initialized');
@@ -32,24 +41,28 @@ class ErrorLogger {
       print('Stack trace: $stackTrace');
     }
 
-    // Set custom keys
-    if (context != null) {
-      await _crashlytics.setCustomKey('error_context', context);
-    }
-
-    if (additionalInfo != null) {
-      for (var entry in additionalInfo.entries) {
-        await _crashlytics.setCustomKey(entry.key, entry.value.toString());
+    try {
+      // Set custom keys
+      if (context != null) {
+        await _crashlytics.setCustomKey('error_context', context);
       }
-    }
 
-    // Log to Firebase Crashlytics
-    await _crashlytics.recordError(
-      error,
-      stackTrace,
-      reason: context,
-      fatal: false,
-    );
+      if (additionalInfo != null) {
+        for (var entry in additionalInfo.entries) {
+          await _crashlytics.setCustomKey(entry.key, entry.value.toString());
+        }
+      }
+
+      // Log to Firebase Crashlytics
+      await _crashlytics.recordError(
+        error,
+        stackTrace,
+        reason: context,
+        fatal: false,
+      );
+    } catch (e) {
+      print('⚠️ Failed to log error to Crashlytics: $e');
+    }
   }
 
   /// Log event cho analytics
@@ -58,9 +71,14 @@ class ErrorLogger {
     Map<String, dynamic>? params,
   ) async {
     try {
+      // ✅ FIX: Convert to Map<String, Object>?
+      final Map<String, Object>? convertedParams = params?.map(
+        (key, value) => MapEntry(key, value as Object),
+      );
+
       await _analytics.logEvent(
         name: name,
-        parameters: params,
+        parameters: convertedParams,
       );
       print('📊 Event logged: $name');
     } catch (e) {
@@ -78,8 +96,12 @@ class ErrorLogger {
 
   /// Set user properties
   static Future<void> setUserId(String userId) async {
-    await _crashlytics.setUserIdentifier(userId);
-    await _analytics.setUserId(id: userId);
+    try {
+      await _crashlytics.setUserIdentifier(userId);
+      await _analytics.setUserId(id: userId);
+    } catch (e) {
+      print('⚠️ Failed to set user ID: $e');
+    }
   }
 
   /// Log message operations

@@ -1,3 +1,4 @@
+// lib/pages/qr_scanner_page.dart - FINAL COMPLETE FIX
 import 'package:flutter/material.dart';
 import 'package:flutter_chat_demo/constants/constants.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -54,12 +55,10 @@ class _QRScannerPageState extends State<QRScannerPage> {
         ),
         centerTitle: true,
         actions: [
-          // Toggle flash/torch
           IconButton(
             icon: const Icon(Icons.flash_off, color: Colors.grey),
             onPressed: () => controller.toggleTorch(),
           ),
-          // Switch camera
           IconButton(
             icon: const Icon(Icons.cameraswitch),
             onPressed: () => controller.switchCamera(),
@@ -68,11 +67,13 @@ class _QRScannerPageState extends State<QRScannerPage> {
       ),
       body: Stack(
         children: [
-          // Scanner view
+          // ✅ CRITICAL FIX: errorBuilder returns Widget, NOT Center Function
           MobileScanner(
             controller: controller,
             onDetect: _onDetect,
-            errorBuilder: (context, error, child) {
+            errorBuilder: (BuildContext context, MobileScannerException error,
+                Widget? child) {
+              // ✅ Return a proper Widget
               return Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -96,19 +97,22 @@ class _QRScannerPageState extends State<QRScannerPage> {
                       textAlign: TextAlign.center,
                       style: const TextStyle(color: Colors.grey),
                     ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Go Back'),
+                    ),
                   ],
                 ),
               );
             },
           ),
 
-          // Overlay with scanning area
           CustomPaint(
             painter: ScannerOverlay(),
             child: Container(),
           ),
 
-          // Instructions at bottom
           Positioned(
             bottom: 0,
             left: 0,
@@ -148,7 +152,6 @@ class _QRScannerPageState extends State<QRScannerPage> {
             ),
           ),
 
-          // Loading indicator when scanned
           if (_isScanned)
             Positioned.fill(
               child: Container(
@@ -179,7 +182,6 @@ class _QRScannerPageState extends State<QRScannerPage> {
   }
 }
 
-// Custom painter for scanner overlay
 class ScannerOverlay extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
@@ -188,9 +190,7 @@ class ScannerOverlay extends CustomPainter {
     final double top = (size.height - scanAreaSize) / 2;
     final Rect scanArea = Rect.fromLTWH(left, top, scanAreaSize, scanAreaSize);
 
-    // Draw semi-transparent background
-    final backgroundPaint = Paint()
-      ..color = Colors.black.withOpacity(0.5);
+    final backgroundPaint = Paint()..color = Colors.black.withOpacity(0.5);
 
     canvas.drawPath(
       Path()
@@ -200,7 +200,6 @@ class ScannerOverlay extends CustomPainter {
       backgroundPaint,
     );
 
-    // Draw corner brackets
     final cornerPaint = Paint()
       ..color = Colors.white
       ..strokeWidth = 4
@@ -210,7 +209,6 @@ class ScannerOverlay extends CustomPainter {
     const cornerLength = 30.0;
     const cornerRadius = 16.0;
 
-    // Top-left corner
     canvas.drawPath(
       Path()
         ..moveTo(left + cornerRadius, top)
@@ -220,7 +218,6 @@ class ScannerOverlay extends CustomPainter {
       cornerPaint,
     );
 
-    // Top-right corner
     canvas.drawPath(
       Path()
         ..moveTo(left + scanAreaSize - cornerLength, top)
@@ -230,7 +227,6 @@ class ScannerOverlay extends CustomPainter {
       cornerPaint,
     );
 
-    // Bottom-left corner
     canvas.drawPath(
       Path()
         ..moveTo(left, top + scanAreaSize - cornerLength)
@@ -240,7 +236,6 @@ class ScannerOverlay extends CustomPainter {
       cornerPaint,
     );
 
-    // Bottom-right corner
     canvas.drawPath(
       Path()
         ..moveTo(left + scanAreaSize, top + scanAreaSize - cornerLength)

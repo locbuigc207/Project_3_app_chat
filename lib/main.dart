@@ -1,4 +1,4 @@
-// lib/main.dart (COMPLETE WITH ERROR HANDLING)
+// lib/main.dart - FINAL COMPLETE FIX
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -19,22 +19,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 
 Future<void> main() async {
-  // ✅ Ensure Flutter binding
   WidgetsFlutterBinding.ensureInitialized();
 
-  // ✅ Initialize Firebase
   await Firebase.initializeApp();
-
-  // ✅ Initialize Error Logging
   await ErrorLogger.initialize();
 
-  // ✅ Initialize timezone
   tz.initializeTimeZones();
 
-  // ✅ Get SharedPreferences
   final prefs = await SharedPreferences.getInstance();
 
-  // ✅ Initialize Notifications
   final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
   const initializationSettingsAndroid =
@@ -57,7 +50,6 @@ Future<void> main() async {
     },
   );
 
-  // ✅ Request notification permissions
   if (Platform.isAndroid) {
     await flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<
@@ -107,17 +99,21 @@ class MyApp extends StatelessWidget {
 
     return MultiProvider(
       providers: [
-        /// Auth Provider (Google)
         ChangeNotifierProvider<AuthProvider>(
           create: (_) => AuthProvider(
             firebaseAuth: firebaseAuth,
-            googleSignIn: GoogleSignIn(),
+            // ✅ CRITICAL FIX: GoogleSignIn() DOES have unnamed constructor
+            // But it needs to be instantiated properly
+            googleSignIn: GoogleSignIn(
+              scopes: <String>[
+                'email',
+                'profile',
+              ],
+            ),
             prefs: prefs,
             firebaseFirestore: firebaseFirestore,
           ),
         ),
-
-        /// Phone Auth Provider
         ChangeNotifierProvider<custom_auth.PhoneAuthProvider>(
           create: (_) => custom_auth.PhoneAuthProvider(
             firebaseAuth: firebaseAuth,
@@ -125,8 +121,6 @@ class MyApp extends StatelessWidget {
             prefs: prefs,
           ),
         ),
-
-        /// Settings Provider
         Provider<SettingProvider>(
           create: (_) => SettingProvider(
             prefs: prefs,
@@ -134,13 +128,9 @@ class MyApp extends StatelessWidget {
             firebaseStorage: firebaseStorage,
           ),
         ),
-
-        /// Home Provider
         Provider<HomeProvider>(
           create: (_) => HomeProvider(firebaseFirestore: firebaseFirestore),
         ),
-
-        /// Chat Provider
         Provider<ChatProvider>(
           create: (_) => ChatProvider(
             prefs: prefs,
@@ -148,68 +138,46 @@ class MyApp extends StatelessWidget {
             firebaseStorage: firebaseStorage,
           ),
         ),
-
-        /// Friend Provider
         Provider<FriendProvider>(
           create: (_) => FriendProvider(firebaseFirestore: firebaseFirestore),
         ),
-
-        /// Reaction Provider
         Provider<ReactionProvider>(
           create: (_) => ReactionProvider(firebaseFirestore: firebaseFirestore),
         ),
-
-        /// Message Provider
         Provider<MessageProvider>(
           create: (_) => MessageProvider(firebaseFirestore: firebaseFirestore),
         ),
-
-        /// Conversation Provider
         Provider<ConversationProvider>(
           create: (_) =>
               ConversationProvider(firebaseFirestore: firebaseFirestore),
         ),
-
-        /// Theme Provider
         ChangeNotifierProvider<ThemeProvider>(
           create: (_) => ThemeProvider(prefs: prefs),
         ),
-
-        /// Reminder Provider
         Provider<ReminderProvider>(
           create: (_) => ReminderProvider(
             firebaseFirestore: firebaseFirestore,
             notificationsPlugin: notificationsPlugin,
           ),
         ),
-
-        /// Auto Delete Provider
         Provider<AutoDeleteProvider>(
           create: (_) => AutoDeleteProvider(
             firebaseFirestore: firebaseFirestore,
           ),
         ),
-
-        /// Conversation Lock Provider
         Provider<ConversationLockProvider>(
           create: (_) => ConversationLockProvider(
             firebaseFirestore: firebaseFirestore,
           ),
         ),
-
-        /// View Once Provider
         Provider<ViewOnceProvider>(
           create: (_) => ViewOnceProvider(
             firebaseFirestore: firebaseFirestore,
           ),
         ),
-
-        /// Smart Reply Provider
         Provider<SmartReplyProvider>(
           create: (_) => SmartReplyProvider(),
         ),
-
-        /// User Presence Provider
         Provider<UserPresenceProvider>(
           create: (_) => UserPresenceProvider(
             firebaseFirestore: firebaseFirestore,
@@ -225,8 +193,6 @@ class MyApp extends StatelessWidget {
             theme: AppThemes.lightTheme(themeProvider.getPrimaryColor()),
             darkTheme: AppThemes.darkTheme(themeProvider.getPrimaryColor()),
             home: SplashPage(),
-
-            // ✅ Add global error handler
             builder: (context, widget) {
               ErrorWidget.builder = (FlutterErrorDetails details) {
                 ErrorLogger.logError(
