@@ -1,4 +1,4 @@
-// lib/providers/auth_provider.dart - FIXED
+// lib/providers/auth_provider.dart - FINAL COMPLETE FIX
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -35,23 +35,18 @@ class AuthProvider extends ChangeNotifier {
 
   String? get userFirebaseId => prefs.getString(FirestoreConstants.id);
 
-  // ✅ FIX: Update to use async/await pattern
+  // ✅ FINAL FIX: Simplified login check
   Future<bool> isLoggedIn() async {
     try {
-      // Check Google Sign-In
-      final isGoogleSignedIn = await googleSignIn.isSignedIn();
-      if (isGoogleSignedIn &&
-          prefs.getString(FirestoreConstants.id)?.isNotEmpty == true) {
-        return true;
-      }
-
-      // Check Firebase Auth
+      // Check Firebase Auth (most reliable)
       final currentUser = firebaseAuth.currentUser;
       if (currentUser != null &&
           prefs.getString(FirestoreConstants.id)?.isNotEmpty == true) {
+        print('✅ User logged in: ${currentUser.uid}');
         return true;
       }
 
+      print('❌ No active login found');
       return false;
     } catch (e) {
       print('❌ Error checking login status: $e');
@@ -64,51 +59,70 @@ class AuthProvider extends ChangeNotifier {
     return 'CHATAPP_${userId}_${DateTime.now().millisecondsSinceEpoch}';
   }
 
-  // ✅ FIX: Update Google Sign-In method
+  // ✅ FINAL FIX: Working Google Sign-In
   Future<bool> handleSignIn() async {
     _status = Status.authenticating;
     notifyListeners();
 
     try {
-      // ✅ FIX: Use signIn() method
-      final googleUser = await googleSignIn.signIn();
+      print('🔄 Starting Google Sign In...');
+
+      // ✅ Sign in with Google
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+
       if (googleUser == null) {
+        print('❌ User canceled sign in');
         _status = Status.authenticateCanceled;
         notifyListeners();
         return false;
       }
 
-      final googleAuth = await googleUser.authentication;
+      print('✅ Google user: ${googleUser.email}');
+
+      // ✅ Get authentication details
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+
+      // ✅ Create Firebase credential
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
 
-      final firebaseUser =
-          (await firebaseAuth.signInWithCredential(credential)).user;
+      // ✅ Sign in to Firebase
+      final UserCredential userCredential =
+          await firebaseAuth.signInWithCredential(credential);
+
+      final User? firebaseUser = userCredential.user;
+
       if (firebaseUser == null) {
+        print('❌ Firebase user is null');
         _status = Status.authenticateError;
         notifyListeners();
         return false;
       }
 
+      print('✅ Firebase user: ${firebaseUser.uid}');
+
+      // Check if user exists in Firestore
       final result = await firebaseFirestore
           .collection(FirestoreConstants.pathUserCollection)
           .where(FirestoreConstants.id, isEqualTo: firebaseUser.uid)
           .get();
+
       final documents = result.docs;
 
       if (documents.isEmpty) {
-        // Generate QR code for new user
+        print('📝 Creating new user...');
+
         final qrCode = _generateQRCode(firebaseUser.uid);
 
-        // Writing data to server because here is a new user
         await firebaseFirestore
             .collection(FirestoreConstants.pathUserCollection)
             .doc(firebaseUser.uid)
             .set({
-          FirestoreConstants.nickname: firebaseUser.displayName,
-          FirestoreConstants.photoUrl: firebaseUser.photoURL,
+          FirestoreConstants.nickname: firebaseUser.displayName ?? '',
+          FirestoreConstants.photoUrl: firebaseUser.photoURL ?? '',
           FirestoreConstants.id: firebaseUser.uid,
           FirestoreConstants.phoneNumber: firebaseUser.phoneNumber ?? '',
           FirestoreConstants.qrCode: qrCode,
@@ -118,23 +132,23 @@ class AuthProvider extends ChangeNotifier {
           FirestoreConstants.aboutMe: '',
         });
 
-        // Write data to local storage
-        User? currentUser = firebaseUser;
-        await prefs.setString(FirestoreConstants.id, currentUser.uid);
+        await prefs.setString(FirestoreConstants.id, firebaseUser.uid);
         await prefs.setString(
-            FirestoreConstants.nickname, currentUser.displayName ?? "");
+            FirestoreConstants.nickname, firebaseUser.displayName ?? "");
         await prefs.setString(
-            FirestoreConstants.photoUrl, currentUser.photoURL ?? "");
+            FirestoreConstants.photoUrl, firebaseUser.photoURL ?? "");
         await prefs.setString(
-            FirestoreConstants.phoneNumber, currentUser.phoneNumber ?? "");
+            FirestoreConstants.phoneNumber, firebaseUser.phoneNumber ?? "");
         await prefs.setString(FirestoreConstants.qrCode, qrCode);
         await prefs.setString(FirestoreConstants.aboutMe, "");
+
+        print('✅ New user created');
       } else {
-        // Already sign up, just get data from firestore
+        print('📖 Loading existing user...');
+
         final documentSnapshot = documents.first;
         final userChat = UserChat.fromDocument(documentSnapshot);
 
-        // Check if user has QR code, if not generate one
         if (userChat.qrCode.isEmpty) {
           final qrCode = _generateQRCode(firebaseUser.uid);
           await firebaseFirestore
@@ -147,19 +161,21 @@ class AuthProvider extends ChangeNotifier {
           await prefs.setString(FirestoreConstants.qrCode, userChat.qrCode);
         }
 
-        // Write data to local
         await prefs.setString(FirestoreConstants.id, userChat.id);
         await prefs.setString(FirestoreConstants.nickname, userChat.nickname);
         await prefs.setString(FirestoreConstants.photoUrl, userChat.photoUrl);
         await prefs.setString(FirestoreConstants.aboutMe, userChat.aboutMe);
         await prefs.setString(
             FirestoreConstants.phoneNumber, userChat.phoneNumber);
+
+        print('✅ User loaded');
       }
+
       _status = Status.authenticated;
       notifyListeners();
       return true;
     } catch (e) {
-      print('❌ Error during sign in: $e');
+      print('❌ Sign in error: $e');
       _status = Status.authenticateError;
       notifyListeners();
       return false;
@@ -171,10 +187,19 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ✅ FINAL FIX: Working sign out
   Future<void> handleSignOut() async {
     _status = Status.uninitialized;
-    await firebaseAuth.signOut();
-    await googleSignIn.disconnect();
-    await googleSignIn.signOut();
+
+    try {
+      await firebaseAuth.signOut();
+      await googleSignIn.disconnect();
+      await googleSignIn.signOut();
+      print('✅ Sign out successful');
+    } catch (e) {
+      print('⚠️ Sign out error: $e');
+    }
+
+    notifyListeners();
   }
 }

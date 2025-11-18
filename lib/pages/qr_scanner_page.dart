@@ -1,4 +1,3 @@
-// lib/pages/qr_scanner_page.dart - FINAL COMPLETE FIX
 import 'package:flutter/material.dart';
 import 'package:flutter_chat_demo/constants/constants.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -27,18 +26,11 @@ class _QRScannerPageState extends State<QRScannerPage> {
 
   void _onDetect(BarcodeCapture capture) {
     if (_isScanned) return;
-
     final List<Barcode> barcodes = capture.barcodes;
-
     if (barcodes.isNotEmpty) {
       final barcode = barcodes.first;
-
       if (barcode.rawValue != null) {
-        setState(() {
-          _isScanned = true;
-        });
-
-        // Stop scanner and return result
+        setState(() => _isScanned = true);
         controller.stop();
         Navigator.pop(context, barcode.rawValue);
       }
@@ -49,10 +41,8 @@ class _QRScannerPageState extends State<QRScannerPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Scan QR Code',
-          style: TextStyle(color: ColorConstants.primaryColor),
-        ),
+        title: const Text('Scan QR Code',
+            style: TextStyle(color: ColorConstants.primaryColor)),
         centerTitle: true,
         actions: [
           IconButton(
@@ -67,30 +57,20 @@ class _QRScannerPageState extends State<QRScannerPage> {
       ),
       body: Stack(
         children: [
-          // ✅ CRITICAL FIX: errorBuilder returns Widget, NOT Center Function
+          // ✅ FIX: errorBuilder must match signature exactly
           MobileScanner(
             controller: controller,
             onDetect: _onDetect,
-            errorBuilder: (BuildContext context, MobileScannerException error,
-                Widget? child) {
-              // ✅ Return a proper Widget
+            errorBuilder: (context, error) {
               return Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(
-                      Icons.error,
-                      size: 60,
-                      color: Colors.red,
-                    ),
+                    const Icon(Icons.error, size: 60, color: Colors.red),
                     const SizedBox(height: 16),
-                    const Text(
-                      'Scanner Error',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    const Text('Scanner Error',
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     Text(
                       error.errorDetails?.message ?? 'Unknown error',
@@ -107,51 +87,37 @@ class _QRScannerPageState extends State<QRScannerPage> {
               );
             },
           ),
-
-          CustomPaint(
-            painter: ScannerOverlay(),
-            child: Container(),
-          ),
-
+          CustomPaint(painter: ScannerOverlay(), child: Container()),
           Positioned(
             bottom: 0,
             left: 0,
             right: 0,
             child: Container(
-              color: ColorConstants.primaryColor.withOpacity(0.9),
+              color: ColorConstants.primaryColor.withValues(alpha: 0.9),
               padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
               child: const Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    Icons.qr_code_scanner,
-                    color: Colors.white,
-                    size: 48,
-                  ),
+                  Icon(Icons.qr_code_scanner, color: Colors.white, size: 48),
                   SizedBox(height: 12),
                   Text(
                     'Position the QR code within the frame',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500),
                   ),
                   SizedBox(height: 8),
                   Text(
                     'The scanner will automatically detect the code',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 14,
-                    ),
+                    style: TextStyle(color: Colors.white70, fontSize: 14),
                   ),
                 ],
               ),
             ),
           ),
-
           if (_isScanned)
             Positioned.fill(
               child: Container(
@@ -160,17 +126,10 @@ class _QRScannerPageState extends State<QRScannerPage> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      CircularProgressIndicator(
-                        color: Colors.white,
-                      ),
+                      CircularProgressIndicator(color: Colors.white),
                       SizedBox(height: 16),
-                      Text(
-                        'Processing...',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                        ),
-                      ),
+                      Text('Processing...',
+                          style: TextStyle(color: Colors.white, fontSize: 16)),
                     ],
                   ),
                 ),
@@ -190,7 +149,8 @@ class ScannerOverlay extends CustomPainter {
     final double top = (size.height - scanAreaSize) / 2;
     final Rect scanArea = Rect.fromLTWH(left, top, scanAreaSize, scanAreaSize);
 
-    final backgroundPaint = Paint()..color = Colors.black.withOpacity(0.5);
+    final backgroundPaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.5);
 
     canvas.drawPath(
       Path()

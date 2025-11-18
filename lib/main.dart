@@ -97,19 +97,20 @@ class MyApp extends StatelessWidget {
     final firebaseStorage = FirebaseStorage.instance;
     final firebaseAuth = firebase_auth.FirebaseAuth.instance;
 
+    // ✅ CRITICAL FIX: Create GoogleSignIn properly
+    final googleSignIn = GoogleSignIn(
+      scopes: <String>[
+        'email',
+        'https://www.googleapis.com/auth/userinfo.profile',
+      ],
+    );
+
     return MultiProvider(
       providers: [
         ChangeNotifierProvider<AuthProvider>(
           create: (_) => AuthProvider(
             firebaseAuth: firebaseAuth,
-            // ✅ CRITICAL FIX: GoogleSignIn() DOES have unnamed constructor
-            // But it needs to be instantiated properly
-            googleSignIn: GoogleSignIn(
-              scopes: <String>[
-                'email',
-                'profile',
-              ],
-            ),
+            googleSignIn: googleSignIn,
             prefs: prefs,
             firebaseFirestore: firebaseFirestore,
           ),
