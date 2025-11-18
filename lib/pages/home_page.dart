@@ -46,6 +46,9 @@ class HomePageState extends State<HomePage> {
 
   late final List<MenuSetting> _menus;
 
+  StreamSubscription<QuerySnapshot>? _conversationsSubscription;
+  StreamSubscription<QuerySnapshot>? _friendRequestsSubscription;
+
   @override
   void initState() {
     super.initState();
@@ -954,6 +957,8 @@ class HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    _conversationsSubscription?.cancel();
+    _friendRequestsSubscription?.cancel();
     _btnClearController.close();
     _searchBarController.dispose();
     _listScrollController

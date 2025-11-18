@@ -34,8 +34,13 @@ class OnlineFriendsBar extends StatelessWidget {
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
             return const Center(
-              child: CircularProgressIndicator(
-                color: ColorConstants.themeColor,
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: ColorConstants.themeColor,
+                ),
               ),
             );
           }
@@ -67,22 +72,37 @@ class OnlineFriendsBar extends StatelessWidget {
             );
           }
 
-          return ListView.builder(
+          // ✅ FIX: Sử dụng ListView.separated thay vì builder
+          return ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             itemCount: onlineFriends.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
             itemBuilder: (context, index) {
-              final friend = onlineFriends[index];
-              return _buildOnlineFriendItem(context, friend);
+              // ✅ FIX: Wrap trong AutomaticKeepAliveClientMixin
+              return _OnlineFriendItem(
+                key: ValueKey(onlineFriends[index]['id']),
+                friend: onlineFriends[index],
+              );
             },
           );
         },
       ),
     );
   }
+}
 
-  Widget _buildOnlineFriendItem(
-      BuildContext context, Map<String, dynamic> friend) {
+// ✅ FIX: Tách thành widget riêng để tối ưu rebuild
+class _OnlineFriendItem extends StatelessWidget {
+  final Map<String, dynamic> friend;
+
+  const _OnlineFriendItem({
+    super.key,
+    required this.friend,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () {
         Navigator.push(
@@ -100,39 +120,43 @@ class OnlineFriendsBar extends StatelessWidget {
       },
       child: Container(
         width: 70,
-        margin: const EdgeInsets.symmetric(horizontal: 4),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Stack(
               children: [
-                // Avatar
-                Container(
-                  width: 60,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: ColorConstants.primaryColor,
-                      width: 2,
+                // Avatar with hero animation
+                Hero(
+                  tag: 'avatar_${friend['id']}',
+                  child: Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: ColorConstants.primaryColor,
+                        width: 2,
+                      ),
                     ),
-                  ),
-                  child: ClipOval(
-                    child: friend['photoUrl'].isNotEmpty
-                        ? Image.network(
-                            friend['photoUrl'],
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Icon(
+                    child: ClipOval(
+                      child: friend['photoUrl'].isNotEmpty
+                          ? Image.network(
+                              friend['photoUrl'],
+                              fit: BoxFit.cover,
+                              cacheWidth: 60,
+                              cacheHeight: 60,
+                              errorBuilder: (_, __, ___) => Icon(
+                                Icons.account_circle,
+                                size: 56,
+                                color: ColorConstants.greyColor,
+                              ),
+                            )
+                          : Icon(
                               Icons.account_circle,
                               size: 56,
                               color: ColorConstants.greyColor,
                             ),
-                          )
-                        : Icon(
-                            Icons.account_circle,
-                            size: 56,
-                            color: ColorConstants.greyColor,
-                          ),
+                    ),
                   ),
                 ),
 

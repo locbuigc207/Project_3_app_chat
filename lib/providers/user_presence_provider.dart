@@ -8,6 +8,8 @@ class UserPresenceProvider {
   final FirebaseFirestore firebaseFirestore;
   Timer? _heartbeatTimer;
 
+  final Map<String, Timer> _typingTimers = {};
+
   UserPresenceProvider({required this.firebaseFirestore});
 
   // Set user online status
@@ -43,6 +45,20 @@ class UserPresenceProvider {
 
       _heartbeatTimer?.cancel();
 
+      final typingDocs =
+          await firebaseFirestore.collection('typing_status').get();
+
+      final batch = firebaseFirestore.batch();
+      for (var doc in typingDocs.docs) {
+        final data = doc.data();
+        if (data.containsKey(userId)) {
+          batch.update(doc.reference, {
+            userId: FieldValue.delete(),
+          });
+        }
+      }
+      await batch.commit();
+
       print('✅ User set offline: $userId');
     } catch (e) {
       print('❌ Error setting user offline: $e');
@@ -76,6 +92,9 @@ class UserPresenceProvider {
     required bool isTyping,
   }) async {
     try {
+      // ✅ FIX: Cancel existing timer
+      _typingTimers[conversationId]?.cancel();
+
       await firebaseFirestore
           .collection('typing_status')
           .doc(conversationId)
@@ -85,6 +104,17 @@ class UserPresenceProvider {
           'timestamp': FieldValue.serverTimestamp(),
         },
       }, SetOptions(merge: true));
+
+      // ✅ FIX: Auto-reset sau 5 giây nếu không có update
+      if (isTyping) {
+        _typingTimers[conversationId] = Timer(Duration(seconds: 5), () {
+          setTypingStatus(
+            conversationId: conversationId,
+            userId: userId,
+            isTyping: false,
+          );
+        });
+      }
 
       print('✅ Typing status updated: $isTyping');
     } catch (e) {
@@ -225,5 +255,11 @@ class UserPresenceProvider {
 
   void dispose() {
     _heartbeatTimer?.cancel();
+
+    // ✅ FIX: Cancel all typing timers
+    for (var timer in _typingTimers.values) {
+      timer.cancel();
+    }
+    _typingTimers.clear();
   }
 }

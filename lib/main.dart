@@ -1,3 +1,4 @@
+// lib/main.dart (COMPLETE WITH ERROR HANDLING)
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -10,6 +11,7 @@ import 'package:flutter_chat_demo/pages/pages.dart';
 import 'package:flutter_chat_demo/providers/phone_auth_provider.dart'
     as custom_auth;
 import 'package:flutter_chat_demo/providers/providers.dart';
+import 'package:flutter_chat_demo/utils/utils.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
@@ -17,22 +19,26 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 
 Future<void> main() async {
+  // ✅ Ensure Flutter binding
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ✅ Initialize Firebase
   await Firebase.initializeApp();
 
-  // Initialize timezone database for notifications
+  // ✅ Initialize Error Logging
+  await ErrorLogger.initialize();
+
+  // ✅ Initialize timezone
   tz.initializeTimeZones();
 
+  // ✅ Get SharedPreferences
   final prefs = await SharedPreferences.getInstance();
 
-  // Initialize notifications with proper setup
+  // ✅ Initialize Notifications
   final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
-  // Android initialization
   const initializationSettingsAndroid =
       AndroidInitializationSettings('app_icon');
-
-  // iOS initialization
   const initializationSettingsIOS = DarwinInitializationSettings(
     requestAlertPermission: true,
     requestBadgePermission: true,
@@ -44,7 +50,6 @@ Future<void> main() async {
     iOS: initializationSettingsIOS,
   );
 
-  // Initialize with callback
   await flutterLocalNotificationsPlugin.initialize(
     initializationSettings,
     onDidReceiveNotificationResponse: (NotificationResponse response) {
@@ -52,21 +57,19 @@ Future<void> main() async {
     },
   );
 
-  // Request permissions for Android 13+
+  // ✅ Request notification permissions
   if (Platform.isAndroid) {
     await flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
         ?.requestNotificationsPermission();
 
-    // Request exact alarm permission for Android 12+
     await flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
         ?.requestExactAlarmsPermission();
   }
 
-  // Request permissions for iOS
   if (Platform.isIOS) {
     await flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<
@@ -78,7 +81,7 @@ Future<void> main() async {
         );
   }
 
-  print('✅ Notifications initialized');
+  print('✅ App initialized successfully');
 
   runApp(MyApp(
     prefs: prefs,
@@ -114,7 +117,7 @@ class MyApp extends StatelessWidget {
           ),
         ),
 
-        /// Phone Auth Provider (Custom)
+        /// Phone Auth Provider
         ChangeNotifierProvider<custom_auth.PhoneAuthProvider>(
           create: (_) => custom_auth.PhoneAuthProvider(
             firebaseAuth: firebaseAuth,
@@ -206,7 +209,7 @@ class MyApp extends StatelessWidget {
           create: (_) => SmartReplyProvider(),
         ),
 
-        /// User Presence Provider - THÊM PROVIDER NÀY
+        /// User Presence Provider
         Provider<UserPresenceProvider>(
           create: (_) => UserPresenceProvider(
             firebaseFirestore: firebaseFirestore,
@@ -222,6 +225,40 @@ class MyApp extends StatelessWidget {
             theme: AppThemes.lightTheme(themeProvider.getPrimaryColor()),
             darkTheme: AppThemes.darkTheme(themeProvider.getPrimaryColor()),
             home: SplashPage(),
+
+            // ✅ Add global error handler
+            builder: (context, widget) {
+              ErrorWidget.builder = (FlutterErrorDetails details) {
+                ErrorLogger.logError(
+                  details.exception,
+                  details.stack,
+                  context: 'Widget Error',
+                );
+
+                return Scaffold(
+                  body: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.error, size: 48, color: Colors.red),
+                        SizedBox(height: 16),
+                        Text(
+                          'Oops! Something went wrong',
+                          style: TextStyle(fontSize: 18),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'Please restart the app',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              };
+
+              return widget!;
+            },
           );
         },
       ),
