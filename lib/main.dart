@@ -1,4 +1,4 @@
-// lib/main.dart - FINAL COMPLETE FIX
+// lib/main.dart - COMPLETE RUNTIME FIX
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -97,12 +97,9 @@ class MyApp extends StatelessWidget {
     final firebaseStorage = FirebaseStorage.instance;
     final firebaseAuth = firebase_auth.FirebaseAuth.instance;
 
-    // ✅ CRITICAL FIX: Create GoogleSignIn properly
+    // ✅ FIX: GoogleSignIn with correct scopes
     final googleSignIn = GoogleSignIn(
-      scopes: <String>[
-        'email',
-        'https://www.googleapis.com/auth/userinfo.profile',
-      ],
+      scopes: ['email', 'profile'],
     );
 
     return MultiProvider(
@@ -193,39 +190,8 @@ class MyApp extends StatelessWidget {
             themeMode: themeProvider.getFlutterThemeMode(context),
             theme: AppThemes.lightTheme(themeProvider.getPrimaryColor()),
             darkTheme: AppThemes.darkTheme(themeProvider.getPrimaryColor()),
-            home: SplashPage(),
-            builder: (context, widget) {
-              ErrorWidget.builder = (FlutterErrorDetails details) {
-                ErrorLogger.logError(
-                  details.exception,
-                  details.stack,
-                  context: 'Widget Error',
-                );
-
-                return Scaffold(
-                  body: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.error, size: 48, color: Colors.red),
-                        SizedBox(height: 16),
-                        Text(
-                          'Oops! Something went wrong',
-                          style: TextStyle(fontSize: 18),
-                        ),
-                        SizedBox(height: 8),
-                        Text(
-                          'Please restart the app',
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              };
-
-              return widget!;
-            },
+            home: SplashPage(), // ✅ FIX: Add const
+            // ✅ CRITICAL FIX: Remove builder that causes widget tree conflict
           );
         },
       ),

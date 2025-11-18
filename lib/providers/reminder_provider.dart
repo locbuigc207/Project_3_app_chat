@@ -1,4 +1,3 @@
-// lib/providers/reminder_provider.dart (FIXED - Working Notifications)
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
@@ -31,13 +30,28 @@ class MessageReminder {
   }
 
   factory MessageReminder.fromDocument(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>?;
+
+    if (data == null) {
+      throw Exception('Reminder document data is null');
+    }
+
+    String _getStringValue(dynamic value) {
+      if (value == null)
+        return DateTime.now().millisecondsSinceEpoch.toString();
+      if (value is String) return value;
+      if (value is Timestamp) return value.millisecondsSinceEpoch.toString();
+      if (value is int) return value.toString();
+      return DateTime.now().millisecondsSinceEpoch.toString();
+    }
+
     return MessageReminder(
       id: doc.id,
-      messageId: doc.get('messageId'),
-      conversationId: doc.get('conversationId'),
-      reminderTime: doc.get('reminderTime'),
-      message: doc.get('message'),
-      isCompleted: doc.get('isCompleted') ?? false,
+      messageId: data['messageId'] ?? '',
+      conversationId: data['conversationId'] ?? '',
+      reminderTime: _getStringValue(data['reminderTime']),
+      message: data['message'] ?? '',
+      isCompleted: data['isCompleted'] ?? false,
     );
   }
 }
@@ -67,9 +81,7 @@ class ReminderProvider {
       }
 
       // Create reminder document
-      final reminderDoc = await firebaseFirestore
-          .collection('reminders')
-          .add({
+      final reminderDoc = await firebaseFirestore.collection('reminders').add({
         'userId': userId,
         'messageId': messageId,
         'conversationId': conversationId,
@@ -137,7 +149,6 @@ class ReminderProvider {
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       );
 
-
       print(' Notification scheduled successfully');
     } catch (e) {
       print(' Error scheduling notification: $e');
@@ -177,10 +188,7 @@ class ReminderProvider {
   // Delete reminder
   Future<bool> deleteReminder(String reminderId) async {
     try {
-      await firebaseFirestore
-          .collection('reminders')
-          .doc(reminderId)
-          .delete();
+      await firebaseFirestore.collection('reminders').doc(reminderId).delete();
 
       await notificationsPlugin.cancel(reminderId.hashCode);
 
