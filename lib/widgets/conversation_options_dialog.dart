@@ -7,7 +7,7 @@ class ConversationOptionsDialog extends StatelessWidget {
   final bool isMuted;
   final VoidCallback onPin;
   final VoidCallback onMute;
-  final VoidCallback onDelete;
+  final VoidCallback onClearHistory;
   final VoidCallback onMarkAsRead;
 
   const ConversationOptionsDialog({
@@ -16,7 +16,7 @@ class ConversationOptionsDialog extends StatelessWidget {
     required this.isMuted,
     required this.onPin,
     required this.onMute,
-    required this.onDelete,
+    required this.onClearHistory,
     required this.onMarkAsRead,
   });
 
@@ -57,12 +57,12 @@ class ConversationOptionsDialog extends StatelessWidget {
           ),
           const Divider(height: 1),
           _buildOption(
-            icon: Icons.delete,
-            label: 'Delete',
-            color: Colors.red,
+            icon: Icons.delete_sweep,
+            label: 'Clear history',
+            color: Colors.orange,
             onTap: () {
               Navigator.pop(context);
-              onDelete();
+              onClearHistory();
             },
           ),
         ],

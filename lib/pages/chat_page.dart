@@ -769,47 +769,54 @@ class ChatPageState extends State<ChatPage> {
         icon: Icon(Icons.notifications),
         onPressed: _showReminders,
       ),
-      PopupMenuButton<String>(
-        onSelected: (value) {
-          switch (value) {
-            case 'lock':
-              _showLockOptions();
-              break;
-            case 'auto_delete':
-              showDialog(
-                context: context,
-                builder: (_) => AutoDeleteSettingsDialog(
-                  conversationId: _groupChatId,
-                  provider: _autoDeleteProvider,
-                ),
-              );
-              break;
-          }
-        },
-        itemBuilder: (context) => [
-          PopupMenuItem(
-            value: 'lock',
-            child: Row(
-              children: [
-                Icon(Icons.lock, color: ColorConstants.primaryColor),
-                SizedBox(width: 8),
-                Text('Lock Conversation'),
-              ],
-            ),
-          ),
-          PopupMenuItem(
-            value: 'auto_delete',
-            child: Row(
-              children: [
-                Icon(Icons.timer, color: ColorConstants.primaryColor),
-                SizedBox(width: 8),
-                Text('Auto-Delete Settings'),
-              ],
-            ),
-          ),
-        ],
+      IconButton(
+        icon: Icon(Icons.more_vert),
+        onPressed: _showChatOptionsMenu,
       ),
     ];
+  }
+
+  void _showChatOptionsMenu() {
+    showModalBottomSheet(
+      context: context,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(Icons.lock, color: ColorConstants.primaryColor),
+              title: Text('Lock Conversation'),
+              onTap: () {
+                Navigator.pop(context);
+                _showLockOptions();
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.timer, color: ColorConstants.primaryColor),
+              title: Text('Auto-Delete Settings'),
+              onTap: () {
+                Navigator.pop(context);
+                showDialog(
+                  context: context,
+                  builder: (_) => AutoDeleteSettingsDialog(
+                    conversationId: _groupChatId,
+                    provider: _autoDeleteProvider,
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showLockOptions() async {
@@ -1526,8 +1533,23 @@ class ChatPageState extends State<ChatPage> {
     return Scaffold(
       appBar: AppBar(
         title: InkWell(
-          onTap: () {
+          onTap: () async {
             // Navigate to user profile
+            final userDoc = await FirebaseFirestore.instance
+                .collection(FirestoreConstants.pathUserCollection)
+                .doc(widget.arguments.peerId)
+                .get();
+
+            if (userDoc.exists) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => UserProfilePage(
+                    userChat: UserChat.fromDocument(userDoc),
+                  ),
+                ),
+              );
+            }
           },
           child: Row(
             children: [

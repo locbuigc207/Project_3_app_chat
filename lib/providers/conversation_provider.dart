@@ -7,7 +7,8 @@ class ConversationProvider {
   ConversationProvider({required this.firebaseFirestore});
 
   /// Pin/Unpin conversation
-  Future<bool> togglePinConversation(String conversationId, bool currentStatus) async {
+  Future<bool> togglePinConversation(
+      String conversationId, bool currentStatus) async {
     try {
       await firebaseFirestore
           .collection(FirestoreConstants.pathConversationCollection)
@@ -26,7 +27,8 @@ class ConversationProvider {
   }
 
   /// Mute/Unmute conversation
-  Future<bool> toggleMuteConversation(String conversationId, bool currentStatus) async {
+  Future<bool> toggleMuteConversation(
+      String conversationId, bool currentStatus) async {
     try {
       await firebaseFirestore
           .collection(FirestoreConstants.pathConversationCollection)
@@ -41,8 +43,61 @@ class ConversationProvider {
     }
   }
 
+  /// Xóa lịch sử conversation (chỉ xóa tin nhắn, giữ trạng thái bạn bè)
+  Future<bool> clearConversationHistory(String conversationId) async {
+    try {
+      // Xóa tất cả tin nhắn trong conversation
+      final messagesSnapshot = await firebaseFirestore
+          .collection(FirestoreConstants.pathMessageCollection)
+          .doc(conversationId)
+          .collection(conversationId)
+          .get();
+
+      if (messagesSnapshot.docs.isEmpty) {
+        return true; // Không có tin nhắn để xóa
+      }
+
+      // Batch delete messages
+      final batch = firebaseFirestore.batch();
+      int count = 0;
+
+      for (var doc in messagesSnapshot.docs) {
+        batch.delete(doc.reference);
+        count++;
+
+        // Commit mỗi 500 operations (giới hạn của Firestore)
+        if (count >= 500) {
+          await batch.commit();
+          count = 0;
+        }
+      }
+
+      // Commit các operations còn lại
+      if (count > 0) {
+        await batch.commit();
+      }
+
+      // Cập nhật conversation với lastMessage rỗng
+      await firebaseFirestore
+          .collection(FirestoreConstants.pathConversationCollection)
+          .doc(conversationId)
+          .update({
+        FirestoreConstants.lastMessage: '',
+        FirestoreConstants.lastMessageTime: '0',
+        FirestoreConstants.lastMessageType: 0,
+      });
+
+      print('✅ Cleared conversation history: $conversationId');
+      return true;
+    } catch (e) {
+      print('❌ Error clearing conversation history: $e');
+      return false;
+    }
+  }
+
   /// Lấy danh sách conversation của user, ưu tiên pinned lên đầu
-  Stream<List<QueryDocumentSnapshot>> getConversationsWithPinned(String userId) {
+  Stream<List<QueryDocumentSnapshot>> getConversationsWithPinned(
+      String userId) {
     return firebaseFirestore
         .collection(FirestoreConstants.pathConversationCollection)
         .where(FirestoreConstants.participants, arrayContains: userId)

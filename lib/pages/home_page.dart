@@ -389,9 +389,8 @@ class HomePageState extends State<HomePage> {
         isMuted: conversation.isMuted,
         onPin: () => _togglePinConversation(conversation),
         onMute: () => _toggleMuteConversation(conversation),
-        onDelete: () => _deleteConversation(conversation.id),
+        onClearHistory: () => _clearConversationHistory(conversation.id),
         onMarkAsRead: () {
-          // TODO: Implement mark as read
           Fluttertoast.showToast(msg: 'Mark as read');
         },
       ),
@@ -423,6 +422,52 @@ class HomePageState extends State<HomePage> {
             ? 'Conversation unmuted'
             : 'Conversation muted',
       );
+    }
+  }
+
+  Future<void> _clearConversationHistory(String conversationId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Clear History'),
+        content: Text(
+          'Are you sure you want to clear all messages in this conversation?\n\nThis will not affect your friendship status.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.orange,
+            ),
+            child: Text('Clear'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      setState(() => _isLoading = true);
+
+      final success =
+          await _conversationProvider.clearConversationHistory(conversationId);
+
+      setState(() => _isLoading = false);
+
+      if (success) {
+        Fluttertoast.showToast(
+          msg: 'Conversation history cleared',
+          backgroundColor: Colors.orange,
+        );
+      } else {
+        Fluttertoast.showToast(
+          msg: 'Failed to clear history',
+          backgroundColor: Colors.red,
+        );
+      }
     }
   }
 
