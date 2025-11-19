@@ -1,3 +1,4 @@
+// lib/pages/home_page.dart - UPDATED WITH SMART SEARCH & FRIENDS
 import 'dart:async';
 import 'dart:io';
 
@@ -32,7 +33,6 @@ class HomePageState extends State<HomePage> {
   String _textSearch = "";
   int _limit = 20;
   final _limitIncrement = 20;
-  SearchType _searchType = SearchType.nickname;
 
   late final _authProvider = context.read<AuthProvider>();
   late final _homeProvider = context.read<HomeProvider>();
@@ -68,6 +68,7 @@ class HomePageState extends State<HomePage> {
         firebaseFirestore: _homeProvider.firebaseFirestore);
 
     _menus = [
+      const MenuSetting(title: 'Friends', icon: Icons.people),
       const MenuSetting(title: 'Settings', icon: Icons.settings),
       const MenuSetting(title: 'Theme', icon: Icons.palette),
       const MenuSetting(title: 'My QR Code', icon: Icons.qr_code),
@@ -149,6 +150,12 @@ class HomePageState extends State<HomePage> {
       case 'Log out':
         _handleSignOut();
         break;
+      case 'Friends':
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => FriendsPage()),
+        );
+        break;
       case 'My QR Code':
         Navigator.push(
             context, MaterialPageRoute(builder: (_) => const MyQRCodePage()));
@@ -204,7 +211,8 @@ class HomePageState extends State<HomePage> {
     }
   }
 
-  Widget _buildSearchBar() {
+  // 🎯 NEW: Smart Search Bar with auto-detection
+  Widget _buildSmartSearchBar() {
     return Container(
       height: 40,
       margin: const EdgeInsets.all(10),
@@ -233,7 +241,7 @@ class HomePageState extends State<HomePage> {
                 });
               },
               decoration: const InputDecoration.collapsed(
-                hintText: 'Search...',
+                hintText: 'Search by name or phone...',
                 hintStyle:
                     TextStyle(fontSize: 13, color: ColorConstants.greyColor),
               ),
@@ -256,65 +264,8 @@ class HomePageState extends State<HomePage> {
                   : const SizedBox.shrink();
             },
           ),
+          const SizedBox(width: 10),
         ],
-      ),
-    );
-  }
-
-  Widget _buildSearchTypeSelector() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          const Text('Search by:',
-              style: TextStyle(
-                  color: ColorConstants.primaryColor,
-                  fontWeight: FontWeight.bold)),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Row(
-              children: [
-                Expanded(
-                    child: _buildSearchTypeButton(
-                        SearchType.nickname, 'Nickname')),
-                const SizedBox(width: 5),
-                Expanded(
-                    child: _buildSearchTypeButton(
-                        SearchType.phoneNumber, 'Phone')),
-                const SizedBox(width: 5),
-                Expanded(
-                    child:
-                        _buildSearchTypeButton(SearchType.qrCode, 'QR Code')),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSearchTypeButton(SearchType type, String label) {
-    final isSelected = _searchType == type;
-    return GestureDetector(
-      onTap: () => setState(() => _searchType = type),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? ColorConstants.primaryColor
-              : ColorConstants.greyColor2,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: TextStyle(
-              color: isSelected ? Colors.white : ColorConstants.primaryColor,
-              fontSize: 12,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -469,11 +420,6 @@ class HomePageState extends State<HomePage> {
         );
       }
     }
-  }
-
-  Future<void> _deleteConversation(String conversationId) async {
-    // TODO: Implement delete conversation
-    Fluttertoast.showToast(msg: 'Delete conversation');
   }
 
   Widget _buildConversationItem(DocumentSnapshot? doc) {
@@ -785,7 +731,59 @@ class HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildItem(DocumentSnapshot? document) {
+  // 🎯 NEW: Smart search with auto-detection (nickname or phone)
+  Widget _buildSmartSearchResults() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _performSmartSearch(),
+      builder: (_, snapshot) {
+        if (snapshot.hasData) {
+          if (snapshot.data!.docs.isNotEmpty) {
+            return ListView.builder(
+              controller: _listScrollController,
+              padding: const EdgeInsets.all(10),
+              itemCount: snapshot.data!.docs.length,
+              itemBuilder: (_, i) =>
+                  _buildSearchResultItem(snapshot.data?.docs[i]),
+            );
+          } else {
+            return const Center(child: Text("No users found"));
+          }
+        } else {
+          return const Center(
+            child: CircularProgressIndicator(color: ColorConstants.themeColor),
+          );
+        }
+      },
+    );
+  }
+
+  // 🎯 NEW: Perform smart search
+  Stream<QuerySnapshot> _performSmartSearch() {
+    final query = _textSearch.trim();
+
+    // Check if it's a phone number pattern
+    final isPhoneNumber = RegExp(r'^[+\d][\d\s-]*$').hasMatch(query);
+
+    if (isPhoneNumber) {
+      // Search by phone number (exact match)
+      return _homeProvider.firebaseFirestore
+          .collection(FirestoreConstants.pathUserCollection)
+          .where(FirestoreConstants.phoneNumber, isEqualTo: query)
+          .limit(_limit)
+          .snapshots();
+    } else {
+      // Search by nickname (starts with match for auto-suggest)
+      return _homeProvider.firebaseFirestore
+          .collection(FirestoreConstants.pathUserCollection)
+          .where(FirestoreConstants.nickname, isGreaterThanOrEqualTo: query)
+          .where(FirestoreConstants.nickname,
+              isLessThanOrEqualTo: '$query\uf8ff')
+          .limit(_limit)
+          .snapshots();
+    }
+  }
+
+  Widget _buildSearchResultItem(DocumentSnapshot? document) {
     if (document == null) return const SizedBox.shrink();
     final userChat = UserChat.fromDocument(document);
     if (userChat.id == _currentUserId) return const SizedBox.shrink();
@@ -823,12 +821,20 @@ class HomePageState extends State<HomePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Nickname: ${userChat.nickname}',
-                      style:
-                          const TextStyle(color: ColorConstants.primaryColor)),
-                  Text('About: ${userChat.aboutMe}',
-                      style:
-                          const TextStyle(color: ColorConstants.primaryColor)),
+                  Text(userChat.nickname,
+                      style: const TextStyle(
+                          color: ColorConstants.primaryColor,
+                          fontWeight: FontWeight.bold)),
+                  if (userChat.phoneNumber.isNotEmpty)
+                    Text('📱 ${userChat.phoneNumber}',
+                        style: const TextStyle(
+                            color: ColorConstants.greyColor, fontSize: 12)),
+                  if (userChat.aboutMe.isNotEmpty)
+                    Text(userChat.aboutMe,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: ColorConstants.greyColor, fontSize: 13)),
                 ],
               ),
             ),
@@ -838,7 +844,6 @@ class HomePageState extends State<HomePage> {
     );
   }
 
-  @override
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -908,8 +913,7 @@ class HomePageState extends State<HomePage> {
           children: [
             Column(
               children: [
-                _buildSearchBar(),
-                _buildSearchTypeSelector(),
+                _buildSmartSearchBar(),
                 if (_textSearch.isEmpty) _buildOnlineFriendsSection(),
                 Expanded(
                   child: _textSearch.isEmpty
@@ -961,30 +965,7 @@ class HomePageState extends State<HomePage> {
                             }
                           },
                         )
-                      : StreamBuilder<QuerySnapshot>(
-                          stream: _homeProvider.searchUsers(
-                              _textSearch, _searchType, _limit),
-                          builder: (_, snapshot) {
-                            if (snapshot.hasData) {
-                              if (snapshot.data!.docs.isNotEmpty) {
-                                return ListView.builder(
-                                  controller: _listScrollController,
-                                  padding: const EdgeInsets.all(10),
-                                  itemCount: snapshot.data!.docs.length,
-                                  itemBuilder: (_, i) =>
-                                      _buildItem(snapshot.data?.docs[i]),
-                                );
-                              } else {
-                                return const Center(child: Text("No users"));
-                              }
-                            } else {
-                              return const Center(
-                                child: CircularProgressIndicator(
-                                    color: ColorConstants.themeColor),
-                              );
-                            }
-                          },
-                        ),
+                      : _buildSmartSearchResults(),
                 ),
               ],
             ),

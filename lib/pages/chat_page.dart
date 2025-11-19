@@ -1,4 +1,4 @@
-// lib/pages/chat_page.dart (COMPLETE FIXED - ALL FEATURES WORKING)
+// lib/pages/chat_page.dart - ENHANCED WITH ALL NEW FEATURES
 import 'dart:async';
 import 'dart:io';
 
@@ -12,6 +12,7 @@ import 'package:flutter_chat_demo/providers/providers.dart';
 import 'package:flutter_chat_demo/utils/utils.dart';
 import 'package:flutter_chat_demo/widgets/widgets.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -55,6 +56,9 @@ class ChatPageState extends State<ChatPage> {
   late ConversationLockProvider _lockProvider;
   late ViewOnceProvider _viewOnceProvider;
   late SmartReplyProvider _smartReplyProvider;
+  late VoiceMessageProvider _voiceProvider; // 🎯 NEW
+  late LocationProvider _locationProvider; // 🎯 NEW
+  late TranslationProvider _translationProvider; // 🎯 NEW
 
   List<DocumentSnapshot> _pinnedMessages = [];
   StreamSubscription<QuerySnapshot>? _pinnedSub;
@@ -67,8 +71,13 @@ class ChatPageState extends State<ChatPage> {
 
   StreamSubscription<QuerySnapshot>? _unreadMessagesSubscription;
 
-  // 🎯 NEW: Features menu state
   bool _showFeaturesMenu = false;
+
+  // 🎯 NEW: Voice recording state
+  bool _isRecording = false;
+  String _recordingDuration = "0:00";
+  Timer? _recordingTimer;
+  int _recordingSeconds = 0;
 
   @override
   void initState() {
@@ -92,6 +101,13 @@ class ChatPageState extends State<ChatPage> {
     _viewOnceProvider = context.read<ViewOnceProvider>();
     _smartReplyProvider = context.read<SmartReplyProvider>();
     _presenceProvider = context.read<UserPresenceProvider>();
+
+    // 🎯 NEW: Initialize new providers
+    _voiceProvider = VoiceMessageProvider(
+      firebaseStorage: _chatProvider.firebaseStorage,
+    );
+    _locationProvider = LocationProvider();
+    _translationProvider = TranslationProvider();
 
     _readLocal();
     _loadPinnedMessages();
@@ -137,7 +153,7 @@ class ChatPageState extends State<ChatPage> {
     } else {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => LoginPage()),
-        (_) => false,
+            (_) => false,
       );
       return;
     }
@@ -163,7 +179,7 @@ class ChatPageState extends State<ChatPage> {
   void _loadPinnedMessages() {
     _pinnedSub?.cancel();
     _pinnedSub = _messageProvider.getPinnedMessages(_groupChatId).listen(
-      (snapshot) {
+          (snapshot) {
         if (!mounted) return;
         setState(() {
           _pinnedMessages = snapshot.docs;
@@ -396,21 +412,25 @@ class ChatPageState extends State<ChatPage> {
     }
   }
 
+  // 🎯 NEW: Enhanced message options with 5 actions
   void _showAdvancedMessageOptions(MessageChat message, String messageId) {
     showModalBottomSheet(
       context: context,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) => MessageOptionsDialog(
+      builder: (context) => EnhancedMessageOptionsDialog(
         isOwnMessage: message.idFrom == _currentUserId,
         isPinned: message.isPinned,
         isDeleted: message.isDeleted,
+        messageContent: message.content,
         onEdit: () => _editMessage(messageId, message.content),
         onDelete: () => _deleteMessage(messageId),
         onPin: () => _togglePinMessage(messageId, message.isPinned),
         onCopy: () => _copyMessage(message.content),
         onReply: () => _setReplyToMessage(message),
+        onReminder: () => _setMessageReminder(message, messageId), // 🎯 NEW
+        onTranslate: () => _translateMessage(message.content), // 🎯 NEW
       ),
     );
   }
@@ -525,7 +545,7 @@ class ChatPageState extends State<ChatPage> {
                   ListTile(
                     title: Text('Date'),
                     subtitle:
-                        Text(DateFormat('MMM dd, yyyy').format(selectedTime)),
+                    Text(DateFormat('MMM dd, yyyy').format(selectedTime)),
                     trailing: Icon(Icons.calendar_today),
                     onTap: () async {
                       final date = await showDatePicker(
@@ -611,9 +631,20 @@ class ChatPageState extends State<ChatPage> {
     }
   }
 
+  // 🎯 NEW: Translate message
+  Future<void> _translateMessage(String content) async {
+    showDialog(
+      context: context,
+      builder: (context) => TranslationDialog(
+        originalText: content,
+        translationProvider: _translationProvider,
+      ),
+    );
+  }
+
   Future<void> _checkConversationLock() async {
     final lockStatus =
-        await _lockProvider.getConversationLockStatus(_groupChatId);
+    await _lockProvider.getConversationLockStatus(_groupChatId);
 
     if (lockStatus != null && lockStatus['isLocked'] == true) {
       if (!mounted) return;
@@ -684,7 +715,7 @@ class ChatPageState extends State<ChatPage> {
     if (messageChat.idFrom != _currentUserId &&
         messageChat.type == TypeMessage.text) {
       final replies =
-          _smartReplyProvider.getRuleBasedReplies(messageChat.content);
+      _smartReplyProvider.getRuleBasedReplies(messageChat.content);
 
       if (mounted) {
         setState(() {
@@ -722,7 +753,7 @@ class ChatPageState extends State<ChatPage> {
                 itemCount: reminders.length,
                 itemBuilder: (context, index) {
                   final reminder =
-                      MessageReminder.fromDocument(reminders[index]);
+                  MessageReminder.fromDocument(reminders[index]);
 
                   return ListTile(
                     title: Text(reminder.message),
@@ -887,7 +918,6 @@ class ChatPageState extends State<ChatPage> {
     }
   }
 
-  // 🎯 NEW: Toggle features menu
   void _toggleFeaturesMenu() {
     setState(() {
       _showFeaturesMenu = !_showFeaturesMenu;
@@ -895,7 +925,7 @@ class ChatPageState extends State<ChatPage> {
     });
   }
 
-  // 🎯 NEW: Build features menu
+  // 🎯 NEW: Enhanced features menu with location and scheduling
   Widget _buildFeaturesMenu() {
     if (!_showFeaturesMenu) return SizedBox.shrink();
 
@@ -954,6 +984,24 @@ class ChatPageState extends State<ChatPage> {
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          // 🎯 NEW: Second row with location and scheduling
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildFeatureButton(
+                icon: Icons.location_on,
+                label: 'Location',
+                onTap: _shareLocation,
+              ),
+              _buildFeatureButton(
+                icon: Icons.schedule_send,
+                label: 'Schedule',
+                onTap: _scheduleMessage,
+              ),
+              SizedBox(width: 80), // Placeholder for alignment
+            ],
+          ),
         ],
       ),
     );
@@ -987,6 +1035,194 @@ class ChatPageState extends State<ChatPage> {
         ),
       ),
     );
+  }
+
+  // 🎯 NEW: Share location
+  Future<void> _shareLocation() async {
+    setState(() => _isLoading = true);
+
+    final position = await _locationProvider.getCurrentLocation();
+
+    setState(() => _isLoading = false);
+
+    if (position != null) {
+      final locationText = _locationProvider.formatLocation(position);
+      final mapsLink = _locationProvider.generateMapsLink(position);
+      final message = '$locationText\n$mapsLink';
+
+      await _onSendMessageWithAutoDelete(message, TypeMessage.text);
+      Fluttertoast.showToast(msg: '📍 Location shared');
+    } else {
+      Fluttertoast.showToast(msg: 'Failed to get location');
+    }
+  }
+
+  // 🎯 NEW: Schedule message
+  Future<void> _scheduleMessage() async {
+    final messageController = TextEditingController();
+    DateTime? scheduledTime;
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: Text('Schedule Message'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: messageController,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    hintText: 'Enter your message...',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                SizedBox(height: 16),
+                ListTile(
+                  leading: Icon(Icons.schedule),
+                  title: Text(
+                    scheduledTime != null
+                        ? DateFormat('MMM dd, yyyy HH:mm').format(scheduledTime!)
+                        : 'Select time',
+                  ),
+                  onTap: () async {
+                    final date = await showDatePicker(
+                      context: context,
+                      initialDate: DateTime.now().add(Duration(hours: 1)),
+                      firstDate: DateTime.now(),
+                      lastDate: DateTime.now().add(Duration(days: 365)),
+                    );
+
+                    if (date != null) {
+                      final time = await showTimePicker(
+                        context: context,
+                        initialTime: TimeOfDay.now(),
+                      );
+
+                      if (time != null) {
+                        setState(() {
+                          scheduledTime = DateTime(
+                            date.year,
+                            date.month,
+                            date.day,
+                            time.hour,
+                            time.minute,
+                          );
+                        });
+                      }
+                    }
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () {
+                  if (messageController.text.trim().isEmpty) {
+                    Fluttertoast.showToast(msg: 'Please enter a message');
+                    return;
+                  }
+                  if (scheduledTime == null) {
+                    Fluttertoast.showToast(msg: 'Please select time');
+                    return;
+                  }
+                  Navigator.pop(context, true);
+                },
+                child: Text('Schedule'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (result == true && scheduledTime != null) {
+      final message = messageController.text.trim();
+      final delay = scheduledTime!.difference(DateTime.now());
+
+      if (delay.isNegative) {
+        Fluttertoast.showToast(msg: 'Invalid time');
+        return;
+      }
+
+      // Schedule the message
+      Timer(delay, () {
+        _onSendMessageWithAutoDelete(message, TypeMessage.text);
+      });
+
+      Fluttertoast.showToast(
+        msg: '📅 Message scheduled for ${DateFormat('HH:mm').format(scheduledTime!)}',
+      );
+    }
+
+    messageController.dispose();
+  }
+
+  // 🎯 NEW: Voice recording functions
+  Future<void> _startRecording() async {
+    final initialized = await _voiceProvider.initRecorder();
+    if (!initialized) {
+      Fluttertoast.showToast(msg: 'Microphone permission required');
+      return;
+    }
+
+    final started = await _voiceProvider.startRecording();
+    if (started) {
+      setState(() {
+        _isRecording = true;
+        _recordingSeconds = 0;
+        _recordingDuration = "0:00";
+      });
+
+      _recordingTimer = Timer.periodic(Duration(seconds: 1), (timer) {
+        setState(() {
+          _recordingSeconds++;
+          final minutes = _recordingSeconds ~/ 60;
+          final seconds = _recordingSeconds % 60;
+          _recordingDuration = "$minutes:${seconds.toString().padLeft(2, '0')}";
+        });
+      });
+    }
+  }
+
+  Future<void> _stopRecording() async {
+    _recordingTimer?.cancel();
+
+    final filePath = await _voiceProvider.stopRecording();
+    if (filePath == null) {
+      setState(() => _isRecording = false);
+      Fluttertoast.showToast(msg: 'Recording failed');
+      return;
+    }
+
+    setState(() {
+      _isRecording = false;
+      _isLoading = true;
+    });
+
+    final fileName = 'voice_${DateTime.now().millisecondsSinceEpoch}.aac';
+    final url = await _voiceProvider.uploadVoiceMessage(filePath, fileName);
+
+    setState(() => _isLoading = false);
+
+    if (url != null) {
+      await _onSendMessageWithAutoDelete(url, 3); // Type 3 for voice
+      Fluttertoast.showToast(msg: '🎤 Voice message sent');
+    } else {
+      Fluttertoast.showToast(msg: 'Failed to send voice message');
+    }
+  }
+
+  Future<void> _cancelRecording() async {
+    _recordingTimer?.cancel();
+    await _voiceProvider.cancelRecording();
+    setState(() => _isRecording = false);
   }
 
   Widget _buildPinnedMessages() {
@@ -1035,36 +1271,36 @@ class ChatPageState extends State<ChatPage> {
     return Flexible(
       child: _groupChatId.isNotEmpty
           ? StreamBuilder<QuerySnapshot>(
-              stream: _chatProvider.getChatStream(_groupChatId, _limit),
-              builder: (_, snapshot) {
-                if (snapshot.hasData) {
-                  _listMessage = snapshot.data!.docs;
-                  if (_listMessage.isNotEmpty) {
-                    return ListView.builder(
-                      padding: EdgeInsets.all(10),
-                      itemBuilder: (_, index) =>
-                          _buildItemMessage(index, snapshot.data?.docs[index]),
-                      itemCount: snapshot.data?.docs.length,
-                      reverse: true,
-                      controller: _listScrollController,
-                    );
-                  } else {
-                    return Center(child: Text("No message here yet..."));
-                  }
-                } else {
-                  return Center(
-                    child: CircularProgressIndicator(
-                      color: ColorConstants.themeColor,
-                    ),
-                  );
-                }
-              },
-            )
-          : Center(
+        stream: _chatProvider.getChatStream(_groupChatId, _limit),
+        builder: (_, snapshot) {
+          if (snapshot.hasData) {
+            _listMessage = snapshot.data!.docs;
+            if (_listMessage.isNotEmpty) {
+              return ListView.builder(
+                padding: EdgeInsets.all(10),
+                itemBuilder: (_, index) =>
+                    _buildItemMessage(index, snapshot.data?.docs[index]),
+                itemCount: snapshot.data?.docs.length,
+                reverse: true,
+                controller: _listScrollController,
+              );
+            } else {
+              return Center(child: Text("No message here yet..."));
+            }
+          } else {
+            return Center(
               child: CircularProgressIndicator(
                 color: ColorConstants.themeColor,
               ),
-            ),
+            );
+          }
+        },
+      )
+          : Center(
+        child: CircularProgressIndicator(
+          color: ColorConstants.themeColor,
+        ),
+      ),
     );
   }
 
@@ -1074,7 +1310,6 @@ class ChatPageState extends State<ChatPage> {
     final messageChat = MessageChat.fromDocument(document);
     final isMyMessage = messageChat.idFrom == _currentUserId;
 
-    // 🎯 NEW: Check for View Once message
     final data = document.data() as Map<String, dynamic>?;
     final isViewOnce = data?['isViewOnce'] ?? false;
     final isViewed = data?['isViewed'] ?? false;
@@ -1084,7 +1319,7 @@ class ChatPageState extends State<ChatPage> {
         margin: EdgeInsets.only(bottom: 10),
         child: Row(
           mainAxisAlignment:
-              isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
+          isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
           children: [
             ViewOnceMessageWidget(
               groupChatId: _groupChatId,
@@ -1100,16 +1335,37 @@ class ChatPageState extends State<ChatPage> {
       );
     }
 
+    // 🎯 NEW: Voice message (type 3)
+    if (messageChat.type == 3) {
+      return Container(
+        margin: EdgeInsets.only(bottom: 10),
+        child: Row(
+          mainAxisAlignment:
+          isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
+          children: [
+            VoiceMessageWidget(
+              voiceUrl: messageChat.content,
+              isMyMessage: isMyMessage,
+              voiceProvider: _voiceProvider,
+            ),
+          ],
+        ),
+      );
+    }
+
     if (messageChat.type == TypeMessage.text) {
+      // Check if it's a location message
+      final location = _locationProvider.parseLocation(messageChat.content);
+
       return Container(
         margin: EdgeInsets.only(bottom: 10),
         child: Column(
           crossAxisAlignment:
-              isMyMessage ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          isMyMessage ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
             Row(
               mainAxisAlignment:
-                  isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
+              isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
               children: [
                 GestureDetector(
                   onLongPress: () =>
@@ -1137,12 +1393,44 @@ class ChatPageState extends State<ChatPage> {
                               fontStyle: FontStyle.italic,
                             ),
                           )
+                        else if (location != null)
+                        // 🎯 NEW: Location message display
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.location_on,
+                                    color: isMyMessage ? Colors.white : Colors.red,
+                                    size: 20,
+                                  ),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    'Location',
+                                    style: TextStyle(
+                                      color: isMyMessage ? Colors.white : Colors.black87,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                messageChat.content.split('\n').first,
+                                style: TextStyle(
+                                  color: isMyMessage ? Colors.white : Colors.black87,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          )
                         else
                           Text(
                             messageChat.content,
                             style: TextStyle(
                               color:
-                                  isMyMessage ? Colors.white : Colors.black87,
+                              isMyMessage ? Colors.white : Colors.black87,
                             ),
                           ),
                         if (messageChat.editedAt != null)
@@ -1167,7 +1455,6 @@ class ChatPageState extends State<ChatPage> {
                     ),
                   ),
                 ),
-                // 🎯 NEW: Quick action buttons
                 if (!messageChat.isDeleted) ...[
                   SizedBox(width: 4),
                   Column(
@@ -1191,7 +1478,6 @@ class ChatPageState extends State<ChatPage> {
                 ],
               ],
             ),
-            // 🎯 NEW: Reactions display
             StreamBuilder<QuerySnapshot>(
               stream: _reactionProvider.getReactions(_groupChatId, document.id),
               builder: (context, snapshot) {
@@ -1239,7 +1525,7 @@ class ChatPageState extends State<ChatPage> {
         margin: EdgeInsets.only(bottom: 10),
         child: Row(
           mainAxisAlignment:
-              isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
+          isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
           children: [
             GestureDetector(
               onTap: () {
@@ -1272,7 +1558,7 @@ class ChatPageState extends State<ChatPage> {
                         child: CircularProgressIndicator(
                           value: loadingProgress.expectedTotalBytes != null
                               ? loadingProgress.cumulativeBytesLoaded /
-                                  loadingProgress.expectedTotalBytes!
+                              loadingProgress.expectedTotalBytes!
                               : null,
                         ),
                       ),
@@ -1296,7 +1582,7 @@ class ChatPageState extends State<ChatPage> {
         margin: EdgeInsets.only(bottom: 10),
         child: Row(
           mainAxisAlignment:
-              isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
+          isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
           children: [
             GestureDetector(
               onLongPress: () =>
@@ -1374,278 +1660,324 @@ class ChatPageState extends State<ChatPage> {
     );
   }
 
+  // 🎯 NEW: Enhanced input with voice recording
   Widget _buildAdvancedInput() {
     return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
+        mainAxisSize: MainAxisSize.min,
+        children: [
         if (_smartReplies.isNotEmpty)
-          SmartReplyWidget(
-            replies: _smartReplies,
-            onReplySelected: (reply) {
-              _chatInputController.text = reply;
-              setState(() => _smartReplies = []);
-            },
-          ),
-        if (_replyingTo != null)
-          Container(
-            width: double.infinity,
-            color: ColorConstants.greyColor2.withOpacity(0.2),
-            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Replying: ${_replyingTo!.content}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.close, size: 18),
-                  onPressed: () {
-                    setState(() {
-                      _replyingTo = null;
-                    });
-                  },
-                ),
-              ],
-            ),
-          ),
-        Container(
-          width: double.infinity,
-          height: 50,
-          decoration: BoxDecoration(
-            border: Border(
-              top: BorderSide(color: ColorConstants.greyColor2, width: 0.5),
-            ),
-            color: Colors.white,
-          ),
-          child: Row(
-            children: [
-              // 🎯 NEW: Features menu button
-              Material(
-                color: Colors.white,
-                child: Container(
-                  margin: EdgeInsets.symmetric(horizontal: 1),
-                  child: IconButton(
-                    icon: Icon(
-                      _showFeaturesMenu ? Icons.close : Icons.more_horiz,
-                      color: ColorConstants.primaryColor,
-                    ),
-                    onPressed: _toggleFeaturesMenu,
-                  ),
-                ),
-              ),
-              Material(
-                color: Colors.white,
-                child: Container(
-                  margin: EdgeInsets.symmetric(horizontal: 1),
-                  child: IconButton(
-                    icon: Icon(Icons.image),
-                    onPressed: () {
-                      _pickImage().then((isSuccess) {
-                        if (isSuccess) _uploadFile();
-                      });
-                    },
-                    color: ColorConstants.primaryColor,
-                  ),
-                ),
-              ),
-              Material(
-                color: Colors.white,
-                child: Container(
-                  margin: EdgeInsets.symmetric(horizontal: 1),
-                  child: IconButton(
-                    icon: Icon(Icons.face),
-                    onPressed: _getSticker,
-                    color: ColorConstants.primaryColor,
-                  ),
-                ),
-              ),
-              Flexible(
-                child: TextField(
-                  onTapOutside: (_) {
-                    Utilities.closeKeyboard();
-                  },
-                  onSubmitted: (_) {
-                    _onSendMessageWithAutoDelete(
-                      _chatInputController.text,
-                      TypeMessage.text,
-                    );
-                  },
-                  onChanged: (text) {
-                    _handleTyping(text);
-                    if (text.isNotEmpty && _smartReplies.isNotEmpty) {
-                      setState(() => _smartReplies = []);
-                    }
-                  },
-                  style: TextStyle(
-                    color: ColorConstants.primaryColor,
-                    fontSize: 15,
-                  ),
-                  controller: _chatInputController,
-                  decoration: InputDecoration.collapsed(
-                    hintText: 'Type your message...',
-                    hintStyle: TextStyle(color: ColorConstants.greyColor),
-                  ),
-                  focusNode: _focusNode,
-                ),
-              ),
-              Material(
-                color: Colors.white,
-                child: Container(
-                  margin: EdgeInsets.symmetric(horizontal: 8),
-                  child: IconButton(
-                    icon: Icon(Icons.send),
-                    onPressed: () => _onSendMessageWithAutoDelete(
-                      _chatInputController.text,
-                      TypeMessage.text,
-                    ),
-                    color: ColorConstants.primaryColor,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+    SmartReplyWidget(
+      replies: _smartReplies,
+      onReplySelected: (reply) {
+        _chatInputController.text = reply;
+        setState(() => _smartReplies = []);
+      },
+    ),
+    if (_replyingTo != null)
+    Container(
+    width: double.infinity,
+    color: ColorConstants.greyColor2.withOpacity(0.2),
+    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+    child: Row(
+    children: [
+    Expanded(
+    child: Text(
+    'Replying: ${_replyingTo!.content}',
+    maxLines: 1,
+    overflow: TextOverflow.ellipsis,
+    ),
+    ),
+    IconButton(
+    icon: Icon(Icons.close, size: 18),
+    onPressed: () {
+    setState(() {
+    _replyingTo = null;
+    });
+    ),
+    ),
+    ],
+    ),
+    ),
+    // 🎯 NEW: Voice recording indicator
+    if (_isRecording)
+    Container(
+    width: double.infinity,
+    padding: EdgeInsets.all(12),
+    color: Colors.red.withOpacity(0.1),
+    child: Row(
+    children: [
+    Icon(Icons.fiber_manual_record, color: Colors.red, size: 16),
+    SizedBox(width: 8),
+    Text(
+    'Recording... $_recordingDuration',
+    style: TextStyle(
+    color: Colors.red,
+    fontWeight: FontWeight.bold,
+    ),
+    ),
+    Spacer(),
+    IconButton(
+    icon: Icon(Icons.delete, color: Colors.red),
+    onPressed: _cancelRecording,
+    ),
+    IconButton(
+    icon: Icon(Icons.send, color: ColorConstants.primaryColor),
+    onPressed: _stopRecording,
+    ),
+    ],
+    ),
+    ),
+    Container(
+    width: double.infinity,
+    height: 50,
+    decoration: BoxDecoration(
+    border: Border(
+    top: BorderSide(color: ColorConstants.greyColor2, width: 0.5),
+    ),
+    color: Colors.white,
+    ),
+    child: Row(
+    children: [
+    Material(
+    color: Colors.white,
+    child: Container(
+    margin: EdgeInsets.symmetric(horizontal: 1),
+    child: IconButton(
+    icon: Icon(
+    _showFeaturesMenu ? Icons.close : Icons.more_horiz,
+    color: ColorConstants.primaryColor,
+    ),
+    onPressed: _toggleFeaturesMenu,
+    ),
+    ),
+    ),
+    Material(
+    color: Colors.white,
+    child: Container(
+    margin: EdgeInsets.symmetric(horizontal: 1),
+    child: IconButton(
+    icon: Icon(Icons.image),
+    onPressed: () {
+    _pickImage().then((isSuccess) {
+    if (isSuccess) _uploadFile();
+    });
+    },
+    color: ColorConstants.primaryColor,
+    ),
+    ),
+    ),
+    Material(
+    color: Colors.white,
+    child: Container(
+    margin: EdgeInsets.symmetric(horizontal: 1),
+    child: IconButton(
+    icon: Icon(Icons.face),
+    onPressed: _getSticker,
+    color: ColorConstants.primaryColor,
+    ),
+    ),
+    ),
+    Flexible(
+    child: TextField(
+    onTapOutside: (_) {
+    Utilities.closeKeyboard();
+    },
+    onSubmitted: (_) {
+    _onSendMessageWithAutoDelete(
+    _chatInputController.text,
+    TypeMessage.text,
     );
-  }
-
-  void _onBackPress() {
-    if (_isShowSticker || _showFeaturesMenu) {
-      setState(() {
-        _isShowSticker = false;
-        _showFeaturesMenu = false;
-      });
-    } else {
-      _chatProvider.updateDataFirestore(
-        FirestoreConstants.pathUserCollection,
-        _currentUserId,
-        {FirestoreConstants.chattingWith: null},
-      );
-      Navigator.pop(context);
+    },
+    onChanged: (text) {
+    _handleTyping(text);
+    if (text.isNotEmpty && _smartReplies.isNotEmpty) {
+    setState(() => _smartReplies = []);
     }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: InkWell(
-          onTap: () async {
-            // Navigate to user profile
-            final userDoc = await FirebaseFirestore.instance
-                .collection(FirestoreConstants.pathUserCollection)
-                .doc(widget.arguments.peerId)
-                .get();
-
-            if (userDoc.exists) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => UserProfilePage(
-                    userChat: UserChat.fromDocument(userDoc),
-                  ),
-                ),
-              );
-            }
-          },
-          child: Row(
-            children: [
-              AvatarWithStatus(
-                userId: widget.arguments.peerId,
-                photoUrl: widget.arguments.peerAvatar,
-                size: 40,
-                indicatorSize: 12,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.arguments.peerNickname,
-                      style: TextStyle(
-                        color: ColorConstants.primaryColor,
-                        fontSize: 16,
-                      ),
-                    ),
-                    UserStatusIndicator(
-                      userId: widget.arguments.peerId,
-                      showText: true,
-                      size: 8,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        centerTitle: false,
-        actions: _buildAppBarActions(),
-      ),
-      body: SafeArea(
-        child: PopScope(
-          canPop: false,
-          onPopInvokedWithResult: (didPop, result) {
-            if (didPop) return;
-            _onBackPress();
-          },
-          child: Stack(
-            children: [
-              Column(
-                children: [
-                  _buildPinnedMessages(),
-                  _buildListMessage(),
-                  _buildTypingIndicator(),
-                  _isShowSticker ? _buildStickers() : SizedBox.shrink(),
-                  _buildFeaturesMenu(),
-                  _buildAdvancedInput(),
-                ],
-              ),
-              Positioned(
-                child: _isLoading ? LoadingView() : SizedBox.shrink(),
-              ),
-            ],
-          ),
-        ),
-      ),
+    },
+    style: TextStyle(
+    color: ColorConstants.primaryColor,
+    fontSize: 15,
+    ),
+    controller: _chatInputController,
+    decoration: InputDecoration.collapsed(
+    hintText: 'Type your message...',
+    hintStyle: TextStyle(color: ColorConstants.greyColor),
+    ),
+    focusNode: _focusNode,
+    ),
+    ),
+    // 🎯 NEW: Voice recording button
+    if (!_isRecording)
+    Material(
+    color: Colors.white,
+    child: Container(
+    margin: EdgeInsets.symmetric(horizontal: 4),
+    child: IconButton(
+    icon: Icon(Icons.mic),
+    onPressed: _startRecording,
+    color: ColorConstants.primaryColor,
+    ),
+    ),
+    ),
+    Material(
+    color: Colors.white,
+    child: Container(
+    margin: EdgeInsets.symmetric(horizontal: 8),
+    child: IconButton(
+    icon: Icon(Icons.send),
+    onPressed: () => _onSendMessageWithAutoDelete(
+    _chatInputController.text,
+    TypeMessage.text,
+    ),
+    color: ColorConstants.primaryColor,
+    ),
+    ),
+    ),
+    ],
+    ),
+    ),
+    ],
     );
-  }
+    }
 
-  @override
-  void dispose() {
+    void _onBackPress() {
+    if (_isShowSticker || _showFeaturesMenu) {
+    setState(() {
+    _isShowSticker = false;
+    _showFeaturesMenu = false;
+    });
+    } else {
+    _chatProvider.updateDataFirestore(
+    FirestoreConstants.pathUserCollection,
+    _currentUserId,
+    {FirestoreConstants.chattingWith: null},
+    );
+    Navigator.pop(context);
+    }
+    }
+
+    @override
+    Widget build(BuildContext context) {
+    return Scaffold(
+    appBar: AppBar(
+    title: InkWell(
+    onTap: () async {
+    final userDoc = await FirebaseFirestore.instance
+        .collection(FirestoreConstants.pathUserCollection)
+        .doc(widget.arguments.peerId)
+        .get();
+
+    if (userDoc.exists) {
+    Navigator.push(
+    context,
+    MaterialPageRoute(
+    builder: (_) => UserProfilePage(
+    userChat: UserChat.fromDocument(userDoc),
+    ),
+    ),
+    );
+    }
+    },
+    child: Row(
+    children: [
+    AvatarWithStatus(
+    userId: widget.arguments.peerId,
+    photoUrl: widget.arguments.peerAvatar,
+    size: 40,
+    indicatorSize: 12,
+    ),
+    const SizedBox(width: 12),
+    Expanded(
+    child: Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+    Text(
+    widget.arguments.peerNickname,
+    style: TextStyle(
+    color: ColorConstants.primaryColor,
+    fontSize: 16,
+    ),
+    ),
+    UserStatusIndicator(
+    userId: widget.arguments.peerId,
+    showText: true,
+    size: 8,
+    ),
+    ],
+    ),
+    ),
+    ],
+    ),
+    ),
+    centerTitle: false,
+    actions: _buildAppBarActions(),
+    ),
+    body: SafeArea(
+    child: PopScope(
+    canPop: false,
+    onPopInvokedWithResult: (didPop, result) {
+    if (didPop) return;
+    _onBackPress();
+    },
+    child: Stack(
+    children: [
+    Column(
+    children: [
+    _buildPinnedMessages(),
+    _buildListMessage(),
+    _buildTypingIndicator(),
+    _isShowSticker ? _buildStickers() : SizedBox.shrink(),
+    _buildFeaturesMenu(),
+    _buildAdvancedInput(),
+    ],
+    ),
+    Positioned(
+    child: _isLoading ? LoadingView() : SizedBox.shrink(),
+    ),
+    ],
+    ),
+    ),
+    ),
+    );
+    }
+
+    @override
+    void dispose() {
     _unreadMessagesSubscription?.cancel();
     _pinnedSub?.cancel();
     _typingTimer?.cancel();
+    _recordingTimer?.cancel();
 
     if (_presenceProvider != null) {
-      _presenceProvider!.setUserOffline(_currentUserId);
-      _presenceProvider!.setTypingStatus(
-        conversationId: _groupChatId,
-        userId: _currentUserId,
-        isTyping: false,
-      );
+    _presenceProvider!.setUserOffline(_currentUserId);
+    _presenceProvider!.setTypingStatus(
+    conversationId: _groupChatId,
+    userId: _currentUserId,
+    isTyping: false,
+    );
     }
+
+    _voiceProvider.dispose();
 
     _chatInputController.dispose();
     _listScrollController
-      ..removeListener(_scrollListener)
-      ..dispose();
+    ..removeListener(_scrollListener)
+    ..dispose();
     _focusNode.dispose();
     super.dispose();
+    }
   }
-}
 
-class ChatPageArguments {
+
+  class ChatPageArguments {
   final String peerId;
   final String peerAvatar;
   final String peerNickname;
 
+
   ChatPageArguments({
-    required this.peerId,
-    required this.peerAvatar,
-    required this.peerNickname,
+  required this.peerId,
+  required this.peerAvatar,
+  required this.peerNickname,
   });
-}
+  }
