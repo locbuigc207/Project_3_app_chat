@@ -52,8 +52,8 @@ class ConversationProvider {
 
       // Sắp xếp: pinned trước, sau đó theo lastMessageTime
       docs.sort((a, b) {
-        final aData = a.data() as Map<String, dynamic>;
-        final bData = b.data() as Map<String, dynamic>;
+        final aData = a.data();
+        final bData = b.data();
 
         final aPinned = aData['isPinned'] ?? false;
         final bPinned = bData['isPinned'] ?? false;

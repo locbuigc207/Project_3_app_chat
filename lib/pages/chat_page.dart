@@ -1,4 +1,4 @@
-// lib/pages/chat_page.dart (COMPLETE - ALL METHODS IMPLEMENTED)
+// lib/pages/chat_page.dart (COMPLETE FIXED - ALL FEATURES WORKING)
 import 'dart:async';
 import 'dart:io';
 
@@ -67,6 +67,9 @@ class ChatPageState extends State<ChatPage> {
 
   StreamSubscription<QuerySnapshot>? _unreadMessagesSubscription;
 
+  // 🎯 NEW: Features menu state
+  bool _showFeaturesMenu = false;
+
   @override
   void initState() {
     super.initState();
@@ -123,6 +126,7 @@ class ChatPageState extends State<ChatPage> {
     if (_focusNode.hasFocus) {
       setState(() {
         _isShowSticker = false;
+        _showFeaturesMenu = false;
       });
     }
   }
@@ -199,6 +203,7 @@ class ChatPageState extends State<ChatPage> {
     _focusNode.unfocus();
     setState(() {
       _isShowSticker = !_isShowSticker;
+      _showFeaturesMenu = false;
     });
   }
 
@@ -391,7 +396,6 @@ class ChatPageState extends State<ChatPage> {
     }
   }
 
-  // ✅ MISSING METHOD 1: Show Advanced Message Options
   void _showAdvancedMessageOptions(MessageChat message, String messageId) {
     showModalBottomSheet(
       context: context,
@@ -411,7 +415,6 @@ class ChatPageState extends State<ChatPage> {
     );
   }
 
-  // ✅ MISSING METHOD 2: Edit Message
   Future<void> _editMessage(String messageId, String currentContent) async {
     showDialog(
       context: context,
@@ -431,7 +434,6 @@ class ChatPageState extends State<ChatPage> {
     );
   }
 
-  // ✅ MISSING METHOD 3: Delete Message
   Future<void> _deleteMessage(String messageId) async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -462,7 +464,6 @@ class ChatPageState extends State<ChatPage> {
     }
   }
 
-  // ✅ MISSING METHOD 4: Toggle Pin Message
   Future<void> _togglePinMessage(String messageId, bool currentStatus) async {
     final success = await _messageProvider.togglePinMessage(
       _groupChatId,
@@ -476,13 +477,11 @@ class ChatPageState extends State<ChatPage> {
     }
   }
 
-  // ✅ MISSING METHOD 5: Copy Message
   void _copyMessage(String content) {
     Clipboard.setData(ClipboardData(text: content));
     Fluttertoast.showToast(msg: 'Copied to clipboard');
   }
 
-  // ✅ MISSING METHOD 6: Set Reply To Message
   void _setReplyToMessage(MessageChat message) {
     setState(() {
       _replyingTo = message;
@@ -490,7 +489,6 @@ class ChatPageState extends State<ChatPage> {
     _focusNode.requestFocus();
   }
 
-  // ✅ MISSING METHOD 7: Show Reaction Picker
   void _showReactionPicker(String messageId) {
     showDialog(
       context: context,
@@ -511,7 +509,6 @@ class ChatPageState extends State<ChatPage> {
     );
   }
 
-  // ✅ MISSING METHOD 8: Pick Time with Wheel
   Future<DateTime?> _pickTimeWithWheel() async {
     DateTime selectedTime = DateTime.now().add(Duration(hours: 1));
 
@@ -525,7 +522,6 @@ class ChatPageState extends State<ChatPage> {
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Date Picker
                   ListTile(
                     title: Text('Date'),
                     subtitle:
@@ -551,7 +547,6 @@ class ChatPageState extends State<ChatPage> {
                       }
                     },
                   ),
-                  // Time Picker
                   ListTile(
                     title: Text('Time'),
                     subtitle: Text(DateFormat('HH:mm').format(selectedTime)),
@@ -595,7 +590,6 @@ class ChatPageState extends State<ChatPage> {
     return result;
   }
 
-  // ✅ MISSING METHOD 9: Set Message Reminder
   Future<void> _setMessageReminder(
       MessageChat message, String messageId) async {
     final reminderTime = await _pickTimeWithWheel();
@@ -610,14 +604,13 @@ class ChatPageState extends State<ChatPage> {
       );
 
       if (success) {
-        Fluttertoast.showToast(msg: 'Reminder set successfully');
+        Fluttertoast.showToast(msg: '⏰ Reminder set successfully');
       } else {
         Fluttertoast.showToast(msg: 'Failed to set reminder');
       }
     }
   }
 
-  // ✅ MISSING METHOD 10: Check Conversation Lock
   Future<void> _checkConversationLock() async {
     final lockStatus =
         await _lockProvider.getConversationLockStatus(_groupChatId);
@@ -637,7 +630,6 @@ class ChatPageState extends State<ChatPage> {
     });
   }
 
-  // ✅ MISSING METHOD 11: Show PIN Verification Dialog
   Future<bool> _showPINVerificationDialog() async {
     String? errorMessage;
     int remainingAttempts = 5;
@@ -683,7 +675,6 @@ class ChatPageState extends State<ChatPage> {
     return false;
   }
 
-  // ✅ MISSING METHOD 12: Load Smart Replies
   Future<void> _loadSmartReplies() async {
     if (_listMessage.isEmpty) return;
 
@@ -704,7 +695,6 @@ class ChatPageState extends State<ChatPage> {
     }
   }
 
-  // ✅ MISSING METHOD 13: Show Reminders
   void _showReminders() {
     Navigator.push(
       context,
@@ -759,7 +749,6 @@ class ChatPageState extends State<ChatPage> {
     );
   }
 
-  // ✅ MISSING METHOD 14: Build App Bar Actions
   List<Widget> _buildAppBarActions() {
     return [
       IconButton(
@@ -823,7 +812,6 @@ class ChatPageState extends State<ChatPage> {
     ];
   }
 
-  // ✅ MISSING METHOD 15: Show Lock Options
   void _showLockOptions() async {
     final action = await showDialog<String>(
       context: context,
@@ -855,7 +843,6 @@ class ChatPageState extends State<ChatPage> {
     }
   }
 
-  // ✅ MISSING METHOD 16: Show Set PIN Dialog
   void _showSetPINDialog() async {
     final pin = await showDialog<String>(
       context: context,
@@ -870,7 +857,6 @@ class ChatPageState extends State<ChatPage> {
     }
   }
 
-  // ✅ MISSING METHOD 17: Show Confirm PIN Dialog
   void _showConfirmPINDialog(String originalPin) async {
     final confirmPin = await showDialog<String>(
       context: context,
@@ -894,7 +880,108 @@ class ChatPageState extends State<ChatPage> {
     }
   }
 
-  // ✅ BUILD METHODS
+  // 🎯 NEW: Toggle features menu
+  void _toggleFeaturesMenu() {
+    setState(() {
+      _showFeaturesMenu = !_showFeaturesMenu;
+      _isShowSticker = false;
+    });
+  }
+
+  // 🎯 NEW: Build features menu
+  Widget _buildFeaturesMenu() {
+    if (!_showFeaturesMenu) return SizedBox.shrink();
+
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          top: BorderSide(color: ColorConstants.greyColor2),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildFeatureButton(
+                icon: Icons.visibility_off,
+                label: 'View Once',
+                onTap: () {
+                  showDialog(
+                    context: context,
+                    builder: (_) => SendViewOnceDialog(
+                      onSend: (content, type) async {
+                        await _viewOnceProvider.sendViewOnceMessage(
+                          groupChatId: _groupChatId,
+                          currentUserId: _currentUserId,
+                          peerId: widget.arguments.peerId,
+                          content: content,
+                          type: type,
+                        );
+                        await _loadSmartReplies();
+                      },
+                    ),
+                  );
+                },
+              ),
+              _buildFeatureButton(
+                icon: Icons.timer,
+                label: 'Auto Delete',
+                onTap: () {
+                  showDialog(
+                    context: context,
+                    builder: (_) => AutoDeleteSettingsDialog(
+                      conversationId: _groupChatId,
+                      provider: _autoDeleteProvider,
+                    ),
+                  );
+                },
+              ),
+              _buildFeatureButton(
+                icon: Icons.lock,
+                label: 'Lock Chat',
+                onTap: _showLockOptions,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFeatureButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: () {
+        setState(() => _showFeaturesMenu = false);
+        onTap();
+      },
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: ColorConstants.primaryColor, size: 28),
+            SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: ColorConstants.primaryColor,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildPinnedMessages() {
     if (_pinnedMessages.isEmpty) return SizedBox.shrink();
 
@@ -980,66 +1067,162 @@ class ChatPageState extends State<ChatPage> {
     final messageChat = MessageChat.fromDocument(document);
     final isMyMessage = messageChat.idFrom == _currentUserId;
 
-    if (messageChat.type == TypeMessage.text) {
+    // 🎯 NEW: Check for View Once message
+    final data = document.data() as Map<String, dynamic>?;
+    final isViewOnce = data?['isViewOnce'] ?? false;
+    final isViewed = data?['isViewed'] ?? false;
+
+    if (isViewOnce) {
       return Container(
         margin: EdgeInsets.only(bottom: 10),
         child: Row(
           mainAxisAlignment:
               isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
           children: [
-            GestureDetector(
-              onLongPress: () =>
-                  _showAdvancedMessageOptions(messageChat, document.id),
-              child: Container(
-                padding: EdgeInsets.all(12),
-                constraints: BoxConstraints(maxWidth: 250),
-                decoration: BoxDecoration(
-                  color: isMyMessage
-                      ? ColorConstants.primaryColor
-                      : ColorConstants.greyColor2,
-                  borderRadius: BorderRadius.circular(12),
+            ViewOnceMessageWidget(
+              groupChatId: _groupChatId,
+              messageId: document.id,
+              content: messageChat.content,
+              type: messageChat.type,
+              currentUserId: _currentUserId,
+              isViewed: isViewed,
+              provider: _viewOnceProvider,
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (messageChat.type == TypeMessage.text) {
+      return Container(
+        margin: EdgeInsets.only(bottom: 10),
+        child: Column(
+          crossAxisAlignment:
+              isMyMessage ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment:
+                  isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
+              children: [
+                GestureDetector(
+                  onLongPress: () =>
+                      _showAdvancedMessageOptions(messageChat, document.id),
+                  onDoubleTap: () => _showReactionPicker(document.id),
+                  child: Container(
+                    padding: EdgeInsets.all(12),
+                    constraints: BoxConstraints(maxWidth: 250),
+                    decoration: BoxDecoration(
+                      color: isMyMessage
+                          ? ColorConstants.primaryColor
+                          : ColorConstants.greyColor2,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (messageChat.isDeleted)
+                          Text(
+                            messageChat.content,
+                            style: TextStyle(
+                              color: isMyMessage
+                                  ? Colors.white70
+                                  : ColorConstants.greyColor,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          )
+                        else
+                          Text(
+                            messageChat.content,
+                            style: TextStyle(
+                              color:
+                                  isMyMessage ? Colors.white : Colors.black87,
+                            ),
+                          ),
+                        if (messageChat.editedAt != null)
+                          Text(
+                            '(edited)',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: isMyMessage
+                                  ? Colors.white70
+                                  : ColorConstants.greyColor,
+                            ),
+                          ),
+                        if (isMyMessage && !messageChat.isDeleted)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: ReadReceiptWidget(
+                              isRead: messageChat.isRead,
+                              size: 14,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (messageChat.isDeleted)
-                      Text(
-                        messageChat.content,
-                        style: TextStyle(
-                          color: isMyMessage
-                              ? Colors.white70
-                              : ColorConstants.greyColor,
-                          fontStyle: FontStyle.italic,
-                        ),
-                      )
-                    else
-                      Text(
-                        messageChat.content,
-                        style: TextStyle(
-                          color: isMyMessage ? Colors.white : Colors.black87,
-                        ),
+                // 🎯 NEW: Quick action buttons
+                if (!messageChat.isDeleted) ...[
+                  SizedBox(width: 4),
+                  Column(
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.add_reaction, size: 18),
+                        onPressed: () => _showReactionPicker(document.id),
+                        padding: EdgeInsets.zero,
+                        constraints: BoxConstraints(),
                       ),
-                    if (messageChat.editedAt != null)
-                      Text(
-                        '(edited)',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: isMyMessage
-                              ? Colors.white70
-                              : ColorConstants.greyColor,
+                      if (!isMyMessage)
+                        IconButton(
+                          icon: Icon(Icons.alarm_add, size: 18),
+                          onPressed: () =>
+                              _setMessageReminder(messageChat, document.id),
+                          padding: EdgeInsets.zero,
+                          constraints: BoxConstraints(),
                         ),
-                      ),
-                    if (isMyMessage && !messageChat.isDeleted)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: ReadReceiptWidget(
-                          isRead: messageChat.isRead,
-                          size: 14,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+            // 🎯 NEW: Reactions display
+            StreamBuilder<QuerySnapshot>(
+              stream: _reactionProvider.getReactions(_groupChatId, document.id),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return SizedBox.shrink();
+                }
+
+                final reactions = <String, int>{};
+                final userReactions = <String, bool>{};
+
+                for (var doc in snapshot.data!.docs) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final emoji = data['emoji'] as String;
+                  final userId = data['userId'] as String;
+
+                  reactions[emoji] = (reactions[emoji] ?? 0) + 1;
+                  if (userId == _currentUserId) {
+                    userReactions[emoji] = true;
+                  }
+                }
+
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: MessageReactionsDisplay(
+                    reactions: reactions,
+                    currentUserId: _currentUserId,
+                    userReactions: userReactions,
+                    onReactionTap: (emoji) {
+                      _reactionProvider.toggleReaction(
+                        _groupChatId,
+                        document.id,
+                        _currentUserId,
+                        emoji,
+                      );
+                    },
+                  ),
+                );
+              },
             ),
           ],
         ),
@@ -1232,6 +1415,20 @@ class ChatPageState extends State<ChatPage> {
           ),
           child: Row(
             children: [
+              // 🎯 NEW: Features menu button
+              Material(
+                color: Colors.white,
+                child: Container(
+                  margin: EdgeInsets.symmetric(horizontal: 1),
+                  child: IconButton(
+                    icon: Icon(
+                      _showFeaturesMenu ? Icons.close : Icons.more_horiz,
+                      color: ColorConstants.primaryColor,
+                    ),
+                    onPressed: _toggleFeaturesMenu,
+                  ),
+                ),
+              ),
               Material(
                 color: Colors.white,
                 child: Container(
@@ -1242,33 +1439,6 @@ class ChatPageState extends State<ChatPage> {
                       _pickImage().then((isSuccess) {
                         if (isSuccess) _uploadFile();
                       });
-                    },
-                    color: ColorConstants.primaryColor,
-                  ),
-                ),
-              ),
-              Material(
-                color: Colors.white,
-                child: Container(
-                  margin: EdgeInsets.symmetric(horizontal: 1),
-                  child: IconButton(
-                    icon: Icon(Icons.visibility_off),
-                    onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (_) => SendViewOnceDialog(
-                          onSend: (content, type) async {
-                            await _viewOnceProvider.sendViewOnceMessage(
-                              groupChatId: _groupChatId,
-                              currentUserId: _currentUserId,
-                              peerId: widget.arguments.peerId,
-                              content: content,
-                              type: type,
-                            );
-                            await _loadSmartReplies();
-                          },
-                        ),
-                      );
                     },
                     color: ColorConstants.primaryColor,
                   ),
@@ -1336,9 +1506,10 @@ class ChatPageState extends State<ChatPage> {
   }
 
   void _onBackPress() {
-    if (_isShowSticker) {
+    if (_isShowSticker || _showFeaturesMenu) {
       setState(() {
         _isShowSticker = false;
+        _showFeaturesMenu = false;
       });
     } else {
       _chatProvider.updateDataFirestore(
@@ -1407,6 +1578,7 @@ class ChatPageState extends State<ChatPage> {
                   _buildListMessage(),
                   _buildTypingIndicator(),
                   _isShowSticker ? _buildStickers() : SizedBox.shrink(),
+                  _buildFeaturesMenu(),
                   _buildAdvancedInput(),
                 ],
               ),
