@@ -50,6 +50,7 @@ dependencies:
   flutter_sound: ^9.16.3
   geolocator: ^13.0.1
   translator: ^1.0.0
+  path_provider: ^2.1.5
 
 
 dev_dependencies:

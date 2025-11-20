@@ -1,4 +1,4 @@
-// lib/pages/chat_page.dart - ENHANCED WITH ALL NEW FEATURES
+// lib/pages/chat_page.dart - COMPLETE WITH ALL FEATURES
 import 'dart:async';
 import 'dart:io';
 
@@ -12,7 +12,6 @@ import 'package:flutter_chat_demo/providers/providers.dart';
 import 'package:flutter_chat_demo/utils/utils.dart';
 import 'package:flutter_chat_demo/widgets/widgets.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -56,9 +55,9 @@ class ChatPageState extends State<ChatPage> {
   late ConversationLockProvider _lockProvider;
   late ViewOnceProvider _viewOnceProvider;
   late SmartReplyProvider _smartReplyProvider;
-  late VoiceMessageProvider _voiceProvider; // 🎯 NEW
-  late LocationProvider _locationProvider; // 🎯 NEW
-  late TranslationProvider _translationProvider; // 🎯 NEW
+  VoiceMessageProvider? _voiceProvider;
+  LocationProvider? _locationProvider;
+  TranslationProvider? _translationProvider;
 
   List<DocumentSnapshot> _pinnedMessages = [];
   StreamSubscription<QuerySnapshot>? _pinnedSub;
@@ -73,7 +72,7 @@ class ChatPageState extends State<ChatPage> {
 
   bool _showFeaturesMenu = false;
 
-  // 🎯 NEW: Voice recording state
+  // Voice recording state
   bool _isRecording = false;
   String _recordingDuration = "0:00";
   Timer? _recordingTimer;
@@ -102,7 +101,7 @@ class ChatPageState extends State<ChatPage> {
     _smartReplyProvider = context.read<SmartReplyProvider>();
     _presenceProvider = context.read<UserPresenceProvider>();
 
-    // 🎯 NEW: Initialize new providers
+    // Initialize new providers
     _voiceProvider = VoiceMessageProvider(
       firebaseStorage: _chatProvider.firebaseStorage,
     );
@@ -153,7 +152,7 @@ class ChatPageState extends State<ChatPage> {
     } else {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => LoginPage()),
-            (_) => false,
+        (_) => false,
       );
       return;
     }
@@ -179,7 +178,7 @@ class ChatPageState extends State<ChatPage> {
   void _loadPinnedMessages() {
     _pinnedSub?.cancel();
     _pinnedSub = _messageProvider.getPinnedMessages(_groupChatId).listen(
-          (snapshot) {
+      (snapshot) {
         if (!mounted) return;
         setState(() {
           _pinnedMessages = snapshot.docs;
@@ -405,14 +404,11 @@ class ChatPageState extends State<ChatPage> {
       await batch.commit();
 
       ErrorLogger.logMessageRead(conversationId: _groupChatId);
-
-      print('✅ Marked ${unreadMessages.docs.length} messages as read');
     } catch (e) {
       ErrorLogger.logError(e, null, context: 'Mark Messages Read');
     }
   }
 
-  // 🎯 NEW: Enhanced message options with 5 actions
   void _showAdvancedMessageOptions(MessageChat message, String messageId) {
     showModalBottomSheet(
       context: context,
@@ -429,8 +425,8 @@ class ChatPageState extends State<ChatPage> {
         onPin: () => _togglePinMessage(messageId, message.isPinned),
         onCopy: () => _copyMessage(message.content),
         onReply: () => _setReplyToMessage(message),
-        onReminder: () => _setMessageReminder(message, messageId), // 🎯 NEW
-        onTranslate: () => _translateMessage(message.content), // 🎯 NEW
+        onReminder: () => _setMessageReminder(message, messageId),
+        onTranslate: () => _translateMessage(message.content),
       ),
     );
   }
@@ -545,7 +541,7 @@ class ChatPageState extends State<ChatPage> {
                   ListTile(
                     title: Text('Date'),
                     subtitle:
-                    Text(DateFormat('MMM dd, yyyy').format(selectedTime)),
+                        Text(DateFormat('MMM dd, yyyy').format(selectedTime)),
                     trailing: Icon(Icons.calendar_today),
                     onTap: () async {
                       final date = await showDatePicker(
@@ -631,20 +627,21 @@ class ChatPageState extends State<ChatPage> {
     }
   }
 
-  // 🎯 NEW: Translate message
   Future<void> _translateMessage(String content) async {
+    if (_translationProvider == null) return;
+
     showDialog(
       context: context,
       builder: (context) => TranslationDialog(
         originalText: content,
-        translationProvider: _translationProvider,
+        translationProvider: _translationProvider!,
       ),
     );
   }
 
   Future<void> _checkConversationLock() async {
     final lockStatus =
-    await _lockProvider.getConversationLockStatus(_groupChatId);
+        await _lockProvider.getConversationLockStatus(_groupChatId);
 
     if (lockStatus != null && lockStatus['isLocked'] == true) {
       if (!mounted) return;
@@ -715,7 +712,7 @@ class ChatPageState extends State<ChatPage> {
     if (messageChat.idFrom != _currentUserId &&
         messageChat.type == TypeMessage.text) {
       final replies =
-      _smartReplyProvider.getRuleBasedReplies(messageChat.content);
+          _smartReplyProvider.getRuleBasedReplies(messageChat.content);
 
       if (mounted) {
         setState(() {
@@ -753,7 +750,7 @@ class ChatPageState extends State<ChatPage> {
                 itemCount: reminders.length,
                 itemBuilder: (context, index) {
                   final reminder =
-                  MessageReminder.fromDocument(reminders[index]);
+                      MessageReminder.fromDocument(reminders[index]);
 
                   return ListTile(
                     title: Text(reminder.message),
@@ -925,7 +922,6 @@ class ChatPageState extends State<ChatPage> {
     });
   }
 
-  // 🎯 NEW: Enhanced features menu with location and scheduling
   Widget _buildFeaturesMenu() {
     if (!_showFeaturesMenu) return SizedBox.shrink();
 
@@ -985,7 +981,6 @@ class ChatPageState extends State<ChatPage> {
             ],
           ),
           const SizedBox(height: 12),
-          // 🎯 NEW: Second row with location and scheduling
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
@@ -999,7 +994,7 @@ class ChatPageState extends State<ChatPage> {
                 label: 'Schedule',
                 onTap: _scheduleMessage,
               ),
-              SizedBox(width: 80), // Placeholder for alignment
+              SizedBox(width: 80),
             ],
           ),
         ],
@@ -1037,17 +1032,18 @@ class ChatPageState extends State<ChatPage> {
     );
   }
 
-  // 🎯 NEW: Share location
   Future<void> _shareLocation() async {
+    if (_locationProvider == null) return;
+
     setState(() => _isLoading = true);
 
-    final position = await _locationProvider.getCurrentLocation();
+    final position = await _locationProvider!.getCurrentLocation();
 
     setState(() => _isLoading = false);
 
     if (position != null) {
-      final locationText = _locationProvider.formatLocation(position);
-      final mapsLink = _locationProvider.generateMapsLink(position);
+      final locationText = _locationProvider!.formatLocation(position);
+      final mapsLink = _locationProvider!.generateMapsLink(position);
       final message = '$locationText\n$mapsLink';
 
       await _onSendMessageWithAutoDelete(message, TypeMessage.text);
@@ -1057,7 +1053,6 @@ class ChatPageState extends State<ChatPage> {
     }
   }
 
-  // 🎯 NEW: Schedule message
   Future<void> _scheduleMessage() async {
     final messageController = TextEditingController();
     DateTime? scheduledTime;
@@ -1084,7 +1079,8 @@ class ChatPageState extends State<ChatPage> {
                   leading: Icon(Icons.schedule),
                   title: Text(
                     scheduledTime != null
-                        ? DateFormat('MMM dd, yyyy HH:mm').format(scheduledTime!)
+                        ? DateFormat('MMM dd, yyyy HH:mm')
+                            .format(scheduledTime!)
                         : 'Select time',
                   ),
                   onTap: () async {
@@ -1151,28 +1147,29 @@ class ChatPageState extends State<ChatPage> {
         return;
       }
 
-      // Schedule the message
       Timer(delay, () {
         _onSendMessageWithAutoDelete(message, TypeMessage.text);
       });
 
       Fluttertoast.showToast(
-        msg: '📅 Message scheduled for ${DateFormat('HH:mm').format(scheduledTime!)}',
+        msg:
+            '📅 Message scheduled for ${DateFormat('HH:mm').format(scheduledTime!)}',
       );
     }
 
     messageController.dispose();
   }
 
-  // 🎯 NEW: Voice recording functions
   Future<void> _startRecording() async {
-    final initialized = await _voiceProvider.initRecorder();
+    if (_voiceProvider == null) return;
+
+    final initialized = await _voiceProvider!.initRecorder();
     if (!initialized) {
       Fluttertoast.showToast(msg: 'Microphone permission required');
       return;
     }
 
-    final started = await _voiceProvider.startRecording();
+    final started = await _voiceProvider!.startRecording();
     if (started) {
       setState(() {
         _isRecording = true;
@@ -1192,9 +1189,11 @@ class ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _stopRecording() async {
+    if (_voiceProvider == null) return;
+
     _recordingTimer?.cancel();
 
-    final filePath = await _voiceProvider.stopRecording();
+    final filePath = await _voiceProvider!.stopRecording();
     if (filePath == null) {
       setState(() => _isRecording = false);
       Fluttertoast.showToast(msg: 'Recording failed');
@@ -1207,12 +1206,12 @@ class ChatPageState extends State<ChatPage> {
     });
 
     final fileName = 'voice_${DateTime.now().millisecondsSinceEpoch}.aac';
-    final url = await _voiceProvider.uploadVoiceMessage(filePath, fileName);
+    final url = await _voiceProvider!.uploadVoiceMessage(filePath, fileName);
 
     setState(() => _isLoading = false);
 
     if (url != null) {
-      await _onSendMessageWithAutoDelete(url, 3); // Type 3 for voice
+      await _onSendMessageWithAutoDelete(url, 3);
       Fluttertoast.showToast(msg: '🎤 Voice message sent');
     } else {
       Fluttertoast.showToast(msg: 'Failed to send voice message');
@@ -1220,8 +1219,10 @@ class ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _cancelRecording() async {
+    if (_voiceProvider == null) return;
+
     _recordingTimer?.cancel();
-    await _voiceProvider.cancelRecording();
+    await _voiceProvider!.cancelRecording();
     setState(() => _isRecording = false);
   }
 
@@ -1238,9 +1239,7 @@ class ChatPageState extends State<ChatPage> {
         itemBuilder: (context, index) {
           final message = MessageChat.fromDocument(_pinnedMessages[index]);
           return GestureDetector(
-            onTap: () {
-              // Scroll to message
-            },
+            onTap: () {},
             child: Container(
               margin: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
               padding: EdgeInsets.all(8),
@@ -1271,36 +1270,36 @@ class ChatPageState extends State<ChatPage> {
     return Flexible(
       child: _groupChatId.isNotEmpty
           ? StreamBuilder<QuerySnapshot>(
-        stream: _chatProvider.getChatStream(_groupChatId, _limit),
-        builder: (_, snapshot) {
-          if (snapshot.hasData) {
-            _listMessage = snapshot.data!.docs;
-            if (_listMessage.isNotEmpty) {
-              return ListView.builder(
-                padding: EdgeInsets.all(10),
-                itemBuilder: (_, index) =>
-                    _buildItemMessage(index, snapshot.data?.docs[index]),
-                itemCount: snapshot.data?.docs.length,
-                reverse: true,
-                controller: _listScrollController,
-              );
-            } else {
-              return Center(child: Text("No message here yet..."));
-            }
-          } else {
-            return Center(
+              stream: _chatProvider.getChatStream(_groupChatId, _limit),
+              builder: (_, snapshot) {
+                if (snapshot.hasData) {
+                  _listMessage = snapshot.data!.docs;
+                  if (_listMessage.isNotEmpty) {
+                    return ListView.builder(
+                      padding: EdgeInsets.all(10),
+                      itemBuilder: (_, index) =>
+                          _buildItemMessage(index, snapshot.data?.docs[index]),
+                      itemCount: snapshot.data?.docs.length,
+                      reverse: true,
+                      controller: _listScrollController,
+                    );
+                  } else {
+                    return Center(child: Text("No message here yet..."));
+                  }
+                } else {
+                  return Center(
+                    child: CircularProgressIndicator(
+                      color: ColorConstants.themeColor,
+                    ),
+                  );
+                }
+              },
+            )
+          : Center(
               child: CircularProgressIndicator(
                 color: ColorConstants.themeColor,
               ),
-            );
-          }
-        },
-      )
-          : Center(
-        child: CircularProgressIndicator(
-          color: ColorConstants.themeColor,
-        ),
-      ),
+            ),
     );
   }
 
@@ -1314,12 +1313,12 @@ class ChatPageState extends State<ChatPage> {
     final isViewOnce = data?['isViewOnce'] ?? false;
     final isViewed = data?['isViewed'] ?? false;
 
-    if (isViewOnce) {
+    if (isViewOnce && _viewOnceProvider != null) {
       return Container(
         margin: EdgeInsets.only(bottom: 10),
         child: Row(
           mainAxisAlignment:
-          isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
+              isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
           children: [
             ViewOnceMessageWidget(
               groupChatId: _groupChatId,
@@ -1328,25 +1327,24 @@ class ChatPageState extends State<ChatPage> {
               type: messageChat.type,
               currentUserId: _currentUserId,
               isViewed: isViewed,
-              provider: _viewOnceProvider,
+              provider: _viewOnceProvider!,
             ),
           ],
         ),
       );
     }
 
-    // 🎯 NEW: Voice message (type 3)
-    if (messageChat.type == 3) {
+    if (messageChat.type == 3 && _voiceProvider != null) {
       return Container(
         margin: EdgeInsets.only(bottom: 10),
         child: Row(
           mainAxisAlignment:
-          isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
+              isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
           children: [
             VoiceMessageWidget(
               voiceUrl: messageChat.content,
               isMyMessage: isMyMessage,
-              voiceProvider: _voiceProvider,
+              voiceProvider: _voiceProvider!,
             ),
           ],
         ),
@@ -1354,18 +1352,17 @@ class ChatPageState extends State<ChatPage> {
     }
 
     if (messageChat.type == TypeMessage.text) {
-      // Check if it's a location message
-      final location = _locationProvider.parseLocation(messageChat.content);
+      final location = _locationProvider?.parseLocation(messageChat.content);
 
       return Container(
         margin: EdgeInsets.only(bottom: 10),
         child: Column(
           crossAxisAlignment:
-          isMyMessage ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              isMyMessage ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
             Row(
               mainAxisAlignment:
-              isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
+                  isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
               children: [
                 GestureDetector(
                   onLongPress: () =>
@@ -1394,7 +1391,6 @@ class ChatPageState extends State<ChatPage> {
                             ),
                           )
                         else if (location != null)
-                        // 🎯 NEW: Location message display
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -1402,14 +1398,17 @@ class ChatPageState extends State<ChatPage> {
                                 children: [
                                   Icon(
                                     Icons.location_on,
-                                    color: isMyMessage ? Colors.white : Colors.red,
+                                    color:
+                                        isMyMessage ? Colors.white : Colors.red,
                                     size: 20,
                                   ),
                                   SizedBox(width: 4),
                                   Text(
                                     'Location',
                                     style: TextStyle(
-                                      color: isMyMessage ? Colors.white : Colors.black87,
+                                      color: isMyMessage
+                                          ? Colors.white
+                                          : Colors.black87,
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
@@ -1419,7 +1418,9 @@ class ChatPageState extends State<ChatPage> {
                               Text(
                                 messageChat.content.split('\n').first,
                                 style: TextStyle(
-                                  color: isMyMessage ? Colors.white : Colors.black87,
+                                  color: isMyMessage
+                                      ? Colors.white
+                                      : Colors.black87,
                                   fontSize: 12,
                                 ),
                               ),
@@ -1430,7 +1431,7 @@ class ChatPageState extends State<ChatPage> {
                             messageChat.content,
                             style: TextStyle(
                               color:
-                              isMyMessage ? Colors.white : Colors.black87,
+                                  isMyMessage ? Colors.white : Colors.black87,
                             ),
                           ),
                         if (messageChat.editedAt != null)
@@ -1525,7 +1526,7 @@ class ChatPageState extends State<ChatPage> {
         margin: EdgeInsets.only(bottom: 10),
         child: Row(
           mainAxisAlignment:
-          isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
+              isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
           children: [
             GestureDetector(
               onTap: () {
@@ -1558,7 +1559,7 @@ class ChatPageState extends State<ChatPage> {
                         child: CircularProgressIndicator(
                           value: loadingProgress.expectedTotalBytes != null
                               ? loadingProgress.cumulativeBytesLoaded /
-                              loadingProgress.expectedTotalBytes!
+                                  loadingProgress.expectedTotalBytes!
                               : null,
                         ),
                       ),
@@ -1577,12 +1578,11 @@ class ChatPageState extends State<ChatPage> {
         ),
       );
     } else {
-      // Sticker
       return Container(
         margin: EdgeInsets.only(bottom: 10),
         child: Row(
           mainAxisAlignment:
-          isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
+              isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
           children: [
             GestureDetector(
               onLongPress: () =>
@@ -1660,327 +1660,319 @@ class ChatPageState extends State<ChatPage> {
     );
   }
 
-  // 🎯 NEW: Enhanced input with voice recording
   Widget _buildAdvancedInput() {
     return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
+      mainAxisSize: MainAxisSize.min,
+      children: [
         if (_smartReplies.isNotEmpty)
-    SmartReplyWidget(
-      replies: _smartReplies,
-      onReplySelected: (reply) {
-        _chatInputController.text = reply;
-        setState(() => _smartReplies = []);
-      },
-    ),
-    if (_replyingTo != null)
-    Container(
-    width: double.infinity,
-    color: ColorConstants.greyColor2.withOpacity(0.2),
-    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-    child: Row(
-    children: [
-    Expanded(
-    child: Text(
-    'Replying: ${_replyingTo!.content}',
-    maxLines: 1,
-    overflow: TextOverflow.ellipsis,
-    ),
-    ),
-    IconButton(
-    icon: Icon(Icons.close, size: 18),
-    onPressed: () {
-    setState(() {
-    _replyingTo = null;
-    });
-    ),
-    ),
-    ],
-    ),
-    ),
-    // 🎯 NEW: Voice recording indicator
-    if (_isRecording)
-    Container(
-    width: double.infinity,
-    padding: EdgeInsets.all(12),
-    color: Colors.red.withOpacity(0.1),
-    child: Row(
-    children: [
-    Icon(Icons.fiber_manual_record, color: Colors.red, size: 16),
-    SizedBox(width: 8),
-    Text(
-    'Recording... $_recordingDuration',
-    style: TextStyle(
-    color: Colors.red,
-    fontWeight: FontWeight.bold,
-    ),
-    ),
-    Spacer(),
-    IconButton(
-    icon: Icon(Icons.delete, color: Colors.red),
-    onPressed: _cancelRecording,
-    ),
-    IconButton(
-    icon: Icon(Icons.send, color: ColorConstants.primaryColor),
-    onPressed: _stopRecording,
-    ),
-    ],
-    ),
-    ),
-    Container(
-    width: double.infinity,
-    height: 50,
-    decoration: BoxDecoration(
-    border: Border(
-    top: BorderSide(color: ColorConstants.greyColor2, width: 0.5),
-    ),
-    color: Colors.white,
-    ),
-    child: Row(
-    children: [
-    Material(
-    color: Colors.white,
-    child: Container(
-    margin: EdgeInsets.symmetric(horizontal: 1),
-    child: IconButton(
-    icon: Icon(
-    _showFeaturesMenu ? Icons.close : Icons.more_horiz,
-    color: ColorConstants.primaryColor,
-    ),
-    onPressed: _toggleFeaturesMenu,
-    ),
-    ),
-    ),
-    Material(
-    color: Colors.white,
-    child: Container(
-    margin: EdgeInsets.symmetric(horizontal: 1),
-    child: IconButton(
-    icon: Icon(Icons.image),
-    onPressed: () {
-    _pickImage().then((isSuccess) {
-    if (isSuccess) _uploadFile();
-    });
-    },
-    color: ColorConstants.primaryColor,
-    ),
-    ),
-    ),
-    Material(
-    color: Colors.white,
-    child: Container(
-    margin: EdgeInsets.symmetric(horizontal: 1),
-    child: IconButton(
-    icon: Icon(Icons.face),
-    onPressed: _getSticker,
-    color: ColorConstants.primaryColor,
-    ),
-    ),
-    ),
-    Flexible(
-    child: TextField(
-    onTapOutside: (_) {
-    Utilities.closeKeyboard();
-    },
-    onSubmitted: (_) {
-    _onSendMessageWithAutoDelete(
-    _chatInputController.text,
-    TypeMessage.text,
+          SmartReplyWidget(
+            replies: _smartReplies,
+            onReplySelected: (reply) {
+              _chatInputController.text = reply;
+              setState(() => _smartReplies = []);
+            },
+          ),
+        if (_replyingTo != null)
+          Container(
+            width: double.infinity,
+            color: ColorConstants.greyColor2.withOpacity(0.2),
+            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Replying: ${_replyingTo!.content}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.close, size: 18),
+                  onPressed: () {
+                    setState(() {
+                      _replyingTo = null;
+                    });
+                  },
+                ),
+              ],
+            ),
+          ),
+        if (_isRecording)
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.all(12),
+            color: Colors.red.withOpacity(0.1),
+            child: Row(
+              children: [
+                Icon(Icons.fiber_manual_record, color: Colors.red, size: 16),
+                SizedBox(width: 8),
+                Text(
+                  'Recording... $_recordingDuration',
+                  style: TextStyle(
+                    color: Colors.red,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Spacer(),
+                IconButton(
+                  icon: Icon(Icons.delete, color: Colors.red),
+                  onPressed: _cancelRecording,
+                ),
+                IconButton(
+                  icon: Icon(Icons.send, color: ColorConstants.primaryColor),
+                  onPressed: _stopRecording,
+                ),
+              ],
+            ),
+          ),
+        Container(
+          width: double.infinity,
+          height: 50,
+          decoration: BoxDecoration(
+            border: Border(
+              top: BorderSide(color: ColorConstants.greyColor2, width: 0.5),
+            ),
+            color: Colors.white,
+          ),
+          child: Row(
+            children: [
+              Material(
+                color: Colors.white,
+                child: Container(
+                  margin: EdgeInsets.symmetric(horizontal: 1),
+                  child: IconButton(
+                    icon: Icon(
+                      _showFeaturesMenu ? Icons.close : Icons.more_horiz,
+                      color: ColorConstants.primaryColor,
+                    ),
+                    onPressed: _toggleFeaturesMenu,
+                  ),
+                ),
+              ),
+              Material(
+                color: Colors.white,
+                child: Container(
+                  margin: EdgeInsets.symmetric(horizontal: 1),
+                  child: IconButton(
+                    icon: Icon(Icons.image),
+                    onPressed: () {
+                      _pickImage().then((isSuccess) {
+                        if (isSuccess) _uploadFile();
+                      });
+                    },
+                    color: ColorConstants.primaryColor,
+                  ),
+                ),
+              ),
+              Material(
+                color: Colors.white,
+                child: Container(
+                  margin: EdgeInsets.symmetric(horizontal: 1),
+                  child: IconButton(
+                    icon: Icon(Icons.face),
+                    onPressed: _getSticker,
+                    color: ColorConstants.primaryColor,
+                  ),
+                ),
+              ),
+              Flexible(
+                child: TextField(
+                  onTapOutside: (_) {
+                    Utilities.closeKeyboard();
+                  },
+                  onSubmitted: (_) {
+                    _onSendMessageWithAutoDelete(
+                      _chatInputController.text,
+                      TypeMessage.text,
+                    );
+                  },
+                  onChanged: (text) {
+                    _handleTyping(text);
+                    if (text.isNotEmpty && _smartReplies.isNotEmpty) {
+                      setState(() => _smartReplies = []);
+                    }
+                  },
+                  style: TextStyle(
+                    color: ColorConstants.primaryColor,
+                    fontSize: 15,
+                  ),
+                  controller: _chatInputController,
+                  decoration: InputDecoration.collapsed(
+                    hintText: 'Type your message...',
+                    hintStyle: TextStyle(color: ColorConstants.greyColor),
+                  ),
+                  focusNode: _focusNode,
+                ),
+              ),
+              if (!_isRecording && _voiceProvider != null)
+                Material(
+                  color: Colors.white,
+                  child: Container(
+                    margin: EdgeInsets.symmetric(horizontal: 4),
+                    child: IconButton(
+                      icon: Icon(Icons.mic),
+                      onPressed: _startRecording,
+                      color: ColorConstants.primaryColor,
+                    ),
+                  ),
+                ),
+              Material(
+                color: Colors.white,
+                child: Container(
+                  margin: EdgeInsets.symmetric(horizontal: 8),
+                  child: IconButton(
+                    icon: Icon(Icons.send),
+                    onPressed: () => _onSendMessageWithAutoDelete(
+                      _chatInputController.text,
+                      TypeMessage.text,
+                    ),
+                    color: ColorConstants.primaryColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
-    },
-    onChanged: (text) {
-    _handleTyping(text);
-    if (text.isNotEmpty && _smartReplies.isNotEmpty) {
-    setState(() => _smartReplies = []);
-    }
-    },
-    style: TextStyle(
-    color: ColorConstants.primaryColor,
-    fontSize: 15,
-    ),
-    controller: _chatInputController,
-    decoration: InputDecoration.collapsed(
-    hintText: 'Type your message...',
-    hintStyle: TextStyle(color: ColorConstants.greyColor),
-    ),
-    focusNode: _focusNode,
-    ),
-    ),
-    // 🎯 NEW: Voice recording button
-    if (!_isRecording)
-    Material(
-    color: Colors.white,
-    child: Container(
-    margin: EdgeInsets.symmetric(horizontal: 4),
-    child: IconButton(
-    icon: Icon(Icons.mic),
-    onPressed: _startRecording,
-    color: ColorConstants.primaryColor,
-    ),
-    ),
-    ),
-    Material(
-    color: Colors.white,
-    child: Container(
-    margin: EdgeInsets.symmetric(horizontal: 8),
-    child: IconButton(
-    icon: Icon(Icons.send),
-    onPressed: () => _onSendMessageWithAutoDelete(
-    _chatInputController.text,
-    TypeMessage.text,
-    ),
-    color: ColorConstants.primaryColor,
-    ),
-    ),
-    ),
-    ],
-    ),
-    ),
-    ],
-    );
-    }
+  }
 
-    void _onBackPress() {
+  void _onBackPress() {
     if (_isShowSticker || _showFeaturesMenu) {
-    setState(() {
-    _isShowSticker = false;
-    _showFeaturesMenu = false;
-    });
+      setState(() {
+        _isShowSticker = false;
+        _showFeaturesMenu = false;
+      });
     } else {
-    _chatProvider.updateDataFirestore(
-    FirestoreConstants.pathUserCollection,
-    _currentUserId,
-    {FirestoreConstants.chattingWith: null},
-    );
-    Navigator.pop(context);
+      _chatProvider.updateDataFirestore(
+        FirestoreConstants.pathUserCollection,
+        _currentUserId,
+        {FirestoreConstants.chattingWith: null},
+      );
+      Navigator.pop(context);
     }
-    }
+  }
 
-    @override
-    Widget build(BuildContext context) {
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
-    appBar: AppBar(
-    title: InkWell(
-    onTap: () async {
-    final userDoc = await FirebaseFirestore.instance
-        .collection(FirestoreConstants.pathUserCollection)
-        .doc(widget.arguments.peerId)
-        .get();
+      appBar: AppBar(
+        title: InkWell(
+          onTap: () async {
+            final userDoc = await FirebaseFirestore.instance
+                .collection(FirestoreConstants.pathUserCollection)
+                .doc(widget.arguments.peerId)
+                .get();
 
-    if (userDoc.exists) {
-    Navigator.push(
-    context,
-    MaterialPageRoute(
-    builder: (_) => UserProfilePage(
-    userChat: UserChat.fromDocument(userDoc),
-    ),
-    ),
+            if (userDoc.exists) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => UserProfilePage(
+                    userChat: UserChat.fromDocument(userDoc),
+                  ),
+                ),
+              );
+            }
+          },
+          child: Row(
+            children: [
+              AvatarWithStatus(
+                userId: widget.arguments.peerId,
+                photoUrl: widget.arguments.peerAvatar,
+                size: 40,
+                indicatorSize: 12,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.arguments.peerNickname,
+                      style: TextStyle(
+                        color: ColorConstants.primaryColor,
+                        fontSize: 16,
+                      ),
+                    ),
+                    UserStatusIndicator(
+                      userId: widget.arguments.peerId,
+                      showText: true,
+                      size: 8,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        centerTitle: false,
+        actions: _buildAppBarActions(),
+      ),
+      body: SafeArea(
+        child: PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, result) {
+            if (didPop) return;
+            _onBackPress();
+          },
+          child: Stack(
+            children: [
+              Column(
+                children: [
+                  _buildPinnedMessages(),
+                  _buildListMessage(),
+                  _buildTypingIndicator(),
+                  _isShowSticker ? _buildStickers() : SizedBox.shrink(),
+                  _buildFeaturesMenu(),
+                  _buildAdvancedInput(),
+                ],
+              ),
+              Positioned(
+                child: _isLoading ? LoadingView() : SizedBox.shrink(),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
-    }
-    },
-    child: Row(
-    children: [
-    AvatarWithStatus(
-    userId: widget.arguments.peerId,
-    photoUrl: widget.arguments.peerAvatar,
-    size: 40,
-    indicatorSize: 12,
-    ),
-    const SizedBox(width: 12),
-    Expanded(
-    child: Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-    Text(
-    widget.arguments.peerNickname,
-    style: TextStyle(
-    color: ColorConstants.primaryColor,
-    fontSize: 16,
-    ),
-    ),
-    UserStatusIndicator(
-    userId: widget.arguments.peerId,
-    showText: true,
-    size: 8,
-    ),
-    ],
-    ),
-    ),
-    ],
-    ),
-    ),
-    centerTitle: false,
-    actions: _buildAppBarActions(),
-    ),
-    body: SafeArea(
-    child: PopScope(
-    canPop: false,
-    onPopInvokedWithResult: (didPop, result) {
-    if (didPop) return;
-    _onBackPress();
-    },
-    child: Stack(
-    children: [
-    Column(
-    children: [
-    _buildPinnedMessages(),
-    _buildListMessage(),
-    _buildTypingIndicator(),
-    _isShowSticker ? _buildStickers() : SizedBox.shrink(),
-    _buildFeaturesMenu(),
-    _buildAdvancedInput(),
-    ],
-    ),
-    Positioned(
-    child: _isLoading ? LoadingView() : SizedBox.shrink(),
-    ),
-    ],
-    ),
-    ),
-    ),
-    );
-    }
+  }
 
-    @override
-    void dispose() {
+  @override
+  void dispose() {
     _unreadMessagesSubscription?.cancel();
     _pinnedSub?.cancel();
     _typingTimer?.cancel();
     _recordingTimer?.cancel();
 
     if (_presenceProvider != null) {
-    _presenceProvider!.setUserOffline(_currentUserId);
-    _presenceProvider!.setTypingStatus(
-    conversationId: _groupChatId,
-    userId: _currentUserId,
-    isTyping: false,
-    );
+      _presenceProvider!.setUserOffline(_currentUserId);
+      _presenceProvider!.setTypingStatus(
+        conversationId: _groupChatId,
+        userId: _currentUserId,
+        isTyping: false,
+      );
     }
 
-    _voiceProvider.dispose();
+    _voiceProvider?.dispose();
 
     _chatInputController.dispose();
     _listScrollController
-    ..removeListener(_scrollListener)
-    ..dispose();
+      ..removeListener(_scrollListener)
+      ..dispose();
     _focusNode.dispose();
     super.dispose();
-    }
   }
+}
 
-
-  class ChatPageArguments {
+class ChatPageArguments {
   final String peerId;
   final String peerAvatar;
   final String peerNickname;
 
-
   ChatPageArguments({
-  required this.peerId,
-  required this.peerAvatar,
-  required this.peerNickname,
+    required this.peerId,
+    required this.peerAvatar,
+    required this.peerNickname,
   });
-  }
-
-
-
+}

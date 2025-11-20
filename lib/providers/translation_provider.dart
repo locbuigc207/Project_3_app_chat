@@ -4,26 +4,38 @@ import 'package:translator/translator.dart';
 class TranslationProvider {
   final GoogleTranslator _translator = GoogleTranslator();
 
-  // Translate text
   Future<String?> translateText({
     required String text,
     required String targetLanguage,
     String sourceLanguage = 'auto',
   }) async {
     try {
-      print('🌐 Translating: $text to $targetLanguage');
+      print('🌐 Translating to $targetLanguage');
 
-      final translation = await _translator.translate(
+      // Validate input
+      if (text.trim().isEmpty) {
+        return null;
+      }
+
+      final translation = await _translator
+          .translate(
         text,
         from: sourceLanguage,
         to: targetLanguage,
+      )
+          .timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          throw Exception('Translation timeout');
+        },
       );
 
       print('✅ Translation: ${translation.text}');
       return translation.text;
     } catch (e) {
       print('❌ Translation error: $e');
-      return null;
+      // Return original text if translation fails
+      return text;
     }
   }
 

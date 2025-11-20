@@ -149,10 +149,9 @@ class VoiceMessageProvider {
       await _player.startPlayer(
         fromURI: url,
         codec: Codec.aacADTS,
-        whenFinished: () {
-          print('🔊 Playback finished');
-        },
       );
+
+      _player.setSubscriptionDuration(const Duration(milliseconds: 100));
 
       print('🔊 Playing voice message');
     } catch (e) {

@@ -12,6 +12,7 @@ import 'package:flutter_chat_demo/providers/phone_auth_provider.dart'
     as custom_auth;
 import 'package:flutter_chat_demo/providers/providers.dart';
 import 'package:flutter_chat_demo/utils/utils.dart';
+import 'package:flutter_chat_demo/widgets/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
@@ -181,6 +182,9 @@ class MyApp extends StatelessWidget {
             firebaseFirestore: firebaseFirestore,
           ),
         ),
+        ChangeNotifierProvider<ThemeProvider>(
+          create: (_) => ThemeProvider(prefs: prefs),
+        ),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, child) {
@@ -190,7 +194,10 @@ class MyApp extends StatelessWidget {
             themeMode: themeProvider.getFlutterThemeMode(context),
             theme: AppThemes.lightTheme(themeProvider.getPrimaryColor()),
             darkTheme: AppThemes.darkTheme(themeProvider.getPrimaryColor()),
-            home: SplashPage(), // ✅ FIX: Add const
+            // 🎯 WRAP with BubbleManager
+            home: BubbleManager(
+              child: SplashPage(),
+            ), // ✅ FIX: Add const
             // ✅ CRITICAL FIX: Remove builder that causes widget tree conflict
           );
         },
