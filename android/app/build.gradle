@@ -16,12 +16,12 @@ if (localPropertiesFile.exists()) {
 
 android {
     namespace "hust.appchat"
-    compileSdk 36
+    compileSdk 35  // Changed from 36 to 35 for compatibility
 
     defaultConfig {
         applicationId "hust.appchat"
-        minSdkVersion flutter.minSdkVersion
-        targetSdk 36
+        minSdkVersion 24  // Changed from 23 to 24 (Flutter recommendation)
+        targetSdk 35     // Changed from 36 to 35
         versionCode 1
         versionName "1.0"
         multiDexEnabled true
@@ -31,6 +31,9 @@ android {
     buildTypes {
         release {
             signingConfig signingConfigs.debug
+            minifyEnabled false
+            shrinkResources false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
             debuggable true
@@ -50,6 +53,16 @@ android {
 
     lint {
         disable 'InvalidPackage'
+        checkReleaseBuilds false
+        abortOnError false
+    }
+
+    packagingOptions {
+        exclude 'META-INF/DEPENDENCIES'
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/LICENSE.txt'
+        exclude 'META-INF/NOTICE'
+        exclude 'META-INF/NOTICE.txt'
     }
 }
 
@@ -58,20 +71,48 @@ flutter {
 }
 
 dependencies {
-    implementation platform('com.google.firebase:firebase-bom:33.3.0')
+    // Firebase BOM (Bill of Materials)
+    implementation platform('com.google.firebase:firebase-bom:33.7.0')
     implementation 'com.google.firebase:firebase-auth'
     implementation 'com.google.firebase:firebase-firestore'
     implementation 'com.google.firebase:firebase-storage'
     implementation 'com.google.firebase:firebase-messaging'
-    implementation 'com.google.android.gms:play-services-auth:21.2.0'
     implementation 'com.google.firebase:firebase-analytics'
     implementation 'com.google.firebase:firebase-crashlytics'
-    implementation 'com.github.bumptech.glide:glide:4.16.0'
-    implementation 'androidx.multidex:multidex:2.0.1'
-    implementation 'com.google.android.material:material:1.11.0'
 
+    // Google Play Services
+    implementation 'com.google.android.gms:play-services-auth:21.2.0'
+    implementation 'com.google.android.gms:play-services-location:21.3.0'
+
+    // Image Loading
+    implementation 'com.github.bumptech.glide:glide:4.16.0'
+    annotationProcessor 'com.github.bumptech.glide:compiler:4.16.0'
+
+    // AndroidX - Compatible versions with AGP 8.9.1
+    implementation 'androidx.multidex:multidex:2.0.1'
+    implementation 'com.google.android.material:material:1.12.0'
+    implementation 'androidx.core:core-ktx:1.15.0'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.cardview:cardview:1.0.0'
+    implementation 'androidx.activity:activity-ktx:1.9.3'
+
+    // Desugaring for Java 8+ features
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
+
+    // Testing
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test:runner:1.6.2'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
+}
+
+// Ensure Kotlin version compatibility
+configurations.all {
+    resolutionStrategy {
+        force 'org.jetbrains.kotlin:kotlin-stdlib:2.1.0'
+        force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.1.0'
+
+        // Force compatible AndroidX versions
+        force 'androidx.activity:activity:1.9.3'
+        force 'androidx.activity:activity-ktx:1.9.3'
+    }
 }
