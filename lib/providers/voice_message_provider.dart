@@ -1,6 +1,6 @@
-// lib/providers/voice_message_provider.dart - NEW
 import 'dart:io';
 
+import 'package:audio_session/audio_session.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:path_provider/path_provider.dart';
@@ -17,11 +17,26 @@ class VoiceMessageProvider {
 
   VoiceMessageProvider({required this.firebaseStorage});
 
-  // Initialize recorder
   Future<bool> initRecorder() async {
     if (_isRecorderInitialized) return true;
 
     try {
+      final audioSession = await AudioSession.instance;
+      await audioSession.configure(
+        const AudioSessionConfiguration(
+          avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
+          avAudioSessionMode: AVAudioSessionMode.defaultMode,
+          avAudioSessionCategoryOptions:
+              AVAudioSessionCategoryOptions.defaultToSpeaker,
+          androidAudioAttributes: AndroidAudioAttributes(
+            contentType: AndroidAudioContentType.speech,
+            usage: AndroidAudioUsage.voiceCommunication,
+          ),
+          androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
+          androidWillPauseWhenDucked: false,
+        ),
+      );
+
       final status = await Permission.microphone.request();
       if (!status.isGranted) {
         print('❌ Microphone permission denied');
@@ -30,7 +45,7 @@ class VoiceMessageProvider {
 
       await _recorder.openRecorder();
       _isRecorderInitialized = true;
-      print('✅ Recorder initialized');
+      print('✅ Voice recorder initialized');
       return true;
     } catch (e) {
       print('❌ Error initializing recorder: $e');
@@ -38,14 +53,13 @@ class VoiceMessageProvider {
     }
   }
 
-  // Initialize player
   Future<bool> initPlayer() async {
     if (_isPlayerInitialized) return true;
 
     try {
       await _player.openPlayer();
       _isPlayerInitialized = true;
-      print('✅ Player initialized');
+      print('✅ Voice player initialized');
       return true;
     } catch (e) {
       print('❌ Error initializing player: $e');
@@ -53,7 +67,6 @@ class VoiceMessageProvider {
     }
   }
 
-  // Start recording
   Future<bool> startRecording() async {
     try {
       if (!_isRecorderInitialized) {
@@ -78,7 +91,6 @@ class VoiceMessageProvider {
     }
   }
 
-  // Stop recording
   Future<String?> stopRecording() async {
     try {
       await _recorder.stopRecorder();
@@ -93,7 +105,6 @@ class VoiceMessageProvider {
     }
   }
 
-  // Cancel recording
   Future<void> cancelRecording() async {
     try {
       await _recorder.stopRecorder();
@@ -110,10 +121,8 @@ class VoiceMessageProvider {
     }
   }
 
-  // Get recording duration stream
   Stream<RecordingDisposition>? get recordingStream => _recorder.onProgress;
 
-  // Upload voice message
   Future<String?> uploadVoiceMessage(String filePath, String fileName) async {
     try {
       final file = File(filePath);
@@ -127,7 +136,6 @@ class VoiceMessageProvider {
       final snapshot = await uploadTask;
       final url = await snapshot.ref.getDownloadURL();
 
-      // Delete temporary file
       await file.delete();
 
       print('✅ Voice message uploaded: $url');
@@ -138,7 +146,6 @@ class VoiceMessageProvider {
     }
   }
 
-  // Play voice message
   Future<void> playVoiceMessage(String url) async {
     try {
       if (!_isPlayerInitialized) {
@@ -159,7 +166,6 @@ class VoiceMessageProvider {
     }
   }
 
-  // Stop playback
   Future<void> stopPlayback() async {
     try {
       await _player.stopPlayer();
@@ -169,7 +175,6 @@ class VoiceMessageProvider {
     }
   }
 
-  // Pause playback
   Future<void> pausePlayback() async {
     try {
       await _player.pausePlayer();
@@ -179,7 +184,6 @@ class VoiceMessageProvider {
     }
   }
 
-  // Resume playback
   Future<void> resumePlayback() async {
     try {
       await _player.resumePlayer();
@@ -189,16 +193,14 @@ class VoiceMessageProvider {
     }
   }
 
-  // Get player position stream
   Stream<PlaybackDisposition>? get playbackStream => _player.onProgress;
 
-  // Check if recording
   bool get isRecording => _recorder.isRecording;
 
   // Check if playing
   bool get isPlaying => _player.isPlaying;
 
-  // Dispose
+  // Dispose resources
   Future<void> dispose() async {
     try {
       if (_isRecorderInitialized) {

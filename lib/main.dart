@@ -1,4 +1,3 @@
-// lib/main.dart - COMPLETE RUNTIME FIX
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -11,6 +10,7 @@ import 'package:flutter_chat_demo/pages/pages.dart';
 import 'package:flutter_chat_demo/providers/phone_auth_provider.dart'
     as custom_auth;
 import 'package:flutter_chat_demo/providers/providers.dart';
+import 'package:flutter_chat_demo/services/services.dart';
 import 'package:flutter_chat_demo/utils/utils.dart';
 import 'package:flutter_chat_demo/widgets/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -22,7 +22,13 @@ import 'package:timezone/data/latest_all.dart' as tz;
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp();
+  try {
+    await Firebase.initializeApp();
+    print('✅ Firebase initialized successfully');
+  } catch (e) {
+    print('❌ Firebase initialization error: $e');
+  }
+
   await ErrorLogger.initialize();
 
   tz.initializeTimeZones();
@@ -98,7 +104,6 @@ class MyApp extends StatelessWidget {
     final firebaseStorage = FirebaseStorage.instance;
     final firebaseAuth = firebase_auth.FirebaseAuth.instance;
 
-    // ✅ FIX: GoogleSignIn with correct scopes
     final googleSignIn = GoogleSignIn(
       scopes: ['email', 'profile'],
     );
@@ -182,8 +187,8 @@ class MyApp extends StatelessWidget {
             firebaseFirestore: firebaseFirestore,
           ),
         ),
-        ChangeNotifierProvider<ThemeProvider>(
-          create: (_) => ThemeProvider(prefs: prefs),
+        Provider<ChatBubbleService>(
+          create: (_) => ChatBubbleService(),
         ),
       ],
       child: Consumer<ThemeProvider>(
@@ -194,11 +199,9 @@ class MyApp extends StatelessWidget {
             themeMode: themeProvider.getFlutterThemeMode(context),
             theme: AppThemes.lightTheme(themeProvider.getPrimaryColor()),
             darkTheme: AppThemes.darkTheme(themeProvider.getPrimaryColor()),
-            // 🎯 WRAP with BubbleManager
             home: BubbleManager(
               child: SplashPage(),
-            ), // ✅ FIX: Add const
-            // ✅ CRITICAL FIX: Remove builder that causes widget tree conflict
+            ),
           );
         },
       ),

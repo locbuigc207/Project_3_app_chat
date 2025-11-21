@@ -1,4 +1,3 @@
-// lib/pages/chat_page.dart - COMPLETE WITH ALL FEATURES
 import 'dart:async';
 import 'dart:io';
 
