@@ -1,3 +1,4 @@
+// lib/main.dart - FIXED COMPLETE
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -187,6 +188,7 @@ class MyApp extends StatelessWidget {
             firebaseFirestore: firebaseFirestore,
           ),
         ),
+        // ✅ FIX: Add ChatBubbleService
         Provider<ChatBubbleService>(
           create: (_) => ChatBubbleService(),
         ),

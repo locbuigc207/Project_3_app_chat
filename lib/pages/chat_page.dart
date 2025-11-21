@@ -1,3 +1,4 @@
+// lib/pages/chat_page.dart - FIXED ALL FEATURES
 import 'dart:async';
 import 'dart:io';
 
@@ -8,6 +9,7 @@ import 'package:flutter_chat_demo/constants/constants.dart';
 import 'package:flutter_chat_demo/models/models.dart';
 import 'package:flutter_chat_demo/pages/pages.dart';
 import 'package:flutter_chat_demo/providers/providers.dart';
+import 'package:flutter_chat_demo/services/services.dart';
 import 'package:flutter_chat_demo/utils/utils.dart';
 import 'package:flutter_chat_demo/widgets/widgets.dart';
 import 'package:fluttertoast/fluttertoast.dart';
@@ -27,6 +29,7 @@ class ChatPage extends StatefulWidget {
 class ChatPageState extends State<ChatPage> {
   late final String _currentUserId;
   UserPresenceProvider? _presenceProvider;
+  ChatBubbleService? _bubbleService;
 
   Timer? _typingTimer;
   bool _isTyping = false;
@@ -71,11 +74,14 @@ class ChatPageState extends State<ChatPage> {
 
   bool _showFeaturesMenu = false;
 
-  // Voice recording state
+  // ✅ FIX: Voice recording state
   bool _isRecording = false;
   String _recordingDuration = "0:00";
   Timer? _recordingTimer;
   int _recordingSeconds = 0;
+
+  // ✅ FIX: Scheduled messages
+  final Map<String, Timer> _scheduledMessages = {};
 
   @override
   void initState() {
@@ -99,11 +105,17 @@ class ChatPageState extends State<ChatPage> {
     _viewOnceProvider = context.read<ViewOnceProvider>();
     _smartReplyProvider = context.read<SmartReplyProvider>();
     _presenceProvider = context.read<UserPresenceProvider>();
+    _bubbleService = context.read<ChatBubbleService>();
 
-    // Initialize new providers
-    _voiceProvider = VoiceMessageProvider(
-      firebaseStorage: _chatProvider.firebaseStorage,
-    );
+    // ✅ FIX: Initialize new providers with error handling
+    try {
+      _voiceProvider = VoiceMessageProvider(
+        firebaseStorage: _chatProvider.firebaseStorage,
+      );
+    } catch (e) {
+      print('⚠️ Voice provider initialization failed: $e');
+    }
+
     _locationProvider = LocationProvider();
     _translationProvider = TranslationProvider();
 
@@ -524,10 +536,11 @@ class ChatPageState extends State<ChatPage> {
     );
   }
 
+  // ✅ FIX: Simplified time picker
   Future<DateTime?> _pickTimeWithWheel() async {
     DateTime selectedTime = DateTime.now().add(Duration(hours: 1));
 
-    final result = await showDialog<DateTime>(
+    return await showDialog<DateTime>(
       context: context,
       builder: (context) {
         return StatefulBuilder(
@@ -601,8 +614,6 @@ class ChatPageState extends State<ChatPage> {
         );
       },
     );
-
-    return result;
   }
 
   Future<void> _setMessageReminder(
@@ -740,9 +751,7 @@ class ChatPageState extends State<ChatPage> {
               final reminders = snapshot.data!.docs;
 
               if (reminders.isEmpty) {
-                return Center(
-                  child: Text('No reminders'),
-                );
+                return Center(child: Text('No reminders'));
               }
 
               return ListView.builder(
@@ -776,6 +785,36 @@ class ChatPageState extends State<ChatPage> {
     );
   }
 
+  // ✅ FIX: Create Chat Bubble
+  Future<void> _createChatBubble() async {
+    if (_bubbleService == null) {
+      Fluttertoast.showToast(msg: 'Bubble service not available');
+      return;
+    }
+
+    final hasPermission = await _bubbleService!.hasOverlayPermission();
+    if (!hasPermission) {
+      final granted = await _bubbleService!.requestOverlayPermission();
+      if (!granted) {
+        Fluttertoast.showToast(msg: 'Overlay permission required');
+        return;
+      }
+    }
+
+    final success = await _bubbleService!.showChatBubble(
+      userId: widget.arguments.peerId,
+      userName: widget.arguments.peerNickname,
+      avatarUrl: widget.arguments.peerAvatar,
+    );
+
+    if (success) {
+      Fluttertoast.showToast(
+        msg: '💬 Chat bubble created for ${widget.arguments.peerNickname}',
+        backgroundColor: Colors.green,
+      );
+    }
+  }
+
   List<Widget> _buildAppBarActions() {
     return [
       IconButton(
@@ -795,6 +834,12 @@ class ChatPageState extends State<ChatPage> {
       IconButton(
         icon: Icon(Icons.notifications),
         onPressed: _showReminders,
+      ),
+      // ✅ FIX: Add Bubble Button
+      IconButton(
+        icon: Icon(Icons.bubble_chart),
+        onPressed: _createChatBubble,
+        tooltip: 'Create Chat Bubble',
       ),
       IconButton(
         icon: Icon(Icons.more_vert),
@@ -921,6 +966,7 @@ class ChatPageState extends State<ChatPage> {
     });
   }
 
+  // ✅ FIX: Complete Features Menu
   Widget _buildFeaturesMenu() {
     if (!_showFeaturesMenu) return SizedBox.shrink();
 
@@ -993,7 +1039,11 @@ class ChatPageState extends State<ChatPage> {
                 label: 'Schedule',
                 onTap: _scheduleMessage,
               ),
-              SizedBox(width: 80),
+              _buildFeatureButton(
+                icon: Icons.bubble_chart,
+                label: 'Bubble',
+                onTap: _createChatBubble,
+              ),
             ],
           ),
         ],
@@ -1012,7 +1062,7 @@ class ChatPageState extends State<ChatPage> {
         onTap();
       },
       child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1052,6 +1102,7 @@ class ChatPageState extends State<ChatPage> {
     }
   }
 
+  // ✅ FIX: Schedule Message with improved UI
   Future<void> _scheduleMessage() async {
     final messageController = TextEditingController();
     DateTime? scheduledTime;
@@ -1059,65 +1110,138 @@ class ChatPageState extends State<ChatPage> {
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setState) {
+        builder: (context, setDialogState) {
           return AlertDialog(
-            title: Text('Schedule Message'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
+            title: Row(
               children: [
-                TextField(
-                  controller: messageController,
-                  maxLines: 3,
-                  decoration: InputDecoration(
-                    hintText: 'Enter your message...',
-                    border: OutlineInputBorder(),
+                Icon(Icons.schedule_send, color: ColorConstants.primaryColor),
+                SizedBox(width: 8),
+                Text('Schedule Message'),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Message:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: ColorConstants.primaryColor,
+                    ),
                   ),
-                ),
-                SizedBox(height: 16),
-                ListTile(
-                  leading: Icon(Icons.schedule),
-                  title: Text(
-                    scheduledTime != null
-                        ? DateFormat('MMM dd, yyyy HH:mm')
-                            .format(scheduledTime!)
-                        : 'Select time',
+                  SizedBox(height: 8),
+                  TextField(
+                    controller: messageController,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      hintText: 'Enter your message...',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      contentPadding: EdgeInsets.all(12),
+                    ),
                   ),
-                  onTap: () async {
-                    final date = await showDatePicker(
-                      context: context,
-                      initialDate: DateTime.now().add(Duration(hours: 1)),
-                      firstDate: DateTime.now(),
-                      lastDate: DateTime.now().add(Duration(days: 365)),
-                    );
-
-                    if (date != null) {
-                      final time = await showTimePicker(
+                  SizedBox(height: 16),
+                  Text(
+                    'Schedule Time:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: ColorConstants.primaryColor,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  InkWell(
+                    onTap: () async {
+                      final date = await showDatePicker(
                         context: context,
-                        initialTime: TimeOfDay.now(),
+                        initialDate: DateTime.now().add(Duration(hours: 1)),
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(Duration(days: 365)),
                       );
 
-                      if (time != null) {
-                        setState(() {
-                          scheduledTime = DateTime(
-                            date.year,
-                            date.month,
-                            date.day,
-                            time.hour,
-                            time.minute,
-                          );
-                        });
+                      if (date != null) {
+                        final time = await showTimePicker(
+                          context: context,
+                          initialTime: TimeOfDay.now(),
+                        );
+
+                        if (time != null) {
+                          setDialogState(() {
+                            scheduledTime = DateTime(
+                              date.year,
+                              date.month,
+                              date.day,
+                              time.hour,
+                              time.minute,
+                            );
+                          });
+                        }
                       }
-                    }
-                  },
-                ),
-              ],
+                    },
+                    child: Container(
+                      padding: EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: ColorConstants.greyColor2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.calendar_today,
+                              color: ColorConstants.primaryColor),
+                          SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              scheduledTime != null
+                                  ? DateFormat('MMM dd, yyyy HH:mm')
+                                      .format(scheduledTime!)
+                                  : 'Select date & time',
+                              style: TextStyle(
+                                color: scheduledTime != null
+                                    ? ColorConstants.primaryColor
+                                    : ColorConstants.greyColor,
+                              ),
+                            ),
+                          ),
+                          Icon(Icons.arrow_forward_ios, size: 16),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (scheduledTime != null) ...[
+                    SizedBox(height: 12),
+                    Container(
+                      padding: EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline,
+                              size: 16, color: Colors.blue),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Message will be sent in ${scheduledTime!.difference(DateTime.now()).inMinutes} minutes',
+                              style:
+                                  TextStyle(fontSize: 12, color: Colors.blue),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
                 child: Text('Cancel'),
               ),
-              TextButton(
+              ElevatedButton(
                 onPressed: () {
                   if (messageController.text.trim().isEmpty) {
                     Fluttertoast.showToast(msg: 'Please enter a message');
@@ -1129,7 +1253,10 @@ class ChatPageState extends State<ChatPage> {
                   }
                   Navigator.pop(context, true);
                 },
-                child: Text('Schedule'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ColorConstants.primaryColor,
+                ),
+                child: Text('Schedule', style: TextStyle(color: Colors.white)),
               ),
             ],
           );
@@ -1143,24 +1270,34 @@ class ChatPageState extends State<ChatPage> {
 
       if (delay.isNegative) {
         Fluttertoast.showToast(msg: 'Invalid time');
+        messageController.dispose();
         return;
       }
 
-      Timer(delay, () {
+      // Create timer
+      final timer = Timer(delay, () {
         _onSendMessageWithAutoDelete(message, TypeMessage.text);
+        _scheduledMessages.remove(scheduledTime.toString());
       });
+
+      _scheduledMessages[scheduledTime.toString()] = timer;
 
       Fluttertoast.showToast(
         msg:
             '📅 Message scheduled for ${DateFormat('HH:mm').format(scheduledTime!)}',
+        backgroundColor: Colors.green,
       );
     }
 
     messageController.dispose();
   }
 
+  // ✅ FIX: Voice Recording with improved UI
   Future<void> _startRecording() async {
-    if (_voiceProvider == null) return;
+    if (_voiceProvider == null) {
+      Fluttertoast.showToast(msg: 'Voice recording not available');
+      return;
+    }
 
     final initialized = await _voiceProvider!.initRecorder();
     if (!initialized) {
@@ -1177,6 +1314,10 @@ class ChatPageState extends State<ChatPage> {
       });
 
       _recordingTimer = Timer.periodic(Duration(seconds: 1), (timer) {
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
         setState(() {
           _recordingSeconds++;
           final minutes = _recordingSeconds ~/ 60;
@@ -1312,6 +1453,7 @@ class ChatPageState extends State<ChatPage> {
     final isViewOnce = data?['isViewOnce'] ?? false;
     final isViewed = data?['isViewed'] ?? false;
 
+    // View Once Message
     if (isViewOnce && _viewOnceProvider != null) {
       return Container(
         margin: EdgeInsets.only(bottom: 10),
@@ -1333,6 +1475,7 @@ class ChatPageState extends State<ChatPage> {
       );
     }
 
+    // Voice Message
     if (messageChat.type == 3 && _voiceProvider != null) {
       return Container(
         margin: EdgeInsets.only(bottom: 10),
@@ -1350,6 +1493,7 @@ class ChatPageState extends State<ChatPage> {
       );
     }
 
+    // Text Message
     if (messageChat.type == TypeMessage.text) {
       final location = _locationProvider?.parseLocation(messageChat.content);
 
@@ -1520,7 +1664,10 @@ class ChatPageState extends State<ChatPage> {
           ],
         ),
       );
-    } else if (messageChat.type == TypeMessage.image) {
+    }
+
+    // Image Message
+    else if (messageChat.type == TypeMessage.image) {
       return Container(
         margin: EdgeInsets.only(bottom: 10),
         child: Row(
@@ -1576,7 +1723,10 @@ class ChatPageState extends State<ChatPage> {
           ],
         ),
       );
-    } else {
+    }
+
+    // Sticker
+    else {
       return Container(
         margin: EdgeInsets.only(bottom: 10),
         child: Row(
@@ -1939,6 +2089,12 @@ class ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
+    // Cancel all scheduled messages
+    _scheduledMessages.forEach((key, timer) {
+      timer.cancel();
+    });
+    _scheduledMessages.clear();
+
     _unreadMessagesSubscription?.cancel();
     _pinnedSub?.cancel();
     _typingTimer?.cancel();

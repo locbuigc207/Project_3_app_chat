@@ -2,24 +2,39 @@ package hust.appchat
 
 import android.app.*
 import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
 import android.view.*
 import android.widget.ImageView
 import android.widget.TextView
+import android.widget.FrameLayout
 import androidx.core.app.NotificationCompat
 import com.bumptech.glide.Glide
+import kotlin.math.abs
 
 class ChatBubbleService : Service() {
 
     private var windowManager: WindowManager? = null
-    private val activeBubbles = mutableMapOf<String, View>()
+    private val activeBubbles = mutableMapOf<String, BubbleViewHolder>()
+    private var closeReceiver: BroadcastReceiver? = null
+
+    data class BubbleViewHolder(
+        val containerView: View,
+        val params: WindowManager.LayoutParams,
+        val userId: String,
+        val userName: String,
+        val avatarUrl: String
+    )
 
     companion object {
         const val ACTION_SHOW_BUBBLE = "SHOW_BUBBLE"
         const val ACTION_HIDE_BUBBLE = "HIDE_BUBBLE"
         const val ACTION_HIDE_ALL = "HIDE_ALL"
+        const val ACTION_CLOSE_BUBBLE = "CLOSE_BUBBLE"
         private const val NOTIFICATION_ID = 12345
         private const val CHANNEL_ID = "chat_bubble_service"
     }
@@ -31,12 +46,30 @@ class ChatBubbleService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             createNotificationChannel()
         }
+
+        // ✅ Register receiver để handle close bubble
+        setupCloseReceiver()
+    }
+
+    private fun setupCloseReceiver() {
+        closeReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                val userId = intent?.getStringExtra("userId") ?: return
+                hideBubble(userId)
+            }
+        }
+
+        val filter = IntentFilter(ACTION_CLOSE_BUBBLE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(closeReceiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            registerReceiver(closeReceiver, filter)
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Start foreground service for Android O+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForeground(NOTIFICATION_ID, createNotification())
         }
@@ -68,6 +101,8 @@ class ChatBubbleService : Service() {
             ).apply {
                 description = "Active chat bubbles"
                 setShowBadge(false)
+                enableVibration(false)
+                setSound(null, null)
             }
 
             val notificationManager = getSystemService(NotificationManager::class.java)
@@ -85,9 +120,10 @@ class ChatBubbleService : Service() {
         return builder
             .setContentTitle("Chat Bubbles Active")
             .setContentText("${activeBubbles.size} bubble(s) active")
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
+            .setAutoCancel(false)
             .build()
     }
 
@@ -96,14 +132,19 @@ class ChatBubbleService : Service() {
 
         try {
             val inflater = getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater
+            val containerView = FrameLayout(this).apply {
+                layoutParams = FrameLayout.LayoutParams(
+                    120, // width
+                    120  // height
+                )
+            }
+
+            // ✅ Main bubble view
             val bubbleView = inflater.inflate(R.layout.chat_bubble_layout, null)
-
-            // Setup views
             val avatarView = bubbleView.findViewById<ImageView>(R.id.bubble_avatar)
-            val nameView = bubbleView.findViewById<TextView>(R.id.bubble_name)
+            val closeButton = bubbleView.findViewById<View>(R.id.bubble_close_button)
 
-            nameView?.visibility = View.GONE // Hide name by default
-
+            // Load avatar
             if (avatarUrl.isNotEmpty()) {
                 Glide.with(this)
                     .load(avatarUrl)
@@ -112,6 +153,19 @@ class ChatBubbleService : Service() {
                     .error(R.drawable.bubble_background)
                     .into(avatarView)
             }
+
+            // ✅ Close button handler
+            closeButton?.setOnClickListener {
+                hideBubble(userId)
+            }
+
+            // ✅ Bubble click - broadcast to Flutter
+            bubbleView.setOnClickListener {
+                sendBubbleClickEvent(userId, userName, avatarUrl)
+            }
+
+            // Add to container
+            containerView.addView(bubbleView)
 
             // Window parameters
             val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -122,33 +176,29 @@ class ChatBubbleService : Service() {
             }
 
             val params = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
+                120,
+                120,
                 layoutFlag,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.TOP or Gravity.START
-                x = 100
-                y = 100
+                x = 50
+                y = 200
             }
 
-            // Drag functionality
-            setupDragListener(bubbleView, params)
+            // ✅ Setup drag listener
+            setupDragListener(containerView, params)
 
-            // Click to broadcast
-            bubbleView.setOnClickListener {
-                sendBubbleClickEvent(userId)
-            }
+            windowManager?.addView(containerView, params)
 
-            windowManager?.addView(bubbleView, params)
-            activeBubbles[userId] = bubbleView
+            // Store reference
+            activeBubbles[userId] = BubbleViewHolder(
+                containerView, params, userId, userName, avatarUrl
+            )
 
-            // Update notification
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val notificationManager = getSystemService(NotificationManager::class.java)
-                notificationManager.notify(NOTIFICATION_ID, createNotification())
-            }
+            updateNotification()
 
         } catch (e: Exception) {
             e.printStackTrace()
@@ -160,28 +210,33 @@ class ChatBubbleService : Service() {
         var initialY = 0
         var initialTouchX = 0f
         var initialTouchY = 0f
+        var isDragging = false
 
-        view.setOnTouchListener { v, event ->
+        view.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     initialX = params.x
                     initialY = params.y
                     initialTouchX = event.rawX
                     initialTouchY = event.rawY
+                    isDragging = false
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    params.x = initialX + (event.rawX - initialTouchX).toInt()
-                    params.y = initialY + (event.rawY - initialTouchY).toInt()
-                    windowManager?.updateViewLayout(view, params)
+                    val deltaX = event.rawX - initialTouchX
+                    val deltaY = event.rawY - initialTouchY
+
+                    if (abs(deltaX) > 10 || abs(deltaY) > 10) {
+                        isDragging = true
+                        params.x = initialX + deltaX.toInt()
+                        params.y = initialY + deltaY.toInt()
+                        windowManager?.updateViewLayout(view, params)
+                    }
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    // Detect click vs drag
-                    val deltaX = Math.abs(event.rawX - initialTouchX)
-                    val deltaY = Math.abs(event.rawY - initialTouchY)
-                    if (deltaX < 10 && deltaY < 10) {
-                        v.performClick()
+                    if (!isDragging) {
+                        view.performClick()
                     }
                     true
                 }
@@ -191,18 +246,15 @@ class ChatBubbleService : Service() {
     }
 
     private fun hideBubble(userId: String) {
-        activeBubbles[userId]?.let { view ->
+        activeBubbles[userId]?.let { holder ->
             try {
-                windowManager?.removeView(view)
+                windowManager?.removeView(holder.containerView)
                 activeBubbles.remove(userId)
+                updateNotification()
 
-                // Update notification
                 if (activeBubbles.isEmpty()) {
                     stopForeground(true)
                     stopSelf()
-                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    val notificationManager = getSystemService(NotificationManager::class.java)
-                    notificationManager.notify(NOTIFICATION_ID, createNotification())
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -211,9 +263,9 @@ class ChatBubbleService : Service() {
     }
 
     private fun hideAllBubbles() {
-        activeBubbles.values.forEach { view ->
+        activeBubbles.values.forEach { holder ->
             try {
-                windowManager?.removeView(view)
+                windowManager?.removeView(holder.containerView)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -223,15 +275,29 @@ class ChatBubbleService : Service() {
         stopSelf()
     }
 
-    private fun sendBubbleClickEvent(userId: String) {
+    private fun updateNotification() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val notificationManager = getSystemService(NotificationManager::class.java)
+            notificationManager.notify(NOTIFICATION_ID, createNotification())
+        }
+    }
+
+    private fun sendBubbleClickEvent(userId: String, userName: String, avatarUrl: String) {
         val intent = Intent("CHAT_BUBBLE_CLICKED").apply {
             putExtra("userId", userId)
+            putExtra("userName", userName)
+            putExtra("avatarUrl", avatarUrl)
             setPackage(packageName)
         }
         sendBroadcast(intent)
     }
 
     override fun onDestroy() {
+        try {
+            closeReceiver?.let { unregisterReceiver(it) }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
         hideAllBubbles()
         super.onDestroy()
     }
