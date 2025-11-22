@@ -114,6 +114,7 @@ class ChatPageState extends State<ChatPage> {
       );
     } catch (e) {
       print('⚠️ Voice provider initialization failed: $e');
+      _voiceProvider = null;
     }
 
     _locationProvider = LocationProvider();
