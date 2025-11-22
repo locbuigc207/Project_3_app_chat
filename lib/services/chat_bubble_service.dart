@@ -1,4 +1,3 @@
-// lib/services/chat_bubble_service.dart - COMPLETE FIXED
 import 'dart:async';
 import 'dart:io';
 
@@ -10,8 +9,11 @@ class ChatBubbleService {
 
   static final ChatBubbleService _instance = ChatBubbleService._internal();
   factory ChatBubbleService() => _instance;
+
   ChatBubbleService._internal() {
-    _setupEventListener();
+    Future.delayed(Duration(milliseconds: 500), () {
+      _setupEventListener();
+    });
   }
 
   final _activeBubblesController =
@@ -25,8 +27,14 @@ class ChatBubbleService {
 
   final Map<String, BubbleData> _activeBubbles = {};
   StreamSubscription? _eventSubscription;
+  bool _isInitialized = false;
+
+  DateTime? _lastBubbleOperation;
+  static const _minOperationInterval = Duration(milliseconds: 300);
 
   void _setupEventListener() {
+    if (_isInitialized) return;
+
     try {
       _eventSubscription?.cancel();
       _eventSubscription = _eventChannel.receiveBroadcastStream().listen(
@@ -36,7 +44,7 @@ class ChatBubbleService {
             final userName = event['userName'] as String?;
             final avatarUrl = event['avatarUrl'] as String?;
 
-            if (userId != null) {
+            if (userId != null && !_bubbleClickController.isClosed) {
               _bubbleClickController.add(BubbleClickEvent(
                 userId: userId,
                 userName: userName ?? '',
@@ -48,17 +56,30 @@ class ChatBubbleService {
         onError: (error) {
           print('❌ Bubble event stream error: $error');
         },
+        cancelOnError: false,
       );
+      _isInitialized = true;
     } catch (e) {
       print('⚠️ Event channel not available: $e');
     }
   }
 
-  /// Request overlay permission (Android only)
+  Future<bool> _canPerformOperation() async {
+    if (_lastBubbleOperation != null) {
+      final elapsed = DateTime.now().difference(_lastBubbleOperation!);
+      if (elapsed < _minOperationInterval) {
+        await Future.delayed(_minOperationInterval - elapsed);
+      }
+    }
+    _lastBubbleOperation = DateTime.now();
+    return true;
+  }
+
   Future<bool> requestOverlayPermission() async {
     if (!Platform.isAndroid) return true;
 
     try {
+      await _canPerformOperation();
       final bool hasPermission =
           await _channel.invokeMethod('requestPermission');
       return hasPermission;
@@ -87,7 +108,7 @@ class ChatBubbleService {
     }
   }
 
-  /// Show chat bubble
+  /// Show chat bubble with rate limiting
   Future<bool> showChatBubble({
     required String userId,
     required String userName,
@@ -100,6 +121,9 @@ class ChatBubbleService {
     }
 
     try {
+      // ✅ FIX: Rate limiting
+      await _canPerformOperation();
+
       // Check permission first
       final hasPermission = await hasOverlayPermission();
       if (!hasPermission) {
@@ -110,6 +134,8 @@ class ChatBubbleService {
       // Check if bubble already exists
       if (_activeBubbles.containsKey(userId)) {
         print('ℹ️ Bubble already exists for user: $userId');
+        // Update existing bubble instead
+        await updateBubbleMessage(userId: userId, message: lastMessage ?? '');
         return true;
       }
 
@@ -130,7 +156,9 @@ class ChatBubbleService {
 
       if (success) {
         _activeBubbles[userId] = bubbleData;
-        _activeBubblesController.add(Map.from(_activeBubbles));
+        if (!_activeBubblesController.isClosed) {
+          _activeBubblesController.add(Map.from(_activeBubbles));
+        }
         print('✅ Bubble shown for: $userName');
       }
 
@@ -144,18 +172,23 @@ class ChatBubbleService {
     }
   }
 
-  /// Hide chat bubble
+  /// Hide chat bubble with rate limiting
   Future<bool> hideChatBubble(String userId) async {
     if (!Platform.isAndroid) return false;
 
     try {
+      // ✅ FIX: Rate limiting
+      await _canPerformOperation();
+
       final bool success = await _channel.invokeMethod('hideBubble', {
         'userId': userId,
       });
 
       if (success) {
         _activeBubbles.remove(userId);
-        _activeBubblesController.add(Map.from(_activeBubbles));
+        if (!_activeBubblesController.isClosed) {
+          _activeBubblesController.add(Map.from(_activeBubbles));
+        }
         print('✅ Bubble hidden for: $userId');
       }
 
@@ -172,9 +205,14 @@ class ChatBubbleService {
     if (!Platform.isAndroid) return;
 
     try {
+      // ✅ FIX: Rate limiting
+      await _canPerformOperation();
+
       await _channel.invokeMethod('hideAllBubbles');
       _activeBubbles.clear();
-      _activeBubblesController.add({});
+      if (!_activeBubblesController.isClosed) {
+        _activeBubblesController.add({});
+      }
       print('✅ All bubbles hidden');
     } on PlatformException catch (e) {
       print('❌ Error hiding all bubbles: ${e.message}');
@@ -197,7 +235,9 @@ class ChatBubbleService {
         timestamp: DateTime.now(),
         unreadCount: bubble.unreadCount + 1,
       );
-      _activeBubblesController.add(Map.from(_activeBubbles));
+      if (!_activeBubblesController.isClosed) {
+        _activeBubblesController.add(Map.from(_activeBubbles));
+      }
     }
   }
 
@@ -211,8 +251,13 @@ class ChatBubbleService {
 
   void dispose() {
     _eventSubscription?.cancel();
-    _activeBubblesController.close();
-    _bubbleClickController.close();
+    if (!_activeBubblesController.isClosed) {
+      _activeBubblesController.close();
+    }
+    if (!_bubbleClickController.isClosed) {
+      _bubbleClickController.close();
+    }
+    _isInitialized = false;
   }
 }
 

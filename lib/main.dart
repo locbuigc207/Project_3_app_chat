@@ -1,4 +1,3 @@
-// lib/main.dart - COMPLETE FIXED
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -24,7 +23,6 @@ import 'package:timezone/timezone.dart' as tz;
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Firebase
   try {
     await Firebase.initializeApp();
     print('✅ Firebase initialized successfully');
@@ -32,17 +30,13 @@ Future<void> main() async {
     print('❌ Firebase initialization error: $e');
   }
 
-  // Initialize error logging
   await ErrorLogger.initialize();
 
-  // Initialize timezone
   tz.initializeTimeZones();
   tz.setLocalLocation(tz.getLocation('Asia/Ho_Chi_Minh'));
 
-  // Get SharedPreferences
   final prefs = await SharedPreferences.getInstance();
 
-  // Initialize notifications
   final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
   await _initializeNotifications(flutterLocalNotificationsPlugin);
 
@@ -223,7 +217,6 @@ class MyApp extends StatelessWidget {
           create: (_) => LocationProvider(),
         ),
 
-        // Translation Provider
         Provider<TranslationProvider>(
           create: (_) => TranslationProvider(),
         ),
