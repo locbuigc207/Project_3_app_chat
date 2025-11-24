@@ -1175,7 +1175,6 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
   }
 
-  // ✅ FIXED: Schedule Message - No more TextEditingController leak
   Future<void> _scheduleMessage() async {
     if (_isDisposed) return;
 
@@ -1184,8 +1183,8 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
+      barrierDismissible: false,
       builder: (dialogContext) {
-        // ✅ FIX: Create controller inside dialog scope
         final dialogController = TextEditingController();
         DateTime? localScheduledTime;
 
@@ -2239,17 +2238,31 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
     _voiceProvider?.dispose();
 
-    // ✅ FIX: Safely dispose controllers
-    _chatInputController.dispose();
+    if (!_chatInputController.hasListeners) {
+      try {
+        _chatInputController.dispose();
+      } catch (e) {
+        print('⚠️ Controller already disposed: $e');
+      }
+    }
 
-    _listScrollController.removeListener(_scrollListener);
-    _listScrollController.dispose();
+    if (_listScrollController.hasClients) {
+      try {
+        _listScrollController.removeListener(_scrollListener);
+        _listScrollController.dispose();
+      } catch (e) {
+        print('⚠️ ScrollController error: $e');
+      }
+    }
 
-    _focusNode.removeListener(_onFocusChange);
-    _focusNode.dispose();
+    try {
+      _focusNode.removeListener(_onFocusChange);
+      _focusNode.dispose();
+    } catch (e) {
+      print('⚠️ FocusNode error: $e');
+    }
 
     WidgetsBinding.instance.removeObserver(this);
-
     super.dispose();
   }
 }
