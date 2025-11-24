@@ -8,6 +8,8 @@ import android.content.IntentFilter
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
 import android.view.*
 import android.widget.ImageView
 import androidx.core.app.NotificationCompat
@@ -19,6 +21,7 @@ class ChatBubbleService : Service() {
     private var windowManager: WindowManager? = null
     private val activeBubbles = mutableMapOf<String, BubbleViewHolder>()
     private var closeReceiver: BroadcastReceiver? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     data class BubbleViewHolder(
         val containerView: View,
@@ -40,7 +43,6 @@ class ChatBubbleService : Service() {
     override fun onCreate() {
         super.onCreate()
 
-        // ✅ FIX: Initialize WindowManager safely
         try {
             windowManager = getSystemService(WINDOW_SERVICE) as? WindowManager
             if (windowManager == null) {
@@ -81,7 +83,7 @@ class ChatBubbleService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // ✅ FIX: Start foreground FIRST before any UI operations
+        // ✅ FIX: Start foreground FIRST
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             try {
                 startForeground(NOTIFICATION_ID, createNotification())
@@ -93,23 +95,27 @@ class ChatBubbleService : Service() {
             }
         }
 
-        when (intent?.action) {
-            ACTION_SHOW_BUBBLE -> {
-                val userId = intent.getStringExtra("userId") ?: return START_NOT_STICKY
-                val userName = intent.getStringExtra("userName") ?: ""
-                val avatarUrl = intent.getStringExtra("avatarUrl") ?: ""
+        // ✅ FIX: Xử lý action sau khi start foreground
+        mainHandler.postDelayed({
+            when (intent?.action) {
+                ACTION_SHOW_BUBBLE -> {
+                    val userId = intent.getStringExtra("userId") ?: return@postDelayed
+                    val userName = intent.getStringExtra("userName") ?: ""
+                    val avatarUrl = intent.getStringExtra("avatarUrl") ?: ""
 
-                android.util.Log.d("ChatBubbleService", "🎈 Showing bubble for: $userName")
-                showBubble(userId, userName, avatarUrl)
+                    android.util.Log.d("ChatBubbleService", "🎈 Showing bubble for: $userName")
+                    showBubble(userId, userName, avatarUrl)
+                }
+                ACTION_HIDE_BUBBLE -> {
+                    val userId = intent.getStringExtra("userId") ?: return@postDelayed
+                    hideBubble(userId)
+                }
+                ACTION_HIDE_ALL -> {
+                    hideAllBubbles()
+                }
             }
-            ACTION_HIDE_BUBBLE -> {
-                val userId = intent.getStringExtra("userId") ?: return START_NOT_STICKY
-                hideBubble(userId)
-            }
-            ACTION_HIDE_ALL -> {
-                hideAllBubbles()
-            }
-        }
+        }, 300) // ✅ Delay 300ms để tránh conflict
+
         return START_STICKY
     }
 
@@ -156,20 +162,20 @@ class ChatBubbleService : Service() {
 
         // ✅ FIX: Remove existing bubble first
         if (activeBubbles.containsKey(userId)) {
-            android.util.Log.d("ChatBubbleService", "ℹ️ Bubble already exists, removing old one")
+            android.util.Log.d("ChatBubbleService", "ℹ️ Removing existing bubble")
             hideBubble(userId)
+            // Đợi một chút trước khi tạo bubble mới
+            Thread.sleep(200)
         }
 
         try {
-            // ✅ FIX: Use proper LayoutInflater
             val inflater = LayoutInflater.from(this)
             val bubbleView = inflater.inflate(R.layout.chat_bubble_layout, null)
 
-            // Setup bubble view
             val avatarView = bubbleView.findViewById<ImageView>(R.id.bubble_avatar)
             val closeButton = bubbleView.findViewById<View>(R.id.bubble_close_button)
 
-            // Load avatar with Glide
+            // Load avatar
             if (avatarUrl.isNotEmpty()) {
                 Glide.with(this)
                     .load(avatarUrl)
@@ -191,7 +197,7 @@ class ChatBubbleService : Service() {
                 sendBubbleClickEvent(userId, userName, avatarUrl)
             }
 
-            // ✅ FIX: Proper window layout params
+            // ✅ FIX: Better window params
             val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             } else {
@@ -204,32 +210,33 @@ class ChatBubbleService : Service() {
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 layoutFlag,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                        WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED, // ✅ Thêm flag này
                 PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.TOP or Gravity.START
                 x = 50
-                y = 200 + (activeBubbles.size * 120) // Stack bubbles
+                y = 200 + (activeBubbles.size * 120)
             }
 
-            // Setup drag
             setupDragListener(bubbleView, params)
 
-            // ✅ FIX: Add view with proper error handling
-            try {
-                windowManager?.addView(bubbleView, params)
+            // ✅ FIX: Add view trên main thread
+            mainHandler.post {
+                try {
+                    windowManager?.addView(bubbleView, params)
 
-                activeBubbles[userId] = BubbleViewHolder(
-                    bubbleView, params, userId, userName, avatarUrl
-                )
+                    activeBubbles[userId] = BubbleViewHolder(
+                        bubbleView, params, userId, userName, avatarUrl
+                    )
 
-                updateNotification()
-                android.util.Log.d("ChatBubbleService", "✅ Bubble added successfully for: $userName")
-            } catch (e: WindowManager.BadTokenException) {
-                android.util.Log.e("ChatBubbleService", "❌ BadTokenException: $e")
-                android.util.Log.e("ChatBubbleService", "💡 Make sure overlay permission is granted")
-            } catch (e: Exception) {
-                android.util.Log.e("ChatBubbleService", "❌ Failed to add bubble: $e")
+                    updateNotification()
+                    android.util.Log.d("ChatBubbleService", "✅ Bubble added for: $userName")
+                } catch (e: WindowManager.BadTokenException) {
+                    android.util.Log.e("ChatBubbleService", "❌ BadTokenException: $e")
+                } catch (e: Exception) {
+                    android.util.Log.e("ChatBubbleService", "❌ Failed to add bubble: $e")
+                }
             }
 
         } catch (e: Exception) {
@@ -266,7 +273,7 @@ class ChatBubbleService : Service() {
                         try {
                             windowManager?.updateViewLayout(view, params)
                         } catch (e: Exception) {
-                            android.util.Log.e("ChatBubbleService", "❌ Error updating position: $e")
+                            android.util.Log.e("ChatBubbleService", "❌ Error updating: $e")
                         }
                     }
                     true
@@ -285,19 +292,21 @@ class ChatBubbleService : Service() {
     private fun hideBubble(userId: String) {
         activeBubbles[userId]?.let { holder ->
             try {
-                windowManager?.removeView(holder.containerView)
+                mainHandler.post {
+                    windowManager?.removeView(holder.containerView)
+                }
                 activeBubbles.remove(userId)
                 updateNotification()
                 android.util.Log.d("ChatBubbleService", "✅ Bubble removed: $userId")
 
                 if (activeBubbles.isEmpty()) {
-                    android.util.Log.d("ChatBubbleService", "🛑 No more bubbles, stopping service")
+                    android.util.Log.d("ChatBubbleService", "🛑 No more bubbles, stopping")
                     stopForeground(true)
                     stopSelf()
                 }
             } catch (e: Exception) {
-                android.util.Log.e("ChatBubbleService", "❌ Error removing bubble: $e")
-                activeBubbles.remove(userId) // Remove from map anyway
+                android.util.Log.e("ChatBubbleService", "❌ Error removing: $e")
+                activeBubbles.remove(userId)
             }
         }
     }
@@ -305,15 +314,16 @@ class ChatBubbleService : Service() {
     private fun hideAllBubbles() {
         activeBubbles.values.forEach { holder ->
             try {
-                windowManager?.removeView(holder.containerView)
+                mainHandler.post {
+                    windowManager?.removeView(holder.containerView)
+                }
             } catch (e: Exception) {
-                android.util.Log.e("ChatBubbleService", "❌ Error removing bubble: $e")
+                android.util.Log.e("ChatBubbleService", "❌ Error: $e")
             }
         }
         activeBubbles.clear()
         stopForeground(true)
         stopSelf()
-        android.util.Log.d("ChatBubbleService", "✅ All bubbles removed")
     }
 
     private fun updateNotification() {
@@ -335,17 +345,15 @@ class ChatBubbleService : Service() {
             setPackage(packageName)
         }
         sendBroadcast(intent)
-        android.util.Log.d("ChatBubbleService", "📢 Bubble click event sent")
     }
 
     override fun onDestroy() {
         try {
             closeReceiver?.let { unregisterReceiver(it) }
         } catch (e: Exception) {
-            android.util.Log.e("ChatBubbleService", "❌ Error unregistering receiver: $e")
+            android.util.Log.e("ChatBubbleService", "❌ Error: $e")
         }
         hideAllBubbles()
-        android.util.Log.d("ChatBubbleService", "🛑 Service destroyed")
         super.onDestroy()
     }
 }

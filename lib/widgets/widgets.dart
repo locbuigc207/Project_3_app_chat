@@ -14,6 +14,7 @@ export 'online_friends_bar.dart';
 export 'pin_input_dialog.dart';
 export 'reaction_picker.dart';
 export 'read_receipt_widget.dart';
+export 'schedule_message_dialog.dart';
 export 'smart_reply.dart';
 export 'translation_dialog.dart';
 export 'typing_indicator.dart';

@@ -31,7 +31,7 @@ class ChatBubbleService {
 
   DateTime? _lastBubbleOperation;
   static const _minOperationInterval =
-      Duration(milliseconds: 500); // ✅ Increased delay
+      Duration(milliseconds: 1000); // ✅ Tăng lên 1s
 
   void _setupEventListener() {
     if (_isInitialized) return;
@@ -70,14 +70,16 @@ class ChatBubbleService {
     if (_lastBubbleOperation != null) {
       final elapsed = DateTime.now().difference(_lastBubbleOperation!);
       if (elapsed < _minOperationInterval) {
-        await Future.delayed(_minOperationInterval - elapsed);
+        final waitTime = _minOperationInterval - elapsed;
+        print('⏳ Waiting ${waitTime.inMilliseconds}ms before next operation');
+        await Future.delayed(waitTime);
       }
     }
     _lastBubbleOperation = DateTime.now();
     return true;
   }
 
-  /// ✅ FIX: Request overlay permission with better error handling
+  /// ✅ FIX 1: Better permission handling
   Future<bool> requestOverlayPermission() async {
     if (!Platform.isAndroid) {
       print('ℹ️ Overlay permission only needed on Android');
@@ -91,14 +93,17 @@ class ChatBubbleService {
       final bool hasPermission =
           await _channel.invokeMethod('requestPermission');
 
-      print(hasPermission ? '✅ Permission granted' : '❌ Permission denied');
+      if (hasPermission) {
+        print('✅ Permission granted');
+        // ✅ Đợi thêm để system xử lý permission
+        await Future.delayed(Duration(milliseconds: 500));
+      } else {
+        print('❌ Permission denied');
+      }
+
       return hasPermission;
     } on PlatformException catch (e) {
       print('❌ Error requesting overlay permission: ${e.message}');
-      print('💡 Code: ${e.code}, Details: ${e.details}');
-      return false;
-    } on MissingPluginException {
-      print('⚠️ Chat bubble plugin not available on this platform');
       return false;
     } catch (e) {
       print('❌ Unexpected error: $e');
@@ -106,115 +111,109 @@ class ChatBubbleService {
     }
   }
 
-  /// ✅ FIX: Check permission with logging
   Future<bool> hasOverlayPermission() async {
     if (!Platform.isAndroid) return false;
 
     try {
       final bool hasPermission = await _channel.invokeMethod('hasPermission');
-      print(hasPermission
-          ? '✅ Has overlay permission'
-          : '❌ No overlay permission');
       return hasPermission;
-    } on PlatformException catch (e) {
-      print('❌ Error checking overlay permission: ${e.message}');
-      return false;
-    } on MissingPluginException {
-      print('⚠️ Chat bubble plugin not available');
-      return false;
     } catch (e) {
-      print('❌ Unexpected error checking permission: $e');
+      print('❌ Error checking permission: $e');
       return false;
     }
   }
 
-  /// ✅ FIX: Show bubble with comprehensive error handling
+  /// ✅ FIX 2: Improved bubble creation with retry
   Future<bool> showChatBubble({
     required String userId,
     required String userName,
     required String avatarUrl,
     String? lastMessage,
+    int maxRetries = 2,
   }) async {
     if (!Platform.isAndroid) {
-      print('⚠️ Chat bubbles are only supported on Android');
+      print('⚠️ Chat bubbles only supported on Android');
       return false;
     }
 
     try {
-      // ✅ Rate limiting
       await _canPerformOperation();
-
-      print('🎈 Attempting to show bubble for: $userName');
 
       // ✅ Check permission first
       final hasPermission = await hasOverlayPermission();
       if (!hasPermission) {
-        print('❌ No overlay permission, cannot show bubble');
-        print('💡 Call requestOverlayPermission() first');
+        print('❌ No overlay permission');
         return false;
       }
 
-      // ✅ Check if bubble already exists
+      // ✅ Check if already exists
       if (_activeBubbles.containsKey(userId)) {
-        print('ℹ️ Bubble already exists for user: $userId');
-        await updateBubbleMessage(userId: userId, message: lastMessage ?? '');
+        print('ℹ️ Bubble already exists for: $userId');
         return true;
       }
 
-      final bubbleData = BubbleData(
-        userId: userId,
-        userName: userName,
-        avatarUrl: avatarUrl,
-        lastMessage: lastMessage,
-        timestamp: DateTime.now(),
-      );
+      print('🎈 Creating bubble for: $userName');
 
-      print('📞 Calling native showBubble method...');
-      final bool success = await _channel.invokeMethod('showBubble', {
-        'userId': userId,
-        'userName': userName,
-        'avatarUrl': avatarUrl,
-        'lastMessage': lastMessage ?? '',
-      });
+      // ✅ Retry mechanism
+      for (int attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          final bool success = await _channel.invokeMethod('showBubble', {
+            'userId': userId,
+            'userName': userName,
+            'avatarUrl': avatarUrl,
+            'lastMessage': lastMessage ?? '',
+          }).timeout(
+            Duration(seconds: 3),
+            onTimeout: () {
+              print('⏱️ Bubble creation timeout on attempt ${attempt + 1}');
+              return false;
+            },
+          );
 
-      if (success) {
-        _activeBubbles[userId] = bubbleData;
-        if (!_activeBubblesController.isClosed) {
-          _activeBubblesController.add(Map.from(_activeBubbles));
+          if (success) {
+            final bubbleData = BubbleData(
+              userId: userId,
+              userName: userName,
+              avatarUrl: avatarUrl,
+              lastMessage: lastMessage,
+              timestamp: DateTime.now(),
+            );
+
+            _activeBubbles[userId] = bubbleData;
+            if (!_activeBubblesController.isClosed) {
+              _activeBubblesController.add(Map.from(_activeBubbles));
+            }
+
+            print('✅ Bubble created successfully for: $userName');
+            return true;
+          }
+
+          if (attempt < maxRetries) {
+            print('🔄 Retrying bubble creation (${attempt + 1}/$maxRetries)');
+            await Future.delayed(Duration(milliseconds: 500 * (attempt + 1)));
+          }
+        } catch (e) {
+          print('❌ Attempt ${attempt + 1} failed: $e');
+          if (attempt == maxRetries) rethrow;
+          await Future.delayed(Duration(milliseconds: 500 * (attempt + 1)));
         }
-        print('✅ Bubble shown successfully for: $userName');
-      } else {
-        print('❌ Native method returned false');
       }
 
-      return success;
-    } on PlatformException catch (e) {
-      print('❌ PlatformException showing chat bubble:');
-      print('   Code: ${e.code}');
-      print('   Message: ${e.message}');
-      print('   Details: ${e.details}');
-
-      if (e.code == 'PERMISSION_DENIED') {
-        print('💡 Overlay permission was denied. Guide user to settings.');
-      }
       return false;
-    } on MissingPluginException {
-      print('⚠️ Chat bubble plugin not available');
-      print('💡 Make sure ChatBubbleService is running');
+    } on PlatformException catch (e) {
+      print('❌ PlatformException: ${e.code} - ${e.message}');
       return false;
     } catch (e) {
-      print('❌ Unexpected error showing bubble: $e');
+      print('❌ Error creating bubble: $e');
       return false;
     }
   }
 
-  /// ✅ Hide bubble with rate limiting
   Future<bool> hideChatBubble(String userId) async {
     if (!Platform.isAndroid) return false;
 
     try {
       await _canPerformOperation();
-      print('🗑️ Hiding bubble for: $userId');
 
       final bool success = await _channel.invokeMethod('hideBubble', {
         'userId': userId,
@@ -225,45 +224,32 @@ class ChatBubbleService {
         if (!_activeBubblesController.isClosed) {
           _activeBubblesController.add(Map.from(_activeBubbles));
         }
-        print('✅ Bubble hidden for: $userId');
+        print('✅ Bubble hidden: $userId');
       }
 
       return success;
-    } on PlatformException catch (e) {
-      print('❌ Error hiding chat bubble: ${e.message}');
-      return false;
-    } on MissingPluginException {
-      return false;
     } catch (e) {
-      print('❌ Unexpected error hiding bubble: $e');
+      print('❌ Error hiding bubble: $e');
       return false;
     }
   }
 
-  /// Hide all bubbles
   Future<void> hideAllBubbles() async {
     if (!Platform.isAndroid) return;
 
     try {
       await _canPerformOperation();
-      print('🗑️ Hiding all bubbles...');
-
       await _channel.invokeMethod('hideAllBubbles');
       _activeBubbles.clear();
       if (!_activeBubblesController.isClosed) {
         _activeBubblesController.add({});
       }
       print('✅ All bubbles hidden');
-    } on PlatformException catch (e) {
-      print('❌ Error hiding all bubbles: ${e.message}');
-    } on MissingPluginException {
-      // Ignore
     } catch (e) {
-      print('❌ Unexpected error: $e');
+      print('❌ Error hiding all bubbles: $e');
     }
   }
 
-  /// Update bubble message
   Future<void> updateBubbleMessage({
     required String userId,
     required String message,
@@ -284,18 +270,12 @@ class ChatBubbleService {
     }
   }
 
-  /// Check if bubble is active
-  bool isBubbleActive(String userId) {
-    return _activeBubbles.containsKey(userId);
-  }
+  bool isBubbleActive(String userId) => _activeBubbles.containsKey(userId);
 
-  /// Get active bubbles
   Map<String, BubbleData> get activeBubbles => Map.unmodifiable(_activeBubbles);
 
-  /// Check if supported
   bool get isSupported => Platform.isAndroid;
 
-  /// Dispose
   void dispose() {
     _eventSubscription?.cancel();
     if (!_activeBubblesController.isClosed) {

@@ -1178,211 +1178,44 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Future<void> _scheduleMessage() async {
     if (_isDisposed) return;
 
-    String messageText = '';
-    DateTime? scheduledTime;
-
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       barrierDismissible: false,
-      builder: (dialogContext) {
-        final dialogController = TextEditingController();
-        DateTime? localScheduledTime;
-
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: Row(
-                children: [
-                  Icon(Icons.schedule_send, color: ColorConstants.primaryColor),
-                  SizedBox(width: 8),
-                  Text('Schedule Message'),
-                ],
-              ),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Message:',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: ColorConstants.primaryColor,
-                      ),
-                    ),
-                    SizedBox(height: 8),
-                    TextField(
-                      controller: dialogController,
-                      maxLines: 3,
-                      decoration: InputDecoration(
-                        hintText: 'Enter your message...',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        contentPadding: EdgeInsets.all(12),
-                      ),
-                    ),
-                    SizedBox(height: 16),
-                    Text(
-                      'Schedule Time:',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: ColorConstants.primaryColor,
-                      ),
-                    ),
-                    SizedBox(height: 8),
-                    InkWell(
-                      onTap: () async {
-                        final date = await showDatePicker(
-                          context: context,
-                          initialDate: DateTime.now().add(Duration(hours: 1)),
-                          firstDate: DateTime.now(),
-                          lastDate: DateTime.now().add(Duration(days: 365)),
-                        );
-
-                        if (date != null) {
-                          final time = await showTimePicker(
-                            context: context,
-                            initialTime: TimeOfDay.now(),
-                          );
-
-                          if (time != null) {
-                            setDialogState(() {
-                              localScheduledTime = DateTime(
-                                date.year,
-                                date.month,
-                                date.day,
-                                time.hour,
-                                time.minute,
-                              );
-                            });
-                          }
-                        }
-                      },
-                      child: Container(
-                        padding: EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: ColorConstants.greyColor2),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.calendar_today,
-                                color: ColorConstants.primaryColor),
-                            SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                localScheduledTime != null
-                                    ? DateFormat('MMM dd, yyyy HH:mm')
-                                        .format(localScheduledTime!)
-                                    : 'Select date & time',
-                                style: TextStyle(
-                                  color: localScheduledTime != null
-                                      ? ColorConstants.primaryColor
-                                      : ColorConstants.greyColor,
-                                ),
-                              ),
-                            ),
-                            Icon(Icons.arrow_forward_ios, size: 16),
-                          ],
-                        ),
-                      ),
-                    ),
-                    if (localScheduledTime != null) ...[
-                      SizedBox(height: 12),
-                      Container(
-                        padding: EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.info_outline,
-                                size: 16, color: Colors.blue),
-                            SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Message will be sent in ${localScheduledTime!.difference(DateTime.now()).inMinutes} minutes',
-                                style:
-                                    TextStyle(fontSize: 12, color: Colors.blue),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    dialogController.dispose();
-                    Navigator.pop(context, null);
-                  },
-                  child: Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    if (dialogController.text.trim().isEmpty) {
-                      Fluttertoast.showToast(msg: 'Please enter a message');
-                      return;
-                    }
-                    if (localScheduledTime == null) {
-                      Fluttertoast.showToast(msg: 'Please select time');
-                      return;
-                    }
-                    final result = {
-                      'message': dialogController.text.trim(),
-                      'time': localScheduledTime,
-                    };
-                    dialogController.dispose();
-                    Navigator.pop(context, result);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: ColorConstants.primaryColor,
-                  ),
-                  child:
-                      Text('Schedule', style: TextStyle(color: Colors.white)),
-                ),
-              ],
-            );
-          },
-        );
-      },
+      builder: (context) => ScheduleMessageDialog(),
     );
 
-    if (result != null && !_isDisposed) {
-      messageText = result['message'] as String;
-      scheduledTime = result['time'] as DateTime;
+    if (result == null || _isDisposed || !mounted) return;
 
-      final delay = scheduledTime.difference(DateTime.now());
+    final messageText = result['message'] as String;
+    final scheduledTime = result['time'] as DateTime;
 
-      if (delay.isNegative) {
+    final delay = scheduledTime.difference(DateTime.now());
+
+    if (delay.isNegative) {
+      if (mounted) {
         Fluttertoast.showToast(msg: 'Invalid time');
-        return;
       }
+      return;
+    }
 
-      final scheduleKey = scheduledTime.millisecondsSinceEpoch.toString();
+    final scheduleKey = scheduledTime.millisecondsSinceEpoch.toString();
 
-      // Store message content
-      _scheduledMessageContents[scheduleKey] = messageText;
+    _scheduledMessageContents[scheduleKey] = messageText;
 
-      // Create timer
-      final timer = Timer(delay, () {
-        if (!_isDisposed) {
-          final content = _scheduledMessageContents[scheduleKey];
-          if (content != null) {
-            _onSendMessageWithAutoDelete(content, TypeMessage.text);
-          }
-          _scheduledMessages.remove(scheduleKey);
-          _scheduledMessageContents.remove(scheduleKey);
+    final timer = Timer(delay, () {
+      if (!_isDisposed && mounted) {
+        final content = _scheduledMessageContents[scheduleKey];
+        if (content != null) {
+          _onSendMessageWithAutoDelete(content, TypeMessage.text);
         }
-      });
+        _scheduledMessages.remove(scheduleKey);
+        _scheduledMessageContents.remove(scheduleKey);
+      }
+    });
 
-      _scheduledMessages[scheduleKey] = timer;
+    _scheduledMessages[scheduleKey] = timer;
 
+    if (mounted) {
       Fluttertoast.showToast(
         msg:
             '📅 Message scheduled for ${DateFormat('HH:mm').format(scheduledTime)}',
