@@ -19,12 +19,13 @@ class MainActivity : FlutterActivity() {
     private val OVERLAY_PERMISSION_REQUEST = 1001
 
     private var bubbleClickReceiver: BroadcastReceiver? = null
+    private var bubbleMessageReceiver: BroadcastReceiver? = null
     private var eventSink: EventChannel.EventSink? = null
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        // ✅ Method Channel - request/check permissions, show/hide bubbles
+        // ✅ Method Channel
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -86,17 +87,17 @@ class MainActivity : FlutterActivity() {
                 }
             }
 
-        // ✅ Event Channel - listen for bubble clicks
+        // ✅ Event Channel
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                     eventSink = events
-                    setupBubbleClickListener()
+                    setupBubbleListeners()
                 }
 
                 override fun onCancel(arguments: Any?) {
                     eventSink = null
-                    unsetupBubbleClickListener()
+                    unsetupBubbleListeners()
                 }
             })
     }
@@ -118,7 +119,8 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun setupBubbleClickListener() {
+    private fun setupBubbleListeners() {
+        // ✅ Bubble click listener
         bubbleClickReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action == "CHAT_BUBBLE_CLICKED") {
@@ -127,6 +129,7 @@ class MainActivity : FlutterActivity() {
                     val avatarUrl = intent.getStringExtra("avatarUrl")
 
                     eventSink?.success(mapOf(
+                        "type" to "click",
                         "userId" to userId,
                         "userName" to userName,
                         "avatarUrl" to avatarUrl
@@ -135,16 +138,44 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        val filter = IntentFilter("CHAT_BUBBLE_CLICKED")
+        // ✅ Mini chat message listener
+        bubbleMessageReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action == "CHAT_BUBBLE_MESSAGE") {
+                    val userId = intent.getStringExtra("userId")
+                    val message = intent.getStringExtra("message")
+
+                    eventSink?.success(mapOf(
+                        "type" to "message",
+                        "userId" to userId,
+                        "message" to message
+                    ))
+                }
+            }
+        }
+
+        val clickFilter = IntentFilter("CHAT_BUBBLE_CLICKED")
+        val messageFilter = IntentFilter("CHAT_BUBBLE_MESSAGE")
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(bubbleClickReceiver, filter, Context.RECEIVER_EXPORTED)
+            registerReceiver(bubbleClickReceiver, clickFilter, Context.RECEIVER_EXPORTED)
+            registerReceiver(bubbleMessageReceiver, messageFilter, Context.RECEIVER_EXPORTED)
         } else {
-            registerReceiver(bubbleClickReceiver, filter)
+            registerReceiver(bubbleClickReceiver, clickFilter)
+            registerReceiver(bubbleMessageReceiver, messageFilter)
         }
     }
 
-    private fun unsetupBubbleClickListener() {
+    private fun unsetupBubbleListeners() {
         bubbleClickReceiver?.let {
+            try {
+                unregisterReceiver(it)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        bubbleMessageReceiver?.let {
             try {
                 unregisterReceiver(it)
             } catch (e: Exception) {
@@ -161,7 +192,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
-        unsetupBubbleClickListener()
+        unsetupBubbleListeners()
         super.onDestroy()
     }
 }

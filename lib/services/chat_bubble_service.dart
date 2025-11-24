@@ -25,13 +25,18 @@ class ChatBubbleService {
   Stream<BubbleClickEvent> get bubbleClickStream =>
       _bubbleClickController.stream;
 
+  // ✅ NEW: Stream for messages from mini chat
+  final _miniChatMessageController =
+      StreamController<MiniChatMessage>.broadcast();
+  Stream<MiniChatMessage> get miniChatMessageStream =>
+      _miniChatMessageController.stream;
+
   final Map<String, BubbleData> _activeBubbles = {};
   StreamSubscription? _eventSubscription;
   bool _isInitialized = false;
 
   DateTime? _lastBubbleOperation;
-  static const _minOperationInterval =
-      Duration(milliseconds: 1000); // ✅ Tăng lên 1s
+  static const _minOperationInterval = Duration(milliseconds: 1000);
 
   void _setupEventListener() {
     if (_isInitialized) return;
@@ -41,16 +46,35 @@ class ChatBubbleService {
       _eventSubscription = _eventChannel.receiveBroadcastStream().listen(
         (event) {
           if (event is Map) {
-            final userId = event['userId'] as String?;
-            final userName = event['userName'] as String?;
-            final avatarUrl = event['avatarUrl'] as String?;
+            final eventType = event['type'] as String?;
 
-            if (userId != null && !_bubbleClickController.isClosed) {
-              _bubbleClickController.add(BubbleClickEvent(
-                userId: userId,
-                userName: userName ?? '',
-                avatarUrl: avatarUrl ?? '',
-              ));
+            if (eventType == 'click') {
+              // Bubble clicked
+              final userId = event['userId'] as String?;
+              final userName = event['userName'] as String?;
+              final avatarUrl = event['avatarUrl'] as String?;
+
+              if (userId != null && !_bubbleClickController.isClosed) {
+                _bubbleClickController.add(BubbleClickEvent(
+                  userId: userId,
+                  userName: userName ?? '',
+                  avatarUrl: avatarUrl ?? '',
+                ));
+              }
+            } else if (eventType == 'message') {
+              // Message from mini chat
+              final userId = event['userId'] as String?;
+              final message = event['message'] as String?;
+
+              if (userId != null &&
+                  message != null &&
+                  !_miniChatMessageController.isClosed) {
+                _miniChatMessageController.add(MiniChatMessage(
+                  userId: userId,
+                  message: message,
+                  timestamp: DateTime.now(),
+                ));
+              }
             }
           }
         },
@@ -79,7 +103,6 @@ class ChatBubbleService {
     return true;
   }
 
-  /// ✅ FIX 1: Better permission handling
   Future<bool> requestOverlayPermission() async {
     if (!Platform.isAndroid) {
       print('ℹ️ Overlay permission only needed on Android');
@@ -95,7 +118,6 @@ class ChatBubbleService {
 
       if (hasPermission) {
         print('✅ Permission granted');
-        // ✅ Đợi thêm để system xử lý permission
         await Future.delayed(Duration(milliseconds: 500));
       } else {
         print('❌ Permission denied');
@@ -123,7 +145,6 @@ class ChatBubbleService {
     }
   }
 
-  /// ✅ FIX 2: Improved bubble creation with retry
   Future<bool> showChatBubble({
     required String userId,
     required String userName,
@@ -139,14 +160,12 @@ class ChatBubbleService {
     try {
       await _canPerformOperation();
 
-      // ✅ Check permission first
       final hasPermission = await hasOverlayPermission();
       if (!hasPermission) {
         print('❌ No overlay permission');
         return false;
       }
 
-      // ✅ Check if already exists
       if (_activeBubbles.containsKey(userId)) {
         print('ℹ️ Bubble already exists for: $userId');
         return true;
@@ -154,7 +173,6 @@ class ChatBubbleService {
 
       print('🎈 Creating bubble for: $userName');
 
-      // ✅ Retry mechanism
       for (int attempt = 0; attempt <= maxRetries; attempt++) {
         try {
           final bool success = await _channel.invokeMethod('showBubble', {
@@ -284,6 +302,9 @@ class ChatBubbleService {
     if (!_bubbleClickController.isClosed) {
       _bubbleClickController.close();
     }
+    if (!_miniChatMessageController.isClosed) {
+      _miniChatMessageController.close();
+    }
     _isInitialized = false;
     print('🛑 Bubble service disposed');
   }
@@ -334,5 +355,18 @@ class BubbleClickEvent {
     required this.userId,
     required this.userName,
     required this.avatarUrl,
+  });
+}
+
+// ✅ NEW: Mini chat message event
+class MiniChatMessage {
+  final String userId;
+  final String message;
+  final DateTime timestamp;
+
+  MiniChatMessage({
+    required this.userId,
+    required this.message,
+    required this.timestamp,
   });
 }
