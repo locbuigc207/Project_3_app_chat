@@ -1,7 +1,10 @@
+// lib/services/chat_bubble_service.dart - COMPLETE FIXED VERSION
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ChatBubbleService {
   static const MethodChannel _channel = MethodChannel('chat_bubble_overlay');
@@ -13,9 +16,11 @@ class ChatBubbleService {
   ChatBubbleService._internal() {
     Future.delayed(Duration(milliseconds: 500), () {
       _setupEventListener();
+      _restoreBubbles(); // ✅ NEW: Restore on init
     });
   }
 
+  // Stream Controllers
   final _activeBubblesController =
       StreamController<Map<String, BubbleData>>.broadcast();
   Stream<Map<String, BubbleData>> get activeBubblesStream =>
@@ -25,18 +30,26 @@ class ChatBubbleService {
   Stream<BubbleClickEvent> get bubbleClickStream =>
       _bubbleClickController.stream;
 
-  // ✅ NEW: Stream for messages from mini chat
   final _miniChatMessageController =
       StreamController<MiniChatMessage>.broadcast();
   Stream<MiniChatMessage> get miniChatMessageStream =>
       _miniChatMessageController.stream;
 
+  // State Management
   final Map<String, BubbleData> _activeBubbles = {};
   StreamSubscription? _eventSubscription;
   bool _isInitialized = false;
 
   DateTime? _lastBubbleOperation;
   static const _minOperationInterval = Duration(milliseconds: 1000);
+
+  // ✅ NEW: Persistence Storage
+  SharedPreferences? _prefs;
+  static const _storageKey = 'active_bubbles';
+
+  // ===========================================
+  // INITIALIZATION & EVENT HANDLING
+  // ===========================================
 
   void _setupEventListener() {
     if (_isInitialized) return;
@@ -49,32 +62,9 @@ class ChatBubbleService {
             final eventType = event['type'] as String?;
 
             if (eventType == 'click') {
-              // Bubble clicked
-              final userId = event['userId'] as String?;
-              final userName = event['userName'] as String?;
-              final avatarUrl = event['avatarUrl'] as String?;
-
-              if (userId != null && !_bubbleClickController.isClosed) {
-                _bubbleClickController.add(BubbleClickEvent(
-                  userId: userId,
-                  userName: userName ?? '',
-                  avatarUrl: avatarUrl ?? '',
-                ));
-              }
+              _handleBubbleClick(event);
             } else if (eventType == 'message') {
-              // Message from mini chat
-              final userId = event['userId'] as String?;
-              final message = event['message'] as String?;
-
-              if (userId != null &&
-                  message != null &&
-                  !_miniChatMessageController.isClosed) {
-                _miniChatMessageController.add(MiniChatMessage(
-                  userId: userId,
-                  message: message,
-                  timestamp: DateTime.now(),
-                ));
-              }
+              _handleMiniChatMessage(event);
             }
           }
         },
@@ -90,12 +80,127 @@ class ChatBubbleService {
     }
   }
 
+  void _handleBubbleClick(Map event) {
+    final userId = event['userId'] as String?;
+    final userName = event['userName'] as String?;
+    final avatarUrl = event['avatarUrl'] as String?;
+
+    if (userId != null && !_bubbleClickController.isClosed) {
+      _bubbleClickController.add(BubbleClickEvent(
+        userId: userId,
+        userName: userName ?? '',
+        avatarUrl: avatarUrl ?? '',
+      ));
+    }
+  }
+
+  void _handleMiniChatMessage(Map event) {
+    final userId = event['userId'] as String?;
+    final message = event['message'] as String?;
+
+    if (userId != null &&
+        message != null &&
+        !_miniChatMessageController.isClosed) {
+      _miniChatMessageController.add(MiniChatMessage(
+        userId: userId,
+        message: message,
+        timestamp: DateTime.now(),
+      ));
+    }
+  }
+
+  // ===========================================
+  // PERSISTENCE: Save & Restore Bubbles
+  // ===========================================
+
+  Future<void> _initPrefs() async {
+    _prefs ??= await SharedPreferences.getInstance();
+  }
+
+  /// ✅ NEW: Save active bubbles to persistent storage
+  Future<void> _saveBubbles() async {
+    try {
+      await _initPrefs();
+      final bubblesJson = _activeBubbles.map(
+        (key, value) => MapEntry(key, value.toJson()),
+      );
+      final jsonString = jsonEncode(bubblesJson);
+      await _prefs?.setString(_storageKey, jsonString);
+      print('💾 Saved ${_activeBubbles.length} bubbles to storage');
+    } catch (e) {
+      print('❌ Error saving bubbles: $e');
+    }
+  }
+
+  /// ✅ NEW: Restore bubbles from storage on app start
+  Future<void> _restoreBubbles() async {
+    if (!Platform.isAndroid) return;
+
+    try {
+      await _initPrefs();
+      final jsonString = _prefs?.getString(_storageKey);
+      if (jsonString == null || jsonString.isEmpty) {
+        print('ℹ️ No saved bubbles to restore');
+        return;
+      }
+
+      final Map<String, dynamic> bubblesJson = jsonDecode(jsonString);
+      print('📦 Restoring ${bubblesJson.length} bubbles...');
+
+      // Check permission first
+      final hasPermission = await hasOverlayPermission();
+      if (!hasPermission) {
+        print('❌ No overlay permission, cannot restore bubbles');
+        return;
+      }
+
+      int restored = 0;
+      for (var entry in bubblesJson.entries) {
+        try {
+          final bubbleData = BubbleData.fromJson(entry.value);
+
+          // Check if bubble is recent (within 24 hours)
+          final age = DateTime.now().difference(bubbleData.timestamp);
+          if (age.inHours < 24) {
+            final success = await showChatBubble(
+              userId: bubbleData.userId,
+              userName: bubbleData.userName,
+              avatarUrl: bubbleData.avatarUrl,
+              lastMessage: bubbleData.lastMessage,
+            );
+            if (success) restored++;
+          }
+        } catch (e) {
+          print('⚠️ Failed to restore bubble ${entry.key}: $e');
+        }
+      }
+
+      print('✅ Restored $restored bubbles');
+    } catch (e) {
+      print('❌ Error restoring bubbles: $e');
+    }
+  }
+
+  /// ✅ NEW: Clear saved bubbles
+  Future<void> clearSavedBubbles() async {
+    try {
+      await _initPrefs();
+      await _prefs?.remove(_storageKey);
+      print('🗑️ Cleared saved bubbles');
+    } catch (e) {
+      print('❌ Error clearing bubbles: $e');
+    }
+  }
+
+  // ===========================================
+  // CORE BUBBLE OPERATIONS
+  // ===========================================
+
   Future<bool> _canPerformOperation() async {
     if (_lastBubbleOperation != null) {
       final elapsed = DateTime.now().difference(_lastBubbleOperation!);
       if (elapsed < _minOperationInterval) {
         final waitTime = _minOperationInterval - elapsed;
-        print('⏳ Waiting ${waitTime.inMilliseconds}ms before next operation');
         await Future.delayed(waitTime);
       }
     }
@@ -104,31 +209,19 @@ class ChatBubbleService {
   }
 
   Future<bool> requestOverlayPermission() async {
-    if (!Platform.isAndroid) {
-      print('ℹ️ Overlay permission only needed on Android');
-      return false;
-    }
+    if (!Platform.isAndroid) return false;
 
     try {
       await _canPerformOperation();
-      print('📱 Requesting overlay permission...');
-
       final bool hasPermission =
           await _channel.invokeMethod('requestPermission');
 
       if (hasPermission) {
-        print('✅ Permission granted');
         await Future.delayed(Duration(milliseconds: 500));
-      } else {
-        print('❌ Permission denied');
       }
-
       return hasPermission;
-    } on PlatformException catch (e) {
-      print('❌ Error requesting overlay permission: ${e.message}');
-      return false;
     } catch (e) {
-      print('❌ Unexpected error: $e');
+      print('❌ Error requesting permission: $e');
       return false;
     }
   }
@@ -152,10 +245,7 @@ class ChatBubbleService {
     String? lastMessage,
     int maxRetries = 2,
   }) async {
-    if (!Platform.isAndroid) {
-      print('⚠️ Chat bubbles only supported on Android');
-      return false;
-    }
+    if (!Platform.isAndroid) return false;
 
     try {
       await _canPerformOperation();
@@ -182,10 +272,7 @@ class ChatBubbleService {
             'lastMessage': lastMessage ?? '',
           }).timeout(
             Duration(seconds: 3),
-            onTimeout: () {
-              print('⏱️ Bubble creation timeout on attempt ${attempt + 1}');
-              return false;
-            },
+            onTimeout: () => false,
           );
 
           if (success) {
@@ -202,24 +289,22 @@ class ChatBubbleService {
               _activeBubblesController.add(Map.from(_activeBubbles));
             }
 
-            print('✅ Bubble created successfully for: $userName');
+            // ✅ NEW: Save to storage
+            await _saveBubbles();
+
+            print('✅ Bubble created for: $userName');
             return true;
           }
 
           if (attempt < maxRetries) {
-            print('🔄 Retrying bubble creation (${attempt + 1}/$maxRetries)');
             await Future.delayed(Duration(milliseconds: 500 * (attempt + 1)));
           }
         } catch (e) {
-          print('❌ Attempt ${attempt + 1} failed: $e');
           if (attempt == maxRetries) rethrow;
           await Future.delayed(Duration(milliseconds: 500 * (attempt + 1)));
         }
       }
 
-      return false;
-    } on PlatformException catch (e) {
-      print('❌ PlatformException: ${e.code} - ${e.message}');
       return false;
     } catch (e) {
       print('❌ Error creating bubble: $e');
@@ -242,6 +327,10 @@ class ChatBubbleService {
         if (!_activeBubblesController.isClosed) {
           _activeBubblesController.add(Map.from(_activeBubbles));
         }
+
+        // ✅ NEW: Update storage
+        await _saveBubbles();
+
         print('✅ Bubble hidden: $userId');
       }
 
@@ -262,11 +351,90 @@ class ChatBubbleService {
       if (!_activeBubblesController.isClosed) {
         _activeBubblesController.add({});
       }
+
+      // ✅ NEW: Clear storage
+      await clearSavedBubbles();
+
       print('✅ All bubbles hidden');
     } catch (e) {
       print('❌ Error hiding all bubbles: $e');
     }
   }
+
+  // ===========================================
+  // ✅ NEW: MINI CHAT OPERATIONS
+  // ===========================================
+
+  Future<bool> showMiniChat({
+    required String userId,
+    required String userName,
+    required String avatarUrl,
+  }) async {
+    if (!Platform.isAndroid) return false;
+
+    try {
+      await _canPerformOperation();
+
+      final hasPermission = await hasOverlayPermission();
+      if (!hasPermission) return false;
+
+      print('💬 Opening mini chat for: $userName');
+
+      final bool success = await _channel.invokeMethod('showMiniChat', {
+        'userId': userId,
+        'userName': userName,
+        'avatarUrl': avatarUrl,
+      }).timeout(
+        Duration(seconds: 3),
+        onTimeout: () => false,
+      );
+
+      if (success) {
+        print('✅ Mini chat opened');
+      }
+
+      return success;
+    } catch (e) {
+      print('❌ Error showing mini chat: $e');
+      return false;
+    }
+  }
+
+  Future<bool> hideMiniChat() async {
+    if (!Platform.isAndroid) return false;
+
+    try {
+      await _canPerformOperation();
+      final bool success = await _channel.invokeMethod('hideMiniChat');
+
+      if (success) {
+        print('✅ Mini chat hidden');
+      }
+
+      return success;
+    } catch (e) {
+      print('❌ Error hiding mini chat: $e');
+      return false;
+    }
+  }
+
+  Future<void> toggleMiniChat({
+    required String userId,
+    required String userName,
+    required String avatarUrl,
+  }) async {
+    await hideChatBubble(userId);
+    await Future.delayed(Duration(milliseconds: 200));
+    await showMiniChat(
+      userId: userId,
+      userName: userName,
+      avatarUrl: avatarUrl,
+    );
+  }
+
+  // ===========================================
+  // UTILITY METHODS
+  // ===========================================
 
   Future<void> updateBubbleMessage({
     required String userId,
@@ -285,6 +453,9 @@ class ChatBubbleService {
       if (!_activeBubblesController.isClosed) {
         _activeBubblesController.add(Map.from(_activeBubbles));
       }
+
+      // ✅ NEW: Save updated state
+      await _saveBubbles();
     }
   }
 
@@ -306,9 +477,12 @@ class ChatBubbleService {
       _miniChatMessageController.close();
     }
     _isInitialized = false;
-    print('🛑 Bubble service disposed');
   }
 }
+
+// ===========================================
+// DATA MODELS
+// ===========================================
 
 class BubbleData {
   final String userId;
@@ -327,21 +501,27 @@ class BubbleData {
     this.unreadCount = 0,
   });
 
-  BubbleData copyWith({
-    String? userId,
-    String? userName,
-    String? avatarUrl,
-    String? lastMessage,
-    DateTime? timestamp,
-    int? unreadCount,
-  }) {
+  Map<String, dynamic> toJson() {
+    return {
+      'userId': userId,
+      'userName': userName,
+      'avatarUrl': avatarUrl,
+      'lastMessage': lastMessage,
+      'timestamp': timestamp.millisecondsSinceEpoch,
+      'unreadCount': unreadCount,
+    };
+  }
+
+  factory BubbleData.fromJson(Map<String, dynamic> json) {
     return BubbleData(
-      userId: userId ?? this.userId,
-      userName: userName ?? this.userName,
-      avatarUrl: avatarUrl ?? this.avatarUrl,
-      lastMessage: lastMessage ?? this.lastMessage,
-      timestamp: timestamp ?? this.timestamp,
-      unreadCount: unreadCount ?? this.unreadCount,
+      userId: json['userId'] ?? '',
+      userName: json['userName'] ?? '',
+      avatarUrl: json['avatarUrl'] ?? '',
+      lastMessage: json['lastMessage'],
+      timestamp: DateTime.fromMillisecondsSinceEpoch(
+        json['timestamp'] ?? DateTime.now().millisecondsSinceEpoch,
+      ),
+      unreadCount: json['unreadCount'] ?? 0,
     );
   }
 }
@@ -358,7 +538,6 @@ class BubbleClickEvent {
   });
 }
 
-// ✅ NEW: Mini chat message event
 class MiniChatMessage {
   final String userId;
   final String message;

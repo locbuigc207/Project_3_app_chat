@@ -1,10 +1,11 @@
-// lib/widgets/bubble_manager.dart - COMPLETE FIXED
+// lib/widgets/bubble_manager.dart - COMPLETE FIXED VERSION
 import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_chat_demo/pages/pages.dart';
 import 'package:flutter_chat_demo/services/chat_bubble_service.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:provider/provider.dart';
 
 class BubbleManager extends StatefulWidget {
@@ -16,23 +17,40 @@ class BubbleManager extends StatefulWidget {
   State<BubbleManager> createState() => _BubbleManagerState();
 }
 
-class _BubbleManagerState extends State<BubbleManager> {
+class _BubbleManagerState extends State<BubbleManager>
+    with WidgetsBindingObserver {
   ChatBubbleService? _bubbleService;
   StreamSubscription? _bubbleClickSubscription;
+  StreamSubscription? _miniChatMessageSubscription;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initializeBubbleService();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    print('📱 App lifecycle changed: $state');
+
+    // Handle app going to background/foreground
+    if (state == AppLifecycleState.paused) {
+      print('⏸️ App going to background');
+    } else if (state == AppLifecycleState.resumed) {
+      print('▶️ App resumed to foreground');
+    }
+  }
+
   void _initializeBubbleService() {
-    // Only initialize on Android
     if (!Platform.isAndroid) return;
 
     try {
       _bubbleService = context.read<ChatBubbleService>();
       _listenToBubbleClicks();
+      _listenToMiniChatMessages(); // ✅ NEW: Listen to mini chat
     } catch (e) {
       print('⚠️ BubbleManager: Service not available: $e');
     }
@@ -50,9 +68,30 @@ class _BubbleManagerState extends State<BubbleManager> {
         print('❌ Bubble click stream error: $error');
       },
     );
+
+    print('✅ Bubble click listener setup');
+  }
+
+  /// ✅ NEW: Listen to messages from mini chat
+  void _listenToMiniChatMessages() {
+    if (_bubbleService == null) return;
+
+    _miniChatMessageSubscription?.cancel();
+    _miniChatMessageSubscription = _bubbleService!.miniChatMessageStream.listen(
+      (message) {
+        _handleMiniChatMessage(message);
+      },
+      onError: (error) {
+        print('❌ Mini chat message stream error: $error');
+      },
+    );
+
+    print('✅ Mini chat message listener setup');
   }
 
   void _handleBubbleClick(BubbleClickEvent event) {
+    print('🫧 Bubble clicked: ${event.userName}');
+
     // Hide the bubble
     _bubbleService?.hideChatBubble(event.userId);
 
@@ -70,6 +109,24 @@ class _BubbleManagerState extends State<BubbleManager> {
     );
   }
 
+  /// ✅ NEW: Handle message sent from mini chat
+  void _handleMiniChatMessage(MiniChatMessage message) {
+    print('💬 Mini chat message from ${message.userId}: ${message.message}');
+
+    // Show toast notification
+    Fluttertoast.showToast(
+      msg: '📨 Message sent: ${message.message}',
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.TOP,
+      backgroundColor: Colors.green,
+      textColor: Colors.white,
+      fontSize: 14.0,
+    );
+
+    // Optional: Update UI or refresh messages
+    // You can add more logic here if needed
+  }
+
   @override
   Widget build(BuildContext context) {
     return widget.child;
@@ -77,12 +134,18 @@ class _BubbleManagerState extends State<BubbleManager> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _bubbleClickSubscription?.cancel();
+    _miniChatMessageSubscription?.cancel();
     super.dispose();
   }
 }
 
-// Alternative: In-app floating bubble widget (for iOS compatibility)
+// ===========================================
+// ✅ NEW: Alternative In-App Bubble Overlay
+// For iOS compatibility or as fallback
+// ===========================================
+
 class InAppBubbleOverlay extends StatefulWidget {
   final Widget child;
 
@@ -100,7 +163,6 @@ class _InAppBubbleOverlayState extends State<InAppBubbleOverlay> {
     required String peerName,
     required String peerAvatar,
   }) {
-    // Remove existing bubble for same user
     _bubbles.removeWhere((b) => b.peerId == peerId);
 
     setState(() {

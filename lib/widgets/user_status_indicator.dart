@@ -1,4 +1,4 @@
-// lib/widgets/user_status_indicator.dart
+// lib/widgets/user_status_indicator.dart - FIXED OVERFLOW
 import 'package:flutter/material.dart';
 import 'package:flutter_chat_demo/constants/constants.dart';
 import 'package:flutter_chat_demo/providers/providers.dart';
@@ -50,17 +50,21 @@ class UserStatusIndicator extends StatelessWidget {
               shape: BoxShape.circle,
               border: Border.all(
                 color: Colors.white,
-                width: 2,
+                width: 1.5,
               ),
             ),
           ),
-          const SizedBox(width: 6),
-          Text(
-            _getStatusText(isOnline, lastSeen),
-            style: TextStyle(
-              fontSize: 12,
-              color: isOnline ? Colors.green : ColorConstants.greyColor,
-              fontWeight: isOnline ? FontWeight.w500 : FontWeight.normal,
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              _getStatusText(isOnline, lastSeen),
+              style: TextStyle(
+                fontSize: 11,
+                color: isOnline ? Colors.green : ColorConstants.greyColor,
+                fontWeight: isOnline ? FontWeight.w500 : FontWeight.normal,
+              ),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
             ),
           ),
         ],

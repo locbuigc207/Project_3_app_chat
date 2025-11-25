@@ -73,6 +73,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   StreamSubscription<QuerySnapshot>? _unreadMessagesSubscription;
   StreamSubscription<QuerySnapshot>? _incomingMessagesSubscription;
+  StreamSubscription? _miniChatSubscription;
 
   bool _showFeaturesMenu = false;
 
@@ -129,6 +130,24 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _smartReplyProvider = context.read<SmartReplyProvider>();
     _presenceProvider = context.read<UserPresenceProvider>();
     _bubbleService = context.read<ChatBubbleService>();
+
+    _miniChatSubscription = _bubbleService?.miniChatMessageStream.listen(
+      (message) {
+        if (message.userId == widget.arguments.peerId) {
+          print('💬 Message from mini chat: ${message.message}');
+
+          // Show notification
+          Fluttertoast.showToast(
+            msg: '📨 ${widget.arguments.peerNickname}: ${message.message}',
+            backgroundColor: Colors.green,
+            toastLength: Toast.LENGTH_SHORT,
+          );
+        }
+      },
+      onError: (error) {
+        print('❌ Mini chat stream error: $error');
+      },
+    );
 
     try {
       _voiceProvider = VoiceMessageProvider(
@@ -925,44 +944,93 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       }
     }
 
-    final success = await _bubbleService!.showChatBubble(
-      userId: widget.arguments.peerId,
-      userName: widget.arguments.peerNickname,
-      avatarUrl: widget.arguments.peerAvatar,
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Create Chat Bubble'),
+        content: Text('Choose how to open this conversation:'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'bubble'),
+            child: Text('Bubble Only'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'minichat'),
+            child: Text('Mini Chat'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+        ],
+      ),
     );
 
-    if (success) {
-      Fluttertoast.showToast(
-        msg: '💬 Chat bubble created for ${widget.arguments.peerNickname}',
-        backgroundColor: Colors.green,
+    if (choice == null) return;
+
+    if (choice == 'bubble') {
+      // Create bubble only
+      final success = await _bubbleService!.showChatBubble(
+        userId: widget.arguments.peerId,
+        userName: widget.arguments.peerNickname,
+        avatarUrl: widget.arguments.peerAvatar,
       );
+
+      if (success) {
+        Fluttertoast.showToast(
+          msg: '💬 Chat bubble created',
+          backgroundColor: Colors.green,
+        );
+      }
+    } else if (choice == 'minichat') {
+      // Show mini chat directly
+      final success = await _bubbleService!.showMiniChat(
+        userId: widget.arguments.peerId,
+        userName: widget.arguments.peerNickname,
+        avatarUrl: widget.arguments.peerAvatar,
+      );
+
+      if (success) {
+        Fluttertoast.showToast(
+          msg: '💬 Mini chat opened',
+          backgroundColor: Colors.green,
+        );
+      }
     }
   }
 
   List<Widget> _buildAppBarActions() {
     return [
+      // Video Call button
       IconButton(
-        icon: Icon(Icons.search),
+        icon: Icon(Icons.videocam, color: ColorConstants.primaryColor),
         onPressed: () {
-          if (_isDisposed) return;
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => SearchMessagesPage(
-                groupChatId: _groupChatId,
-                peerName: widget.arguments.peerNickname,
-              ),
-            ),
+          Fluttertoast.showToast(
+            msg: '🎥 Video Call feature coming soon!',
+            backgroundColor: ColorConstants.primaryColor,
           );
         },
+        tooltip: 'Video Call',
       ),
-      IconButton(icon: Icon(Icons.notifications), onPressed: _showReminders),
+
+      // Voice Call button
       IconButton(
-        icon: Icon(Icons.bubble_chart),
-        onPressed: _createChatBubble,
-        tooltip: 'Create Chat Bubble',
+        icon: Icon(Icons.phone, color: ColorConstants.primaryColor),
+        onPressed: () {
+          Fluttertoast.showToast(
+            msg: '📞 Voice Call feature coming soon!',
+            backgroundColor: ColorConstants.primaryColor,
+          );
+        },
+        tooltip: 'Voice Call',
       ),
-      IconButton(icon: Icon(Icons.more_vert), onPressed: _showChatOptionsMenu),
+
+      // More options menu
+      IconButton(
+        icon: Icon(Icons.more_vert),
+        onPressed: _showChatOptionsMenu,
+        tooltip: 'More options',
+      ),
     ];
   }
 
@@ -983,26 +1051,34 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Search Messages
             ListTile(
-              leading: Icon(Icons.lock, color: ColorConstants.primaryColor),
-              title: Text('Lock Conversation'),
+              leading: Icon(Icons.search, color: ColorConstants.primaryColor),
+              title: Text('Search Messages'),
+              subtitle: Text('Search in conversation'),
               onTap: () {
                 Navigator.pop(context);
-                _showLockOptions();
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.timer, color: ColorConstants.primaryColor),
-              title: Text('Auto-Delete Settings'),
-              onTap: () {
-                Navigator.pop(context);
-                showDialog(
-                  context: context,
-                  builder: (_) => AutoDeleteSettingsDialog(
-                    conversationId: _groupChatId,
-                    provider: _autoDeleteProvider,
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => SearchMessagesPage(
+                      groupChatId: _groupChatId,
+                      peerName: widget.arguments.peerNickname,
+                    ),
                   ),
                 );
+              },
+            ),
+
+            // Show Reminders
+            ListTile(
+              leading:
+                  Icon(Icons.notifications, color: ColorConstants.primaryColor),
+              title: Text('Reminders'),
+              subtitle: Text('View all reminders'),
+              onTap: () {
+                Navigator.pop(context);
+                _showReminders();
               },
             ),
           ],
@@ -1097,83 +1173,83 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     if (!_showFeaturesMenu) return SizedBox.shrink();
 
     return Container(
-      constraints: BoxConstraints(maxHeight: 150), // ✅ FIX: Add max height
-      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      constraints: BoxConstraints(maxHeight: 110),
+      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(top: BorderSide(color: ColorConstants.greyColor2)),
       ),
       child: SingleChildScrollView(
-        // ✅ FIX: Add scroll
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        scrollDirection: Axis.horizontal,
+        child: Row(
           children: [
-            // First row
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildFeatureButton(
-                  icon: Icons.visibility_off,
-                  label: 'View Once',
-                  onTap: () {
-                    showDialog(
-                      context: context,
-                      builder: (_) => SendViewOnceDialog(
-                        onSend: (content, type) async {
-                          await _viewOnceProvider.sendViewOnceMessage(
-                            groupChatId: _groupChatId,
-                            currentUserId: _currentUserId,
-                            peerId: widget.arguments.peerId,
-                            content: content,
-                            type: type,
-                          );
-                          await _loadSmartReplies();
-                        },
-                      ),
-                    );
-                  },
-                ),
-                _buildFeatureButton(
-                  icon: Icons.timer,
-                  label: 'Auto Delete',
-                  onTap: () {
-                    showDialog(
-                      context: context,
-                      builder: (_) => AutoDeleteSettingsDialog(
-                        conversationId: _groupChatId,
-                        provider: _autoDeleteProvider,
-                      ),
-                    );
-                  },
-                ),
-                _buildFeatureButton(
-                  icon: Icons.lock,
-                  label: 'Lock Chat',
-                  onTap: _showLockOptions,
-                ),
-              ],
+            _buildFeatureButton(
+              icon: Icons.visibility_off,
+              label: 'View Once',
+              onTap: () {
+                setState(() => _showFeaturesMenu = false);
+                showDialog(
+                  context: context,
+                  builder: (_) => SendViewOnceDialog(
+                    onSend: (content, type) async {
+                      await _viewOnceProvider.sendViewOnceMessage(
+                        groupChatId: _groupChatId,
+                        currentUserId: _currentUserId,
+                        peerId: widget.arguments.peerId,
+                        content: content,
+                        type: type,
+                      );
+                      await _loadSmartReplies();
+                    },
+                  ),
+                );
+              },
             ),
-            const SizedBox(height: 12),
-            // Second row
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildFeatureButton(
-                  icon: Icons.location_on,
-                  label: 'Location',
-                  onTap: _shareLocation,
-                ),
-                _buildFeatureButton(
-                  icon: Icons.schedule_send,
-                  label: 'Schedule',
-                  onTap: _scheduleMessage,
-                ),
-                _buildFeatureButton(
-                  icon: Icons.bubble_chart,
-                  label: 'Bubble',
-                  onTap: _createChatBubble,
-                ),
-              ],
+            _buildFeatureButton(
+              icon: Icons.timer,
+              label: 'Delete',
+              onTap: () {
+                setState(() => _showFeaturesMenu = false);
+                showDialog(
+                  context: context,
+                  builder: (_) => AutoDeleteSettingsDialog(
+                    conversationId: _groupChatId,
+                    provider: _autoDeleteProvider,
+                  ),
+                );
+              },
+            ),
+            _buildFeatureButton(
+              icon: Icons.lock,
+              label: 'Lock',
+              onTap: () {
+                setState(() => _showFeaturesMenu = false);
+                _showLockOptions();
+              },
+            ),
+            _buildFeatureButton(
+              icon: Icons.location_on,
+              label: 'Location',
+              onTap: () {
+                setState(() => _showFeaturesMenu = false);
+                _shareLocation();
+              },
+            ),
+            _buildFeatureButton(
+              icon: Icons.schedule_send,
+              label: 'Schedule',
+              onTap: () {
+                setState(() => _showFeaturesMenu = false);
+                _scheduleMessage();
+              },
+            ),
+            _buildFeatureButton(
+              icon: Icons.bubble_chart,
+              label: 'Bubble',
+              onTap: () {
+                setState(() => _showFeaturesMenu = false);
+                _createChatBubble();
+              },
             ),
           ],
         ),
@@ -2172,6 +2248,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _pinnedSub?.cancel();
     _typingTimer?.cancel();
     _recordingTimer?.cancel();
+    _miniChatSubscription?.cancel();
 
     if (_presenceProvider != null && _currentUserId.isNotEmpty) {
       _presenceProvider!.setUserOffline(_currentUserId);
