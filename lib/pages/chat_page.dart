@@ -72,6 +72,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   bool _conversationLockedChecked = false;
 
   StreamSubscription<QuerySnapshot>? _unreadMessagesSubscription;
+  StreamSubscription<QuerySnapshot>? _incomingMessagesSubscription;
 
   bool _showFeaturesMenu = false;
 
@@ -92,7 +93,6 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _chatInputController = TextEditingController();
     _listScrollController = ScrollController();
     _focusNode = FocusNode();
-    _listenToIncomingMessages();
 
     WidgetsBinding.instance.addObserver(this);
     _focusNode.addListener(_onFocusChange);
@@ -201,6 +201,9 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       _groupChatId = '$peerId-$_currentUserId';
     }
 
+    // ✅ THÊM DÒNG NÀY - Setup listener SAU KHI có _groupChatId
+    _setupIncomingMessageListener();
+
     _chatProvider.updateDataFirestore(
       FirestoreConstants.pathUserCollection,
       _currentUserId,
@@ -299,22 +302,39 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     });
   }
 
-  void _listenToIncomingMessages() {
-    FirebaseFirestore.instance
+  void _setupIncomingMessageListener() {
+    // Hủy listener cũ nếu có
+    _incomingMessagesSubscription?.cancel();
+
+    // Kiểm tra _groupChatId đã có giá trị chưa
+    if (_groupChatId.isEmpty || _currentUserId.isEmpty) {
+      print('⚠️ Cannot setup listener: groupChatId or currentUserId is empty');
+      return;
+    }
+
+    _incomingMessagesSubscription = FirebaseFirestore.instance
         .collection(FirestoreConstants.pathMessageCollection)
         .doc(_groupChatId)
         .collection(_groupChatId)
         .where(FirestoreConstants.idTo, isEqualTo: _currentUserId)
         .where('isRead', isEqualTo: false)
         .snapshots()
-        .listen((snapshot) {
-      for (var change in snapshot.docChanges) {
-        if (change.type == DocumentChangeType.added) {
-          // Có tin nhắn mới
-          _showChatBubbleIfNeeded();
+        .listen(
+      (snapshot) {
+        for (var change in snapshot.docChanges) {
+          if (change.type == DocumentChangeType.added) {
+            _showChatBubbleIfNeeded();
+          }
         }
-      }
-    });
+      },
+      onError: (error) {
+        ErrorLogger.logError(
+          error,
+          null,
+          context: 'Incoming Messages Listener',
+        );
+      },
+    );
   }
 
   Future<void> _showChatBubbleIfNeeded() async {
@@ -358,13 +378,16 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         .where(FirestoreConstants.idTo, isEqualTo: _currentUserId)
         .where('isRead', isEqualTo: false)
         .snapshots()
-        .listen((snapshot) {
-      if (snapshot.docs.isNotEmpty && !_isDisposed) {
-        _markMessagesAsRead();
-      }
-    }, onError: (error) {
-      ErrorLogger.logError(error, null, context: 'Setup Auto Read');
-    });
+        .listen(
+      (snapshot) {
+        if (snapshot.docs.isNotEmpty && !_isDisposed) {
+          _markMessagesAsRead();
+        }
+      },
+      onError: (error) {
+        ErrorLogger.logError(error, null, context: 'Setup Auto Read');
+      },
+    );
   }
 
   Future<void> _uploadFile() async {
@@ -640,8 +663,9 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 children: [
                   ListTile(
                     title: Text('Date'),
-                    subtitle:
-                        Text(DateFormat('MMM dd, yyyy').format(selectedTime)),
+                    subtitle: Text(
+                      DateFormat('MMM dd, yyyy').format(selectedTime),
+                    ),
                     trailing: Icon(Icons.calendar_today),
                     onTap: () async {
                       final date = await showDatePicker(
@@ -705,7 +729,9 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Future<void> _setMessageReminder(
-      MessageChat message, String messageId) async {
+    MessageChat message,
+    String messageId,
+  ) async {
     if (_isDisposed) return;
 
     final reminderTime = await _pickTimeWithWheel();
@@ -742,8 +768,9 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Future<void> _checkConversationLock() async {
     if (_isDisposed) return;
 
-    final lockStatus =
-        await _lockProvider.getConversationLockStatus(_groupChatId);
+    final lockStatus = await _lockProvider.getConversationLockStatus(
+      _groupChatId,
+    );
 
     if (lockStatus != null && lockStatus['isLocked'] == true) {
       if (!mounted || _isDisposed) return;
@@ -817,8 +844,9 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
     if (messageChat.idFrom != _currentUserId &&
         messageChat.type == TypeMessage.text) {
-      final replies =
-          _smartReplyProvider.getRuleBasedReplies(messageChat.content);
+      final replies = _smartReplyProvider.getRuleBasedReplies(
+        messageChat.content,
+      );
 
       if (mounted && !_isDisposed) {
         setState(() {
@@ -836,9 +864,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       context,
       MaterialPageRoute(
         builder: (_) => Scaffold(
-          appBar: AppBar(
-            title: Text('Reminders'),
-          ),
+          appBar: AppBar(title: Text('Reminders')),
           body: StreamBuilder<QuerySnapshot>(
             stream: _reminderProvider.getUserReminders(_currentUserId),
             builder: (context, snapshot) {
@@ -855,8 +881,9 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               return ListView.builder(
                 itemCount: reminders.length,
                 itemBuilder: (context, index) {
-                  final reminder =
-                      MessageReminder.fromDocument(reminders[index]);
+                  final reminder = MessageReminder.fromDocument(
+                    reminders[index],
+                  );
 
                   return ListTile(
                     title: Text(reminder.message),
@@ -929,19 +956,13 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           );
         },
       ),
-      IconButton(
-        icon: Icon(Icons.notifications),
-        onPressed: _showReminders,
-      ),
+      IconButton(icon: Icon(Icons.notifications), onPressed: _showReminders),
       IconButton(
         icon: Icon(Icons.bubble_chart),
         onPressed: _createChatBubble,
         tooltip: 'Create Chat Bubble',
       ),
-      IconButton(
-        icon: Icon(Icons.more_vert),
-        onPressed: _showChatOptionsMenu,
-      ),
+      IconButton(icon: Icon(Icons.more_vert), onPressed: _showChatOptionsMenu),
     ];
   }
 
@@ -1080,9 +1101,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border(
-          top: BorderSide(color: ColorConstants.greyColor2),
-        ),
+        border: Border(top: BorderSide(color: ColorConstants.greyColor2)),
       ),
       child: SingleChildScrollView(
         // ✅ FIX: Add scroll
@@ -1370,8 +1389,11 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.push_pin,
-                      size: 14, color: ColorConstants.primaryColor),
+                  Icon(
+                    Icons.push_pin,
+                    size: 14,
+                    color: ColorConstants.primaryColor,
+                  ),
                   SizedBox(width: 6),
                   Expanded(
                     child: Text(
@@ -1650,7 +1672,6 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         ),
       );
     }
-
     // Image Message
     else if (messageChat.type == TypeMessage.image) {
       return Container(
@@ -1709,7 +1730,6 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         ),
       );
     }
-
     // Sticker
     else {
       return Container(
@@ -1874,8 +1894,11 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   constraints: BoxConstraints(minWidth: 36, minHeight: 36),
                 ),
                 IconButton(
-                  icon: Icon(Icons.send,
-                      color: ColorConstants.primaryColor, size: 20),
+                  icon: Icon(
+                    Icons.send,
+                    color: ColorConstants.primaryColor,
+                    size: 20,
+                  ),
                   onPressed: _stopRecording,
                   padding: EdgeInsets.zero,
                   constraints: BoxConstraints(minWidth: 36, minHeight: 36),
@@ -2065,9 +2088,8 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => UserProfilePage(
-                    userChat: UserChat.fromDocument(userDoc),
-                  ),
+                  builder: (_) =>
+                      UserProfilePage(userChat: UserChat.fromDocument(userDoc)),
                 ),
               );
             }
@@ -2126,9 +2148,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   _buildAdvancedInput(),
                 ],
               ),
-              Positioned(
-                child: _isLoading ? LoadingView() : SizedBox.shrink(),
-              ),
+              Positioned(child: _isLoading ? LoadingView() : SizedBox.shrink()),
             ],
           ),
         ),
@@ -2148,6 +2168,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _scheduledMessageContents.clear();
 
     _unreadMessagesSubscription?.cancel();
+    _incomingMessagesSubscription?.cancel();
     _pinnedSub?.cancel();
     _typingTimer?.cancel();
     _recordingTimer?.cancel();
