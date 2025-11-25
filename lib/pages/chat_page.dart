@@ -92,6 +92,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _chatInputController = TextEditingController();
     _listScrollController = ScrollController();
     _focusNode = FocusNode();
+    _listenToIncomingMessages();
 
     WidgetsBinding.instance.addObserver(this);
     _focusNode.addListener(_onFocusChange);
@@ -296,6 +297,38 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         );
       }
     });
+  }
+
+  void _listenToIncomingMessages() {
+    FirebaseFirestore.instance
+        .collection(FirestoreConstants.pathMessageCollection)
+        .doc(_groupChatId)
+        .collection(_groupChatId)
+        .where(FirestoreConstants.idTo, isEqualTo: _currentUserId)
+        .where('isRead', isEqualTo: false)
+        .snapshots()
+        .listen((snapshot) {
+      for (var change in snapshot.docChanges) {
+        if (change.type == DocumentChangeType.added) {
+          // Có tin nhắn mới
+          _showChatBubbleIfNeeded();
+        }
+      }
+    });
+  }
+
+  Future<void> _showChatBubbleIfNeeded() async {
+    // Kiểm tra nếu app ở background
+    final lifecycleState = WidgetsBinding.instance.lifecycleState;
+
+    if (lifecycleState != AppLifecycleState.resumed) {
+      // Show bubble
+      await _bubbleService?.showChatBubble(
+        userId: widget.arguments.peerId,
+        userName: widget.arguments.peerNickname,
+        avatarUrl: widget.arguments.peerAvatar,
+      );
+    }
   }
 
   Widget _buildTypingIndicator() {
@@ -1043,6 +1076,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     if (!_showFeaturesMenu) return SizedBox.shrink();
 
     return Container(
+      constraints: BoxConstraints(maxHeight: 150), // ✅ FIX: Add max height
       padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -1050,75 +1084,80 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           top: BorderSide(color: ColorConstants.greyColor2),
         ),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildFeatureButton(
-                icon: Icons.visibility_off,
-                label: 'View Once',
-                onTap: () {
-                  showDialog(
-                    context: context,
-                    builder: (_) => SendViewOnceDialog(
-                      onSend: (content, type) async {
-                        await _viewOnceProvider.sendViewOnceMessage(
-                          groupChatId: _groupChatId,
-                          currentUserId: _currentUserId,
-                          peerId: widget.arguments.peerId,
-                          content: content,
-                          type: type,
-                        );
-                        await _loadSmartReplies();
-                      },
-                    ),
-                  );
-                },
-              ),
-              _buildFeatureButton(
-                icon: Icons.timer,
-                label: 'Auto Delete',
-                onTap: () {
-                  showDialog(
-                    context: context,
-                    builder: (_) => AutoDeleteSettingsDialog(
-                      conversationId: _groupChatId,
-                      provider: _autoDeleteProvider,
-                    ),
-                  );
-                },
-              ),
-              _buildFeatureButton(
-                icon: Icons.lock,
-                label: 'Lock Chat',
-                onTap: _showLockOptions,
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildFeatureButton(
-                icon: Icons.location_on,
-                label: 'Location',
-                onTap: _shareLocation,
-              ),
-              _buildFeatureButton(
-                icon: Icons.schedule_send,
-                label: 'Schedule',
-                onTap: _scheduleMessage,
-              ),
-              _buildFeatureButton(
-                icon: Icons.bubble_chart,
-                label: 'Bubble',
-                onTap: _createChatBubble,
-              ),
-            ],
-          ),
-        ],
+      child: SingleChildScrollView(
+        // ✅ FIX: Add scroll
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // First row
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildFeatureButton(
+                  icon: Icons.visibility_off,
+                  label: 'View Once',
+                  onTap: () {
+                    showDialog(
+                      context: context,
+                      builder: (_) => SendViewOnceDialog(
+                        onSend: (content, type) async {
+                          await _viewOnceProvider.sendViewOnceMessage(
+                            groupChatId: _groupChatId,
+                            currentUserId: _currentUserId,
+                            peerId: widget.arguments.peerId,
+                            content: content,
+                            type: type,
+                          );
+                          await _loadSmartReplies();
+                        },
+                      ),
+                    );
+                  },
+                ),
+                _buildFeatureButton(
+                  icon: Icons.timer,
+                  label: 'Auto Delete',
+                  onTap: () {
+                    showDialog(
+                      context: context,
+                      builder: (_) => AutoDeleteSettingsDialog(
+                        conversationId: _groupChatId,
+                        provider: _autoDeleteProvider,
+                      ),
+                    );
+                  },
+                ),
+                _buildFeatureButton(
+                  icon: Icons.lock,
+                  label: 'Lock Chat',
+                  onTap: _showLockOptions,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            // Second row
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildFeatureButton(
+                  icon: Icons.location_on,
+                  label: 'Location',
+                  onTap: _shareLocation,
+                ),
+                _buildFeatureButton(
+                  icon: Icons.schedule_send,
+                  label: 'Schedule',
+                  onTap: _scheduleMessage,
+                ),
+                _buildFeatureButton(
+                  icon: Icons.bubble_chart,
+                  label: 'Bubble',
+                  onTap: _createChatBubble,
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1135,18 +1174,22 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         onTap();
       },
       child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        width: 70, // ✅ FIX: Fixed width
+        padding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: ColorConstants.primaryColor, size: 28),
+            Icon(icon, color: ColorConstants.primaryColor, size: 26),
             SizedBox(height: 4),
             Text(
               label,
               style: TextStyle(
-                fontSize: 12,
+                fontSize: 11, // ✅ FIX: Smaller font
                 color: ColorConstants.primaryColor,
               ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
             ),
           ],
         ),
@@ -1307,14 +1350,18 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       color: ColorConstants.greyColor2.withOpacity(0.3),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        padding: EdgeInsets.symmetric(horizontal: 8),
+        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         itemCount: _pinnedMessages.length,
+        itemExtent: 180, // ✅ FIX: Fixed width for performance
         itemBuilder: (context, index) {
           final message = MessageChat.fromDocument(_pinnedMessages[index]);
           return GestureDetector(
-            onTap: () {},
+            onTap: () {
+              // TODO: Scroll to message
+            },
             child: Container(
-              margin: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+              width: 170, // ✅ FIX: Explicit width
+              margin: EdgeInsets.symmetric(horizontal: 4),
               padding: EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -1324,15 +1371,14 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.push_pin,
-                      size: 16, color: ColorConstants.primaryColor),
-                  SizedBox(width: 8),
-                  ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: 150),
+                      size: 14, color: ColorConstants.primaryColor),
+                  SizedBox(width: 6),
+                  Expanded(
                     child: Text(
-                      message.content.length > 20
-                          ? '${message.content.substring(0, 20)}...'
-                          : message.content,
+                      message.content,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12),
                     ),
                   ),
                 ],
@@ -1753,19 +1799,29 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        // Smart Replies - ✅ FIX: Wrap in SingleChildScrollView
         if (_smartReplies.isNotEmpty)
-          SmartReplyWidget(
-            replies: _smartReplies,
-            onReplySelected: (reply) {
-              if (!_isDisposed) {
-                _chatInputController.text = reply;
-                setState(() => _smartReplies = []);
-              }
-            },
+          Container(
+            constraints: BoxConstraints(maxHeight: 60), // ✅ FIX: Add max height
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SmartReplyWidget(
+                replies: _smartReplies,
+                onReplySelected: (reply) {
+                  if (!_isDisposed) {
+                    _chatInputController.text = reply;
+                    setState(() => _smartReplies = []);
+                  }
+                },
+              ),
+            ),
           ),
+
+        // Reply indicator
         if (_replyingTo != null)
           Container(
             width: double.infinity,
+            constraints: BoxConstraints(maxHeight: 50), // ✅ FIX: Add max height
             color: ColorConstants.greyColor2.withOpacity(0.2),
             padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             child: Row(
@@ -1775,21 +1831,24 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     'Replying: ${_replyingTo!.content}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 13), // ✅ FIX: Smaller font
                   ),
                 ),
                 IconButton(
                   icon: Icon(Icons.close, size: 18),
                   onPressed: () {
                     if (mounted && !_isDisposed) {
-                      setState(() {
-                        _replyingTo = null;
-                      });
+                      setState(() => _replyingTo = null);
                     }
                   },
+                  padding: EdgeInsets.zero, // ✅ FIX: Remove padding
+                  constraints: BoxConstraints(minWidth: 32, minHeight: 32),
                 ),
               ],
             ),
           ),
+
+        // Recording indicator
         if (_isRecording)
           Container(
             width: double.infinity,
@@ -1804,23 +1863,34 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   style: TextStyle(
                     color: Colors.red,
                     fontWeight: FontWeight.bold,
+                    fontSize: 13, // ✅ FIX: Smaller font
                   ),
                 ),
                 Spacer(),
                 IconButton(
-                  icon: Icon(Icons.delete, color: Colors.red),
+                  icon: Icon(Icons.delete, color: Colors.red, size: 20),
                   onPressed: _cancelRecording,
+                  padding: EdgeInsets.zero,
+                  constraints: BoxConstraints(minWidth: 36, minHeight: 36),
                 ),
                 IconButton(
-                  icon: Icon(Icons.send, color: ColorConstants.primaryColor),
+                  icon: Icon(Icons.send,
+                      color: ColorConstants.primaryColor, size: 20),
                   onPressed: _stopRecording,
+                  padding: EdgeInsets.zero,
+                  constraints: BoxConstraints(minWidth: 36, minHeight: 36),
                 ),
               ],
             ),
           ),
+
+        // ✅ FIX: Input area with proper constraints
         Container(
           width: double.infinity,
-          height: 50,
+          constraints: BoxConstraints(
+            minHeight: 50,
+            maxHeight: 120, // ✅ FIX: Prevent overflow when typing long text
+          ),
           decoration: BoxDecoration(
             border: Border(
               top: BorderSide(color: ColorConstants.greyColor2, width: 0.5),
@@ -1828,7 +1898,10 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             color: Colors.white,
           ),
           child: Row(
+            crossAxisAlignment:
+                CrossAxisAlignment.end, // ✅ FIX: Align to bottom
             children: [
+              // More options button
               Material(
                 color: Colors.white,
                 child: Container(
@@ -1837,90 +1910,56 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     icon: Icon(
                       _showFeaturesMenu ? Icons.close : Icons.more_horiz,
                       color: ColorConstants.primaryColor,
+                      size: 24,
                     ),
                     onPressed: _toggleFeaturesMenu,
+                    padding: EdgeInsets.all(8), // ✅ FIX: Proper padding
+                    constraints: BoxConstraints(minWidth: 40, minHeight: 40),
                   ),
                 ),
               ),
+
+              // Image picker
               Material(
                 color: Colors.white,
+                child: IconButton(
+                  icon: Icon(Icons.image, size: 24),
+                  onPressed: () {
+                    _pickImage().then((isSuccess) {
+                      if (isSuccess) _uploadFile();
+                    });
+                  },
+                  color: ColorConstants.primaryColor,
+                  padding: EdgeInsets.all(8),
+                  constraints: BoxConstraints(minWidth: 40, minHeight: 40),
+                ),
+              ),
+
+              // Sticker button
+              Material(
+                color: Colors.white,
+                child: IconButton(
+                  icon: Icon(Icons.face, size: 24),
+                  onPressed: _getSticker,
+                  color: ColorConstants.primaryColor,
+                  padding: EdgeInsets.all(8),
+                  constraints: BoxConstraints(minWidth: 40, minHeight: 40),
+                ),
+              ),
+
+              // ✅ FIX: Text input with proper constraints
+              Expanded(
                 child: Container(
-                  margin: EdgeInsets.symmetric(horizontal: 1),
-                  child: IconButton(
-                    icon: Icon(Icons.image),
-                    onPressed: () {
-                      _pickImage().then((isSuccess) {
-                        if (isSuccess) _uploadFile();
-                      });
+                  constraints: BoxConstraints(
+                    minHeight: 40,
+                    maxHeight: 100, // ✅ FIX: Limit input height
+                  ),
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: TextField(
+                    onTapOutside: (_) {
+                      Utilities.closeKeyboard();
                     },
-                    color: ColorConstants.primaryColor,
-                  ),
-                ),
-              ),
-              Material(
-                color: Colors.white,
-                child: Container(
-                  margin: EdgeInsets.symmetric(horizontal: 1),
-                  child: IconButton(
-                    icon: Icon(Icons.face),
-                    onPressed: _getSticker,
-                    color: ColorConstants.primaryColor,
-                  ),
-                ),
-              ),
-              Flexible(
-                child: TextField(
-                  onTapOutside: (_) {
-                    Utilities.closeKeyboard();
-                  },
-                  onSubmitted: (_) {
-                    if (!_isDisposed) {
-                      _onSendMessageWithAutoDelete(
-                        _chatInputController.text,
-                        TypeMessage.text,
-                      );
-                    }
-                  },
-                  onChanged: (text) {
-                    _handleTyping(text);
-                    if (text.isNotEmpty &&
-                        _smartReplies.isNotEmpty &&
-                        mounted &&
-                        !_isDisposed) {
-                      setState(() => _smartReplies = []);
-                    }
-                  },
-                  style: TextStyle(
-                    color: ColorConstants.primaryColor,
-                    fontSize: 15,
-                  ),
-                  controller: _chatInputController,
-                  decoration: InputDecoration.collapsed(
-                    hintText: 'Type your message...',
-                    hintStyle: TextStyle(color: ColorConstants.greyColor),
-                  ),
-                  focusNode: _focusNode,
-                ),
-              ),
-              if (!_isRecording && _voiceProvider != null)
-                Material(
-                  color: Colors.white,
-                  child: Container(
-                    margin: EdgeInsets.symmetric(horizontal: 4),
-                    child: IconButton(
-                      icon: Icon(Icons.mic),
-                      onPressed: _startRecording,
-                      color: ColorConstants.primaryColor,
-                    ),
-                  ),
-                ),
-              Material(
-                color: Colors.white,
-                child: Container(
-                  margin: EdgeInsets.symmetric(horizontal: 8),
-                  child: IconButton(
-                    icon: Icon(Icons.send),
-                    onPressed: () {
+                    onSubmitted: (_) {
                       if (!_isDisposed) {
                         _onSendMessageWithAutoDelete(
                           _chatInputController.text,
@@ -1928,8 +1967,61 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                         );
                       }
                     },
-                    color: ColorConstants.primaryColor,
+                    onChanged: (text) {
+                      _handleTyping(text);
+                      if (text.isNotEmpty &&
+                          _smartReplies.isNotEmpty &&
+                          mounted &&
+                          !_isDisposed) {
+                        setState(() => _smartReplies = []);
+                      }
+                    },
+                    style: TextStyle(
+                      color: ColorConstants.primaryColor,
+                      fontSize: 15,
+                    ),
+                    controller: _chatInputController,
+                    decoration: InputDecoration.collapsed(
+                      hintText: 'Type your message...',
+                      hintStyle: TextStyle(color: ColorConstants.greyColor),
+                    ),
+                    focusNode: _focusNode,
+                    maxLines: 4, // ✅ FIX: Limit to 4 lines
+                    minLines: 1,
+                    textInputAction: TextInputAction.newline,
                   ),
+                ),
+              ),
+
+              // Voice button
+              if (!_isRecording && _voiceProvider != null)
+                Material(
+                  color: Colors.white,
+                  child: IconButton(
+                    icon: Icon(Icons.mic, size: 24),
+                    onPressed: _startRecording,
+                    color: ColorConstants.primaryColor,
+                    padding: EdgeInsets.all(8),
+                    constraints: BoxConstraints(minWidth: 40, minHeight: 40),
+                  ),
+                ),
+
+              // Send button
+              Material(
+                color: Colors.white,
+                child: IconButton(
+                  icon: Icon(Icons.send, size: 24),
+                  onPressed: () {
+                    if (!_isDisposed) {
+                      _onSendMessageWithAutoDelete(
+                        _chatInputController.text,
+                        TypeMessage.text,
+                      );
+                    }
+                  },
+                  color: ColorConstants.primaryColor,
+                  padding: EdgeInsets.all(8),
+                  constraints: BoxConstraints(minWidth: 40, minHeight: 40),
                 ),
               ),
             ],

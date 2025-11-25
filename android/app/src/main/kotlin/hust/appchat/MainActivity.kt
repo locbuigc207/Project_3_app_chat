@@ -12,6 +12,8 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.EventChannel
+import hust.appchat.bubble.BubbleManager
+import hust.appchat.bubble.BubbleOverlayService
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "chat_bubble_overlay"
@@ -83,6 +85,26 @@ class MainActivity : FlutterActivity() {
                         startService(intent)
                         result.success(true)
                     }
+                    "showBubbleOverlay" -> {
+                        val userId = call.argument<String>("userId")
+                        val userName = call.argument<String>("userName")
+                        val avatarUrl = call.argument<String>("avatarUrl")
+                        val message = call.argument<String>("message")
+
+                        if (userId != null && userName != null) {
+                            BubbleManager.showBubble(
+                                this,
+                                userId,
+                                userName,
+                                avatarUrl ?: "",
+                                message
+                            )
+                            result.success(true)
+                        } else {
+                            result.success(false)
+                        }
+                    }
+
                     else -> result.notImplemented()
                 }
             }

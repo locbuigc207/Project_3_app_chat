@@ -1,4 +1,3 @@
-// lib/pages/home_page.dart - UPDATED WITH SMART SEARCH & FRIENDS
 import 'dart:async';
 import 'dart:io';
 
