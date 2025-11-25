@@ -60,6 +60,16 @@
                 android:value="Chat bubbles for quick messaging" />
         </service>
 
+        <!-- Bubble Overlay Service -->
+        <service
+            android:name=".bubble.BubbleOverlayService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Chat bubble overlay for quick messaging" />
+        </service>
+
         <!-- Firebase Messaging -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"

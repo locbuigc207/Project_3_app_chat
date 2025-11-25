@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ✅ Mini chat window like Messenger -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="320dp"
+    android:layout_height="450dp"
+    android:orientation="vertical"
+    android:background="@android:color/white"
+    android:elevation="16dp">
+
+    <!-- Header -->
+    <RelativeLayout
+        android:id="@+id/mini_chat_header"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="#2196F3"
+
+        android:padding="8dp">
+
+        <!-- User avatar -->
+        <ImageView
+            android:id="@+id/mini_chat_avatar"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_alignParentStart="true"
+            android:layout_centerVertical="true"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/bubble_background"
+            android:scaleType="centerCrop" />
+
+        <!-- User name -->
+        <TextView
+            android:id="@+id/mini_chat_name"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_toEndOf="@id/mini_chat_avatar"
+            android:layout_centerVertical="true"
+            android:layout_marginStart="12dp"
+            android:layout_toStartOf="@id/mini_chat_actions"
+            android:text="User Name"
+            android:textColor="@android:color/white"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end" />
+
+        <!-- Action buttons -->
+        <LinearLayout
+            android:id="@+id/mini_chat_actions"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:orientation="horizontal">
+
+            <!-- Minimize button -->
+            <ImageView
+                android:id="@+id/btn_minimize"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:padding="6dp"
+                android:src="@android:drawable/ic_menu_revert"
+                android:tint="@android:color/white"
+                android:contentDescription="Minimize"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="?attr/selectableItemBackgroundBorderless" />
+
+            <!-- Close button -->
+            <ImageView
+                android:id="@+id/btn_close"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_marginStart="4dp"
+                android:padding="6dp"
+                android:src="@android:drawable/ic_menu_close_clear_cancel"
+                android:tint="@android:color/white"
+                android:contentDescription="Close"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="?attr/selectableItemBackgroundBorderless" />
+        </LinearLayout>
+    </RelativeLayout>
+
+    <!-- Messages container -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/mini_chat_messages"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:padding="8dp"
+        android:background="@android:color/white" />
+
+    <!-- Input area -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="8dp"
+        android:background="#f5f5f5">
+
+        <EditText
+            android:id="@+id/mini_chat_input"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="Type a message..."
+            android:background="@android:color/white"
+            android:padding="12dp"
+            android:maxLines="3"
+            android:textSize="14sp" />
+
+        <ImageView
+            android:id="@+id/btn_send"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="8dp"
+            android:src="@android:drawable/ic_menu_send"
+            android:tint="#2196F3"
+            android:contentDescription="Send"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:padding="8dp" />
+    </LinearLayout>
+
+</LinearLayout>
