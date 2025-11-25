@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- ✅ Mini chat window like Messenger -->
+<!-- ✅ FIXED: Added missing loading indicator -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="320dp"
     android:layout_height="450dp"
@@ -13,10 +13,8 @@
         android:layout_width="match_parent"
         android:layout_height="56dp"
         android:background="#2196F3"
-
         android:padding="8dp">
 
-        <!-- User avatar -->
         <ImageView
             android:id="@+id/mini_chat_avatar"
             android:layout_width="40dp"
@@ -27,7 +25,6 @@
             android:background="@drawable/bubble_background"
             android:scaleType="centerCrop" />
 
-        <!-- User name -->
         <TextView
             android:id="@+id/mini_chat_name"
             android:layout_width="wrap_content"
@@ -43,7 +40,6 @@
             android:maxLines="1"
             android:ellipsize="end" />
 
-        <!-- Action buttons -->
         <LinearLayout
             android:id="@+id/mini_chat_actions"
             android:layout_width="wrap_content"
@@ -52,7 +48,6 @@
             android:layout_centerVertical="true"
             android:orientation="horizontal">
 
-            <!-- Minimize button -->
             <ImageView
                 android:id="@+id/btn_minimize"
                 android:layout_width="32dp"
@@ -65,7 +60,6 @@
                 android:focusable="true"
                 android:background="?attr/selectableItemBackgroundBorderless" />
 
-            <!-- Close button -->
             <ImageView
                 android:id="@+id/btn_close"
                 android:layout_width="32dp"
@@ -81,14 +75,29 @@
         </LinearLayout>
     </RelativeLayout>
 
-    <!-- Messages container -->
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/mini_chat_messages"
+    <!-- ✅ ADDED: Loading Indicator Container -->
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:padding="8dp"
-        android:background="@android:color/white" />
+        android:layout_weight="1">
+
+        <!-- Messages RecyclerView -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/mini_chat_messages"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:padding="8dp"
+            android:background="@android:color/white" />
+
+        <!-- ✅ ADDED: Loading Indicator -->
+        <ProgressBar
+            android:id="@+id/mini_chat_loading"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:visibility="visible"
+            android:indeterminate="true" />
+    </FrameLayout>
 
     <!-- Input area -->
     <LinearLayout
