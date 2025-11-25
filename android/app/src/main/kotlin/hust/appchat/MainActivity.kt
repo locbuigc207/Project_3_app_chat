@@ -27,7 +27,10 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        // ✅ Method Channel
+        // Initialize BubbleManager
+        BubbleManager.init(this)
+
+        // Method Channel
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -46,49 +49,6 @@ class MainActivity : FlutterActivity() {
                         val userId = call.argument<String>("userId")
                         val userName = call.argument<String>("userName")
                         val avatarUrl = call.argument<String>("avatarUrl")
-
-                        if (userId != null) {
-                            val intent = Intent(this, ChatBubbleService::class.java).apply {
-                                action = ChatBubbleService.ACTION_SHOW_BUBBLE
-                                putExtra("userId", userId)
-                                putExtra("userName", userName)
-                                putExtra("avatarUrl", avatarUrl)
-                            }
-
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                startForegroundService(intent)
-                            } else {
-                                startService(intent)
-                            }
-                            result.success(true)
-                        } else {
-                            result.success(false)
-                        }
-                    }
-                    "hideBubble" -> {
-                        val userId = call.argument<String>("userId")
-                        if (userId != null) {
-                            val intent = Intent(this, ChatBubbleService::class.java).apply {
-                                action = ChatBubbleService.ACTION_HIDE_BUBBLE
-                                putExtra("userId", userId)
-                            }
-                            startService(intent)
-                            result.success(true)
-                        } else {
-                            result.success(false)
-                        }
-                    }
-                    "hideAllBubbles" -> {
-                        val intent = Intent(this, ChatBubbleService::class.java).apply {
-                            action = ChatBubbleService.ACTION_HIDE_ALL
-                        }
-                        startService(intent)
-                        result.success(true)
-                    }
-                    "showBubbleOverlay" -> {
-                        val userId = call.argument<String>("userId")
-                        val userName = call.argument<String>("userName")
-                        val avatarUrl = call.argument<String>("avatarUrl")
                         val message = call.argument<String>("message")
 
                         if (userId != null && userName != null) {
@@ -104,12 +64,27 @@ class MainActivity : FlutterActivity() {
                             result.success(false)
                         }
                     }
-
+                    "hideBubble" -> {
+                        val userId = call.argument<String>("userId")
+                        if (userId != null) {
+                            BubbleManager.removeBubble(this, userId)
+                            result.success(true)
+                        } else {
+                            result.success(false)
+                        }
+                    }
+                    "hideAllBubbles" -> {
+                        // Stop the service completely
+                        val intent = Intent(this, BubbleOverlayService::class.java)
+                        stopService(intent)
+                        BubbleManager.cleanup()
+                        result.success(true)
+                    }
                     else -> result.notImplemented()
                 }
             }
 
-        // ✅ Event Channel
+        // Event Channel
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
@@ -142,7 +117,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun setupBubbleListeners() {
-        // ✅ Bubble click listener
+        // Bubble click listener
         bubbleClickReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action == "CHAT_BUBBLE_CLICKED") {
@@ -160,7 +135,7 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        // ✅ Mini chat message listener
+        // Mini chat message listener
         bubbleMessageReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action == "CHAT_BUBBLE_MESSAGE") {

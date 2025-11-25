@@ -1,4 +1,3 @@
-// android/app/src/main/kotlin/hust/appchat/bubble/BubbleOverlayService.kt
 package hust.appchat.bubble
 
 import android.app.*
@@ -20,6 +19,7 @@ class BubbleOverlayService : Service() {
     private var windowManager: WindowManager? = null
     private val bubbleViews = mutableMapOf<String, BubbleView>()
     private var miniChatWindow: MiniChatWindow? = null
+    private var currentMiniChatUserId: String? = null
 
     private var screenWidth = 0
     private var screenHeight = 0
@@ -42,6 +42,7 @@ class BubbleOverlayService : Service() {
 
         // Get screen dimensions
         val displayMetrics = DisplayMetrics()
+        @Suppress("DEPRECATION")
         windowManager?.defaultDisplay?.getMetrics(displayMetrics)
         screenWidth = displayMetrics.widthPixels
         screenHeight = displayMetrics.heightPixels
@@ -116,7 +117,9 @@ class BubbleOverlayService : Service() {
         bubbleViews[userId]?.let {
             try {
                 windowManager?.removeView(it)
-            } catch (e: Exception) {}
+            } catch (e: Exception) {
+                android.util.Log.e("BubbleService", "Error removing old bubble: $e")
+            }
         }
 
         // Create new bubble
@@ -157,8 +160,8 @@ class BubbleOverlayService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = screenWidth - 80
-            y = 200 + (bubbleViews.size * 80)
+            x = screenWidth - 100
+            y = 200 + (bubbleViews.size * 100)
         }
 
         // Add to window
@@ -166,8 +169,10 @@ class BubbleOverlayService : Service() {
             windowManager?.addView(bubbleView, params)
             bubbleViews[userId] = bubbleView
 
-            // Snap to edge
-            bubbleView.snapToEdge(screenWidth)
+            // Snap to edge after a short delay
+            bubbleView.postDelayed({
+                bubbleView.snapToEdge(screenWidth)
+            }, 300)
 
             android.util.Log.d("BubbleService", "✅ Bubble added: $userName")
         } catch (e: Exception) {
@@ -218,6 +223,14 @@ class BubbleOverlayService : Service() {
 
         // Mark as read
         BubbleManager.markAsRead(userId)
+
+        // Send broadcast to Flutter
+        val intent = Intent("CHAT_BUBBLE_CLICKED").apply {
+            putExtra("userId", userId)
+            putExtra("userName", userName)
+            putExtra("avatarUrl", avatarUrl)
+        }
+        sendBroadcast(intent)
     }
 
     /**
@@ -227,12 +240,16 @@ class BubbleOverlayService : Service() {
         // Remove existing mini chat
         miniChatWindow?.let {
             try {
+                it.cleanup()
                 windowManager?.removeView(it)
-            } catch (e: Exception) {}
+            } catch (e: Exception) {
+                android.util.Log.e("BubbleService", "Error removing mini chat: $e")
+            }
         }
 
         // Create mini chat
         val miniChat = MiniChatWindow(this, userId, userName, avatarUrl)
+        currentMiniChatUserId = userId
 
         // Set listeners
         miniChat.setOnMinimizeListener {
@@ -245,6 +262,15 @@ class BubbleOverlayService : Service() {
             BubbleManager.removeBubble(this, userId)
         }
 
+        miniChat.setOnMessageSentListener { message ->
+            // Send broadcast to Flutter
+            val intent = Intent("CHAT_BUBBLE_MESSAGE").apply {
+                putExtra("userId", userId)
+                putExtra("message", message)
+            }
+            sendBroadcast(intent)
+        }
+
         // Layout params
         val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -254,7 +280,7 @@ class BubbleOverlayService : Service() {
         }
 
         val params = WindowManager.LayoutParams(
-            (screenWidth * 0.85).toInt(),
+            (screenWidth * 0.9).toInt(),
             (screenHeight * 0.7).toInt(),
             layoutFlag,
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
@@ -281,8 +307,10 @@ class BubbleOverlayService : Service() {
     private fun hideMiniChat() {
         miniChatWindow?.let { view ->
             try {
+                view.cleanup()
                 windowManager?.removeView(view)
                 miniChatWindow = null
+                currentMiniChatUserId = null
                 android.util.Log.d("BubbleService", "✅ Mini chat closed")
             } catch (e: Exception) {
                 android.util.Log.e("BubbleService", "❌ Error closing mini chat: $e")
@@ -307,12 +335,20 @@ class BubbleOverlayService : Service() {
     }
 
     private fun createNotification(): Notification {
+        val bubbleCount = bubbleViews.size
+        val contentText = if (bubbleCount > 0) {
+            "$bubbleCount bubble(s) active"
+        } else {
+            "Chat bubbles ready"
+        }
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Chat Bubbles Active")
-            .setContentText("${bubbleViews.size} bubble(s) running")
+            .setContentTitle("Chat Bubbles")
+            .setContentText(contentText)
             .setSmallIcon(R.drawable.bubble_background)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
+            .setShowWhen(false)
             .build()
     }
 
@@ -323,16 +359,22 @@ class BubbleOverlayService : Service() {
         bubbleViews.values.forEach { view ->
             try {
                 windowManager?.removeView(view)
-            } catch (e: Exception) {}
+            } catch (e: Exception) {
+                android.util.Log.e("BubbleService", "Error removing bubble view: $e")
+            }
         }
         bubbleViews.clear()
 
         miniChatWindow?.let {
             try {
+                it.cleanup()
                 windowManager?.removeView(it)
-            } catch (e: Exception) {}
+            } catch (e: Exception) {
+                android.util.Log.e("BubbleService", "Error removing mini chat: $e")
+            }
         }
 
+        android.util.Log.d("BubbleService", "✅ Service destroyed")
         super.onDestroy()
     }
 }

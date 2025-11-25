@@ -1,4 +1,3 @@
-// android/app/src/main/kotlin/hust/appchat/bubble/MiniChatWindow.kt - COMPLETE
 package hust.appchat.bubble
 
 import android.content.Context
@@ -9,21 +8,13 @@ import android.widget.*
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
-import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import hust.appchat.R
-import hust.appchat.adapter.MiniChatAdapter
 
 /**
- * Mini Chat Window - Overlay draggable chat window
- *
- * Features:
- * - Draggable header
- * - Realtime messages
- * - Send messages
- * - Minimize/Close actions
+ * Mini Chat Window - cửa sổ chat dạng overlay
  */
 class MiniChatWindow(
     context: Context,
@@ -35,7 +26,6 @@ class MiniChatWindow(
     private val firestore = FirebaseFirestore.getInstance()
     private var messageListener: ListenerRegistration? = null
 
-    // UI Components
     private val avatarView: ImageView
     private val nameView: TextView
     private val btnMinimize: ImageView
@@ -45,18 +35,25 @@ class MiniChatWindow(
     private val btnSend: ImageView
     private val header: View
 
-    // Callbacks
     private var onMinimizeListener: (() -> Unit)? = null
     private var onCloseListener: (() -> Unit)? = null
+    private var onMessageSentListener: ((String) -> Unit)? = null
 
-    // Messages
-    private val messages = mutableListOf<MiniChatAdapter.ChatMessage>()
+    private val messages = mutableListOf<ChatMessage>()
     private val adapter = MiniChatAdapter(messages)
+
+    data class ChatMessage(
+        val id: String,
+        val content: String,
+        val isFromMe: Boolean,
+        val timestamp: Long,
+        val type: Int = 0
+    )
 
     init {
         LayoutInflater.from(context).inflate(R.layout.mini_chat_window, this, true)
 
-        // Get view references
+        // Get views
         avatarView = findViewById(R.id.mini_chat_avatar)
         nameView = findViewById(R.id.mini_chat_name)
         btnMinimize = findViewById(R.id.btn_minimize)
@@ -66,22 +63,18 @@ class MiniChatWindow(
         btnSend = findViewById(R.id.btn_send)
         header = findViewById(R.id.mini_chat_header)
 
-        setupUI()
-        setupListeners()
-        loadMessages()
-
-        android.util.Log.d("MiniChatWindow", "✅ Mini chat created for: $userName")
-    }
-
-    private fun setupUI() {
-        // Set user info
+        // Setup UI
         nameView.text = userName
         if (avatarUrl.isNotEmpty()) {
-            Glide.with(context)
-                .load(avatarUrl)
-                .circleCrop()
-                .placeholder(R.drawable.bubble_background)
-                .into(avatarView)
+            try {
+                Glide.with(context)
+                    .load(avatarUrl)
+                    .circleCrop()
+                    .placeholder(R.drawable.bubble_background)
+                    .into(avatarView)
+            } catch (e: Exception) {
+                android.util.Log.e("MiniChat", "Failed to load avatar: $e")
+            }
         }
 
         // Setup RecyclerView
@@ -90,25 +83,13 @@ class MiniChatWindow(
             stackFromEnd = false
         }
         recyclerView.adapter = adapter
-    }
 
-    private fun setupListeners() {
-        // Minimize button
-        btnMinimize.setOnClickListener {
-            onMinimizeListener?.invoke()
-        }
+        // Setup listeners
+        btnMinimize.setOnClickListener { onMinimizeListener?.invoke() }
+        btnClose.setOnClickListener { onCloseListener?.invoke() }
+        btnSend.setOnClickListener { sendMessage() }
 
-        // Close button
-        btnClose.setOnClickListener {
-            onCloseListener?.invoke()
-        }
-
-        // Send button
-        btnSend.setOnClickListener {
-            sendMessage()
-        }
-
-        // Enter key to send
+        // Send on enter key
         inputField.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND) {
                 sendMessage()
@@ -120,10 +101,13 @@ class MiniChatWindow(
 
         // Make header draggable
         setupDragListener()
+
+        // Load messages
+        loadMessages()
     }
 
     /**
-     * Setup drag functionality for header
+     * Setup drag functionality cho header
      */
     private fun setupDragListener() {
         var initialX = 0
@@ -132,7 +116,7 @@ class MiniChatWindow(
         var initialTouchY = 0f
 
         header.setOnTouchListener { _, event ->
-            val params = layoutParams as android.view.WindowManager.LayoutParams
+            val params = layoutParams as? android.view.WindowManager.LayoutParams ?: return@setOnTouchListener false
 
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
@@ -142,21 +126,19 @@ class MiniChatWindow(
                     initialTouchY = event.rawY
                     true
                 }
-
                 MotionEvent.ACTION_MOVE -> {
-                    params.x = (initialX + (event.rawX - initialTouchX)).toInt()
+                    params.x = (initialX + (initialTouchX - event.rawX)).toInt()
                     params.y = (initialY + (event.rawY - initialTouchY)).toInt()
 
                     val windowManager = context.getSystemService(Context.WINDOW_SERVICE)
-                            as android.view.WindowManager
+                            as? android.view.WindowManager
                     try {
-                        windowManager.updateViewLayout(this, params)
+                        windowManager?.updateViewLayout(this, params)
                     } catch (e: Exception) {
-                        android.util.Log.e("MiniChatWindow", "Error moving window: $e")
+                        android.util.Log.e("MiniChat", "Failed to update layout: $e")
                     }
                     true
                 }
-
                 else -> false
             }
         }
@@ -166,8 +148,9 @@ class MiniChatWindow(
      * Load messages from Firestore
      */
     private fun loadMessages() {
-        val currentUserId = getCurrentUserId() ?: run {
-            android.util.Log.e("MiniChatWindow", "❌ No current user ID")
+        val currentUserId = BubbleManager.getCurrentUserId()
+        if (currentUserId == null) {
+            android.util.Log.e("MiniChat", "Current user ID is null")
             return
         }
 
@@ -177,49 +160,59 @@ class MiniChatWindow(
             "$userId-$currentUserId"
         }
 
-        android.util.Log.d("MiniChatWindow", "📖 Loading messages from: $conversationId")
+        try {
+            messageListener = firestore
+                .collection("messages")
+                .document(conversationId)
+                .collection(conversationId)
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .limit(50)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        android.util.Log.e("MiniChat", "Listen error: $error")
+                        return@addSnapshotListener
+                    }
 
-        messageListener = firestore
-            .collection("messages")
-            .document(conversationId)
-            .collection(conversationId)
-            .orderBy("timestamp", Query.Direction.DESCENDING)
-            .limit(50)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    android.util.Log.e("MiniChatWindow", "❌ Listen error: $error")
-                    return@addSnapshotListener
-                }
+                    snapshot?.documentChanges?.forEach { change ->
+                        when (change.type) {
+                            com.google.firebase.firestore.DocumentChange.Type.ADDED -> {
+                                val doc = change.document
+                                val message = ChatMessage(
+                                    id = doc.id,
+                                    content = doc.getString("content") ?: "",
+                                    isFromMe = doc.getString("idFrom") == currentUserId,
+                                    timestamp = doc.getString("timestamp")?.toLongOrNull() ?: 0L,
+                                    type = doc.getLong("type")?.toInt() ?: 0
+                                )
 
-                snapshot?.documentChanges?.forEach { change ->
-                    if (change.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
-                        val doc = change.document
-
-                        val message = MiniChatAdapter.ChatMessage(
-                            id = doc.id,
-                            content = doc.getString("content") ?: "",
-                            isFromMe = doc.getString("idFrom") == currentUserId,
-                            timestamp = doc.getString("timestamp")?.toLongOrNull() ?: 0L,
-                            type = doc.getLong("type")?.toInt() ?: 0
-                        )
-
-                        // Insert at beginning (most recent)
-                        messages.add(0, message)
-                        adapter.notifyItemInserted(0)
-                        recyclerView.smoothScrollToPosition(0)
+                                // Add at position 0 (most recent)
+                                post {
+                                    messages.add(0, message)
+                                    adapter.notifyItemInserted(0)
+                                    recyclerView.smoothScrollToPosition(0)
+                                }
+                            }
+                            else -> {}
+                        }
                     }
                 }
-            }
+        } catch (e: Exception) {
+            android.util.Log.e("MiniChat", "Failed to setup listener: $e")
+        }
     }
 
     /**
-     * Send message to Firestore
+     * Send message
      */
     private fun sendMessage() {
         val content = inputField.text.toString().trim()
         if (content.isEmpty()) return
 
-        val currentUserId = getCurrentUserId() ?: return
+        val currentUserId = BubbleManager.getCurrentUserId()
+        if (currentUserId == null) {
+            Toast.makeText(context, "User not logged in", Toast.LENGTH_SHORT).show()
+            return
+        }
 
         val conversationId = if (currentUserId < userId) {
             "$currentUserId-$userId"
@@ -244,14 +237,19 @@ class MiniChatWindow(
             .document(messageId)
             .set(messageData)
             .addOnSuccessListener {
-                inputField.text.clear()
-                updateConversation(conversationId, content)
+                post {
+                    inputField.text.clear()
 
-                android.util.Log.d("MiniChatWindow", "✅ Message sent")
+                    // Notify listener
+                    onMessageSentListener?.invoke(content)
+                }
+
+                // Update conversation
+                updateConversation(conversationId, content)
             }
             .addOnFailureListener { e ->
-                Toast.makeText(context, "Failed to send: ${e.message}", Toast.LENGTH_SHORT).show()
-                android.util.Log.e("MiniChatWindow", "❌ Send error: $e")
+                android.util.Log.e("MiniChat", "Failed to send message: $e")
+                Toast.makeText(context, "Failed to send message", Toast.LENGTH_SHORT).show()
             }
     }
 
@@ -259,23 +257,23 @@ class MiniChatWindow(
      * Update conversation last message
      */
     private fun updateConversation(conversationId: String, lastMessage: String) {
-        firestore
-            .collection("conversations")
-            .document(conversationId)
-            .update(
-                mapOf(
-                    "lastMessage" to lastMessage,
-                    "lastMessageTime" to System.currentTimeMillis().toString(),
-                    "lastMessageType" to 0
+        try {
+            firestore
+                .collection("conversations")
+                .document(conversationId)
+                .update(
+                    mapOf(
+                        "lastMessage" to lastMessage,
+                        "lastMessageTime" to System.currentTimeMillis().toString(),
+                        "lastMessageType" to 0
+                    )
                 )
-            )
-    }
-
-    /**
-     * Get current user ID from Firebase Auth
-     */
-    private fun getCurrentUserId(): String? {
-        return FirebaseAuth.getInstance().currentUser?.uid
+                .addOnFailureListener { e ->
+                    android.util.Log.e("MiniChat", "Failed to update conversation: $e")
+                }
+        } catch (e: Exception) {
+            android.util.Log.e("MiniChat", "Error updating conversation: $e")
+        }
     }
 
     fun setOnMinimizeListener(listener: () -> Unit) {
@@ -286,8 +284,55 @@ class MiniChatWindow(
         onCloseListener = listener
     }
 
+    fun setOnMessageSentListener(listener: (String) -> Unit) {
+        onMessageSentListener = listener
+    }
+
     fun cleanup() {
-        messageListener?.remove()
-        android.util.Log.d("MiniChatWindow", "🧹 Cleanup complete")
+        try {
+            messageListener?.remove()
+            messageListener = null
+        } catch (e: Exception) {
+            android.util.Log.e("MiniChat", "Error cleaning up: $e")
+        }
+    }
+}
+
+/**
+ * RecyclerView Adapter for mini chat
+ */
+class MiniChatAdapter(
+    private val messages: List<MiniChatWindow.ChatMessage>
+) : RecyclerView.Adapter<MiniChatAdapter.MessageViewHolder>() {
+
+    override fun onCreateViewHolder(parent: android.view.ViewGroup, viewType: Int): MessageViewHolder {
+        val layoutId = if (viewType == 0) {
+            R.layout.item_message_sent
+        } else {
+            R.layout.item_message_received
+        }
+
+        val view = LayoutInflater.from(parent.context)
+            .inflate(layoutId, parent, false)
+        return MessageViewHolder(view)
+    }
+
+    override fun onBindViewHolder(holder: MessageViewHolder, position: Int) {
+        val message = messages[position]
+        holder.bind(message)
+    }
+
+    override fun getItemCount() = messages.size
+
+    override fun getItemViewType(position: Int): Int {
+        return if (messages[position].isFromMe) 0 else 1
+    }
+
+    class MessageViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        private val textView: TextView = itemView.findViewById(R.id.message_text)
+
+        fun bind(message: MiniChatWindow.ChatMessage) {
+            textView.text = message.content
+        }
     }
 }
