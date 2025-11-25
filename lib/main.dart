@@ -40,11 +40,17 @@ Future<void> main() async {
   final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
   await _initializeNotifications(flutterLocalNotificationsPlugin);
 
+  // ✅ NEW: Initialize Chat Bubble Service
+  final chatBubbleService = ChatBubbleService();
+  final notificationService = NotificationService();
+
   print('✅ App initialized successfully');
 
   runApp(MyApp(
     prefs: prefs,
     notificationsPlugin: flutterLocalNotificationsPlugin,
+    chatBubbleService: chatBubbleService,
+    notificationService: notificationService,
   ));
 }
 
@@ -106,11 +112,15 @@ Future<void> _initializeNotifications(
 class MyApp extends StatelessWidget {
   final SharedPreferences prefs;
   final FlutterLocalNotificationsPlugin notificationsPlugin;
+  final ChatBubbleService chatBubbleService;
+  final NotificationService notificationService;
 
   const MyApp({
     super.key,
     required this.prefs,
     required this.notificationsPlugin,
+    required this.chatBubbleService,
+    required this.notificationService,
   });
 
   @override
@@ -207,9 +217,12 @@ class MyApp extends StatelessWidget {
               UserPresenceProvider(firebaseFirestore: firebaseFirestore),
         ),
 
-        // Services
+        // ✅ NEW: Chat Bubble Services
         Provider<ChatBubbleService>(
-          create: (_) => ChatBubbleService(),
+          create: (_) => chatBubbleService,
+        ),
+        Provider<NotificationService>(
+          create: (_) => notificationService,
         ),
 
         // Location Provider (lazy initialization)
@@ -230,11 +243,77 @@ class MyApp extends StatelessWidget {
             theme: AppThemes.lightTheme(themeProvider.getPrimaryColor()),
             darkTheme: AppThemes.darkTheme(themeProvider.getPrimaryColor()),
             home: BubbleManager(
-              child: SplashPage(),
+              child: AppInitializer(
+                notificationService: notificationService,
+              ),
             ),
           );
         },
       ),
     );
+  }
+}
+
+/// ✅ NEW: App initializer that starts notification service
+class AppInitializer extends StatefulWidget {
+  final NotificationService notificationService;
+
+  const AppInitializer({
+    super.key,
+    required this.notificationService,
+  });
+
+  @override
+  State<AppInitializer> createState() => _AppInitializerState();
+}
+
+class _AppInitializerState extends State<AppInitializer>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _startNotificationService();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    print('📱 App lifecycle: $state');
+
+    if (state == AppLifecycleState.paused) {
+      print('⏸️ App going to background');
+    } else if (state == AppLifecycleState.resumed) {
+      print('▶️ App resumed');
+    }
+  }
+
+  /// ✅ Start notification service when user logs in
+  Future<void> _startNotificationService() async {
+    // Wait for auth to initialize
+    await Future.delayed(Duration(milliseconds: 500));
+
+    final auth = firebase_auth.FirebaseAuth.instance;
+    auth.authStateChanges().listen((user) {
+      if (user != null) {
+        print('✅ User logged in, starting notification service');
+        widget.notificationService.listenForNewMessages(user.uid);
+      } else {
+        print('❌ User logged out, stopping notification service');
+        widget.notificationService.stopListening();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SplashPage();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 }

@@ -1,4 +1,3 @@
-// lib/pages/chat_page.dart - COMPLETELY FIXED ALL ISSUES
 import 'dart:async';
 import 'dart:io';
 
@@ -43,7 +42,6 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   bool _isShowSticker = false;
   String _imageUrl = "";
 
-  // ✅ FIX: Make controllers late and track disposal state
   late TextEditingController _chatInputController;
   late ScrollController _listScrollController;
   late FocusNode _focusNode;
@@ -82,7 +80,6 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Timer? _recordingTimer;
   int _recordingSeconds = 0;
 
-  // ✅ FIX: Scheduled messages with proper cleanup
   final Map<String, Timer> _scheduledMessages = {};
   final Map<String, String> _scheduledMessageContents = {};
 
@@ -322,10 +319,8 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   void _setupIncomingMessageListener() {
-    // Hủy listener cũ nếu có
     _incomingMessagesSubscription?.cancel();
 
-    // Kiểm tra _groupChatId đã có giá trị chưa
     if (_groupChatId.isEmpty || _currentUserId.isEmpty) {
       print('⚠️ Cannot setup listener: groupChatId or currentUserId is empty');
       return;
@@ -357,11 +352,9 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Future<void> _showChatBubbleIfNeeded() async {
-    // Kiểm tra nếu app ở background
     final lifecycleState = WidgetsBinding.instance.lifecycleState;
 
     if (lifecycleState != AppLifecycleState.resumed) {
-      // Show bubble
       await _bubbleService?.showChatBubble(
         userId: widget.arguments.peerId,
         userName: widget.arguments.peerNickname,
@@ -452,7 +445,6 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       finalContent = '↪ ${_replyingTo!.content}\n$finalContent';
     }
 
-    // ✅ FIX: Check if controller is still valid before clearing
     if (!_isDisposed && _chatInputController.hasListeners) {
       _chatInputController.clear();
     }
