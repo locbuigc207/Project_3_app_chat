@@ -50,16 +50,6 @@
         android:requestLegacyExternalStorage="true"
         android:usesCleartextTraffic="true">
 
-        <!-- Chat Bubble Service -->
-        <service
-            android:name=".ChatBubbleService"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Chat bubbles for quick messaging" />
-        </service>
-
         <!-- Bubble Overlay Service -->
         <service
             android:name=".bubble.BubbleOverlayService"
