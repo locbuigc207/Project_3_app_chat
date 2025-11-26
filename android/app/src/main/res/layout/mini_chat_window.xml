@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- ✅ COMPLETE FIXED: Mini Chat Window Layout -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="320dp"
     android:layout_height="450dp"
     android:orientation="vertical"
-    android:background="@android:color/white"
+    android:background="#FFFFFF"
     android:elevation="16dp">
 
     <!-- Header -->
@@ -22,8 +21,8 @@
             android:layout_alignParentStart="true"
             android:layout_centerVertical="true"
             android:layout_marginStart="8dp"
-            android:background="@drawable/bubble_background"
-            android:scaleType="centerCrop" />
+            android:scaleType="centerCrop"
+            android:contentDescription="User Avatar" />
 
         <TextView
             android:id="@+id/mini_chat_name"
@@ -34,7 +33,7 @@
             android:layout_marginStart="12dp"
             android:layout_toStartOf="@id/mini_chat_actions"
             android:text="User Name"
-            android:textColor="@android:color/white"
+            android:textColor="#FFFFFF"
             android:textSize="16sp"
             android:textStyle="bold"
             android:maxLines="1"
@@ -54,7 +53,7 @@
                 android:layout_height="32dp"
                 android:padding="6dp"
                 android:src="@android:drawable/ic_menu_revert"
-                android:tint="@android:color/white"
+                android:tint="#FFFFFF"
                 android:contentDescription="Minimize"
                 android:clickable="true"
                 android:focusable="true"
@@ -67,7 +66,7 @@
                 android:layout_marginStart="4dp"
                 android:padding="6dp"
                 android:src="@android:drawable/ic_menu_close_clear_cancel"
-                android:tint="@android:color/white"
+                android:tint="#FFFFFF"
                 android:contentDescription="Close"
                 android:clickable="true"
                 android:focusable="true"
@@ -75,25 +74,25 @@
         </LinearLayout>
     </RelativeLayout>
 
-    <!-- Messages Container with Loading -->
+    <!-- Messages Container -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1">
+        android:layout_weight="1"
+        android:background="#FFFFFF">
 
-        <!-- Messages RecyclerView -->
+        <!-- RecyclerView for messages -->
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/mini_chat_messages"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:padding="8dp"
-            android:background="@android:color/white"
-            android:clipToPadding="false" />
+            android:clipToPadding="false"
+            android:background="#FFFFFF" />
 
-        <!-- ✅ FIXED: Loading Indicator with proper class name -->
-        <android.widget.ProgressBar
+        <!-- ✅ FIX CRITICAL: Đây là dòng 61 - KHÔNG dùng android.widget prefix -->
+        <ProgressBar
             android:id="@+id/mini_chat_loading"
-            style="?android:attr/progressBarStyle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
@@ -101,13 +100,13 @@
             android:indeterminate="true" />
     </FrameLayout>
 
-    <!-- Input area -->
+    <!-- Input Area -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:padding="8dp"
-        android:background="#f5f5f5"
+        android:background="#F5F5F5"
         android:elevation="4dp">
 
         <EditText
@@ -116,7 +115,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:hint="Type a message..."
-            android:background="@android:color/white"
+            android:background="#FFFFFF"
             android:padding="12dp"
             android:maxLines="3"
             android:textSize="14sp"
