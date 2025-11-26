@@ -33,15 +33,7 @@ class _BubbleManagerState extends State<BubbleManager>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-
     print('📱 App lifecycle changed: $state');
-
-    // Handle app going to background/foreground
-    if (state == AppLifecycleState.paused) {
-      print('⏸️ App going to background');
-    } else if (state == AppLifecycleState.resumed) {
-      print('▶️ App resumed to foreground');
-    }
   }
 
   void _initializeBubbleService() {
@@ -50,7 +42,7 @@ class _BubbleManagerState extends State<BubbleManager>
     try {
       _bubbleService = context.read<ChatBubbleService>();
       _listenToBubbleClicks();
-      _listenToMiniChatMessages(); // ✅ NEW: Listen to mini chat
+      _listenToMiniChatMessages();
     } catch (e) {
       print('⚠️ BubbleManager: Service not available: $e');
     }
@@ -72,7 +64,6 @@ class _BubbleManagerState extends State<BubbleManager>
     print('✅ Bubble click listener setup');
   }
 
-  /// ✅ NEW: Listen to messages from mini chat
   void _listenToMiniChatMessages() {
     if (_bubbleService == null) return;
 
@@ -89,31 +80,75 @@ class _BubbleManagerState extends State<BubbleManager>
     print('✅ Mini chat message listener setup');
   }
 
+  /// ✅ FIX: Don't hide bubble when clicked
   void _handleBubbleClick(BubbleClickEvent event) {
+    if (!mounted) return;
+
     print('🫧 Bubble clicked: ${event.userName}');
 
-    // Hide the bubble
-    _bubbleService?.hideChatBubble(event.userId);
-
-    // Navigate to chat
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ChatPage(
-          arguments: ChatPageArguments(
-            peerId: event.userId,
-            peerAvatar: event.avatarUrl,
-            peerNickname: event.userName,
-          ),
+    try {
+      // ✅ FIX: Show dialog to choose action
+      showDialog(
+        context: context,
+        barrierDismissible: true,
+        builder: (context) => AlertDialog(
+          title: Text(event.userName),
+          content: Text('What would you like to do?'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                // Hide bubble and open full chat
+                _bubbleService?.hideChatBubble(event.userId);
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => ChatPage(
+                      arguments: ChatPageArguments(
+                        peerId: event.userId,
+                        peerAvatar: event.avatarUrl,
+                        peerNickname: event.userName,
+                      ),
+                    ),
+                  ),
+                );
+              },
+              child: Text('Open Full Chat'),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                // Hide bubble and show mini chat
+                await _bubbleService?.hideChatBubble(event.userId);
+                await Future.delayed(Duration(milliseconds: 200));
+                await _bubbleService?.showMiniChat(
+                  userId: event.userId,
+                  userName: event.userName,
+                  avatarUrl: event.avatarUrl,
+                );
+              },
+              child: Text('Open Mini Chat'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Cancel'),
+            ),
+          ],
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      print('❌ Error handling bubble click: $e');
+      Fluttertoast.showToast(
+        msg: 'Error opening chat',
+        backgroundColor: Colors.red,
+      );
+    }
   }
 
-  /// ✅ NEW: Handle message sent from mini chat
   void _handleMiniChatMessage(MiniChatMessage message) {
+    if (!mounted) return;
+
     print('💬 Mini chat message from ${message.userId}: ${message.message}');
 
-    // Show toast notification
     Fluttertoast.showToast(
       msg: '📨 Message sent: ${message.message}',
       toastLength: Toast.LENGTH_SHORT,
@@ -122,9 +157,6 @@ class _BubbleManagerState extends State<BubbleManager>
       textColor: Colors.white,
       fontSize: 14.0,
     );
-
-    // Optional: Update UI or refresh messages
-    // You can add more logic here if needed
   }
 
   @override
@@ -138,167 +170,5 @@ class _BubbleManagerState extends State<BubbleManager>
     _bubbleClickSubscription?.cancel();
     _miniChatMessageSubscription?.cancel();
     super.dispose();
-  }
-}
-
-// ===========================================
-// ✅ NEW: Alternative In-App Bubble Overlay
-// For iOS compatibility or as fallback
-// ===========================================
-
-class InAppBubbleOverlay extends StatefulWidget {
-  final Widget child;
-
-  const InAppBubbleOverlay({super.key, required this.child});
-
-  @override
-  State<InAppBubbleOverlay> createState() => _InAppBubbleOverlayState();
-}
-
-class _InAppBubbleOverlayState extends State<InAppBubbleOverlay> {
-  final List<_FloatingBubble> _bubbles = [];
-
-  void addBubble({
-    required String peerId,
-    required String peerName,
-    required String peerAvatar,
-  }) {
-    _bubbles.removeWhere((b) => b.peerId == peerId);
-
-    setState(() {
-      _bubbles.add(_FloatingBubble(
-        peerId: peerId,
-        peerName: peerName,
-        peerAvatar: peerAvatar,
-        position: Offset(20, 100 + (_bubbles.length * 70)),
-      ));
-    });
-  }
-
-  void removeBubble(String peerId) {
-    setState(() {
-      _bubbles.removeWhere((b) => b.peerId == peerId);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        widget.child,
-        ..._bubbles.map((bubble) => _buildBubbleWidget(bubble)),
-      ],
-    );
-  }
-
-  Widget _buildBubbleWidget(_FloatingBubble bubble) {
-    return Positioned(
-      left: bubble.position.dx,
-      top: bubble.position.dy,
-      child: GestureDetector(
-        onPanUpdate: (details) {
-          setState(() {
-            final index = _bubbles.indexWhere((b) => b.peerId == bubble.peerId);
-            if (index != -1) {
-              _bubbles[index] = bubble.copyWith(
-                position: Offset(
-                  bubble.position.dx + details.delta.dx,
-                  bubble.position.dy + details.delta.dy,
-                ),
-              );
-            }
-          });
-        },
-        onTap: () {
-          removeBubble(bubble.peerId);
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => ChatPage(
-                arguments: ChatPageArguments(
-                  peerId: bubble.peerId,
-                  peerAvatar: bubble.peerAvatar,
-                  peerNickname: bubble.peerName,
-                ),
-              ),
-            ),
-          );
-        },
-        child: Container(
-          width: 60,
-          height: 60,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black26,
-                blurRadius: 8,
-                offset: Offset(2, 2),
-              ),
-            ],
-          ),
-          child: Stack(
-            children: [
-              CircleAvatar(
-                radius: 30,
-                backgroundImage: bubble.peerAvatar.isNotEmpty
-                    ? NetworkImage(bubble.peerAvatar)
-                    : null,
-                child: bubble.peerAvatar.isEmpty
-                    ? Icon(Icons.person, size: 30)
-                    : null,
-              ),
-              Positioned(
-                right: 0,
-                top: 0,
-                child: GestureDetector(
-                  onTap: () => removeBubble(bubble.peerId),
-                  child: Container(
-                    width: 20,
-                    height: 20,
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.close,
-                      size: 12,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FloatingBubble {
-  final String peerId;
-  final String peerName;
-  final String peerAvatar;
-  final Offset position;
-
-  _FloatingBubble({
-    required this.peerId,
-    required this.peerName,
-    required this.peerAvatar,
-    required this.position,
-  });
-
-  _FloatingBubble copyWith({
-    String? peerId,
-    String? peerName,
-    String? peerAvatar,
-    Offset? position,
-  }) {
-    return _FloatingBubble(
-      peerId: peerId ?? this.peerId,
-      peerName: peerName ?? this.peerName,
-      peerAvatar: peerAvatar ?? this.peerAvatar,
-      position: position ?? this.position,
-    );
   }
 }

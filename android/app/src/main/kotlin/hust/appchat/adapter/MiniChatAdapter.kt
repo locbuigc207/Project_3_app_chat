@@ -9,7 +9,7 @@ import androidx.recyclerview.widget.RecyclerView
 import hust.appchat.R
 
 /**
- * RecyclerView Adapter for mini chat messages
+ * ✅ COMPLETE: RecyclerView Adapter for mini chat messages
  */
 class MiniChatAdapter(
     private val messages: List<ChatMessage>

@@ -1,4 +1,4 @@
-// lib/services/chat_bubble_service.dart - COMPLETE FIXED VERSION
+// lib/services/chat_bubble_service.dart - COMPLETE FIXED (Prevent Crashes)
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -16,7 +16,7 @@ class ChatBubbleService {
   ChatBubbleService._internal() {
     Future.delayed(Duration(milliseconds: 500), () {
       _setupEventListener();
-      _restoreBubbles(); // ✅ NEW: Restore on init
+      _restoreBubbles();
     });
   }
 
@@ -41,15 +41,11 @@ class ChatBubbleService {
   bool _isInitialized = false;
 
   DateTime? _lastBubbleOperation;
-  static const _minOperationInterval = Duration(milliseconds: 1000);
+  static const _minOperationInterval = Duration(milliseconds: 500); // ✅ Reduced
 
-  // ✅ NEW: Persistence Storage
+  // Persistence Storage
   SharedPreferences? _prefs;
   static const _storageKey = 'active_bubbles';
-
-  // ===========================================
-  // INITIALIZATION & EVENT HANDLING
-  // ===========================================
 
   void _setupEventListener() {
     if (_isInitialized) return;
@@ -86,6 +82,7 @@ class ChatBubbleService {
     final avatarUrl = event['avatarUrl'] as String?;
 
     if (userId != null && !_bubbleClickController.isClosed) {
+      print('✅ Bubble click detected: $userName');
       _bubbleClickController.add(BubbleClickEvent(
         userId: userId,
         userName: userName ?? '',
@@ -110,14 +107,12 @@ class ChatBubbleService {
   }
 
   // ===========================================
-  // PERSISTENCE: Save & Restore Bubbles
+  // PERSISTENCE
   // ===========================================
-
   Future<void> _initPrefs() async {
     _prefs ??= await SharedPreferences.getInstance();
   }
 
-  /// ✅ NEW: Save active bubbles to persistent storage
   Future<void> _saveBubbles() async {
     try {
       await _initPrefs();
@@ -132,7 +127,6 @@ class ChatBubbleService {
     }
   }
 
-  /// ✅ NEW: Restore bubbles from storage on app start
   Future<void> _restoreBubbles() async {
     if (!Platform.isAndroid) return;
 
@@ -147,7 +141,6 @@ class ChatBubbleService {
       final Map<String, dynamic> bubblesJson = jsonDecode(jsonString);
       print('📦 Restoring ${bubblesJson.length} bubbles...');
 
-      // Check permission first
       final hasPermission = await hasOverlayPermission();
       if (!hasPermission) {
         print('❌ No overlay permission, cannot restore bubbles');
@@ -159,7 +152,6 @@ class ChatBubbleService {
         try {
           final bubbleData = BubbleData.fromJson(entry.value);
 
-          // Check if bubble is recent (within 24 hours)
           final age = DateTime.now().difference(bubbleData.timestamp);
           if (age.inHours < 24) {
             final success = await showChatBubble(
@@ -181,7 +173,6 @@ class ChatBubbleService {
     }
   }
 
-  /// ✅ NEW: Clear saved bubbles
   Future<void> clearSavedBubbles() async {
     try {
       await _initPrefs();
@@ -195,7 +186,6 @@ class ChatBubbleService {
   // ===========================================
   // CORE BUBBLE OPERATIONS
   // ===========================================
-
   Future<bool> _canPerformOperation() async {
     if (_lastBubbleOperation != null) {
       final elapsed = DateTime.now().difference(_lastBubbleOperation!);
@@ -271,8 +261,11 @@ class ChatBubbleService {
             'avatarUrl': avatarUrl,
             'lastMessage': lastMessage ?? '',
           }).timeout(
-            Duration(seconds: 3),
-            onTimeout: () => false,
+            Duration(seconds: 5), // ✅ Increased timeout
+            onTimeout: () {
+              print('⏱️ Timeout creating bubble');
+              return false;
+            },
           );
 
           if (success) {
@@ -289,7 +282,6 @@ class ChatBubbleService {
               _activeBubblesController.add(Map.from(_activeBubbles));
             }
 
-            // ✅ NEW: Save to storage
             await _saveBubbles();
 
             print('✅ Bubble created for: $userName');
@@ -300,6 +292,7 @@ class ChatBubbleService {
             await Future.delayed(Duration(milliseconds: 500 * (attempt + 1)));
           }
         } catch (e) {
+          print('❌ Attempt ${attempt + 1} failed: $e');
           if (attempt == maxRetries) rethrow;
           await Future.delayed(Duration(milliseconds: 500 * (attempt + 1)));
         }
@@ -320,7 +313,13 @@ class ChatBubbleService {
 
       final bool success = await _channel.invokeMethod('hideBubble', {
         'userId': userId,
-      });
+      }).timeout(
+        Duration(seconds: 3),
+        onTimeout: () {
+          print('⏱️ Timeout hiding bubble');
+          return false;
+        },
+      );
 
       if (success) {
         _activeBubbles.remove(userId);
@@ -328,7 +327,6 @@ class ChatBubbleService {
           _activeBubblesController.add(Map.from(_activeBubbles));
         }
 
-        // ✅ NEW: Update storage
         await _saveBubbles();
 
         print('✅ Bubble hidden: $userId');
@@ -352,7 +350,6 @@ class ChatBubbleService {
         _activeBubblesController.add({});
       }
 
-      // ✅ NEW: Clear storage
       await clearSavedBubbles();
 
       print('✅ All bubbles hidden');
@@ -362,9 +359,8 @@ class ChatBubbleService {
   }
 
   // ===========================================
-  // ✅ NEW: MINI CHAT OPERATIONS
+  // MINI CHAT OPERATIONS
   // ===========================================
-
   Future<bool> showMiniChat({
     required String userId,
     required String userName,
@@ -385,8 +381,11 @@ class ChatBubbleService {
         'userName': userName,
         'avatarUrl': avatarUrl,
       }).timeout(
-        Duration(seconds: 3),
-        onTimeout: () => false,
+        Duration(seconds: 5),
+        onTimeout: () {
+          print('⏱️ Timeout showing mini chat');
+          return false;
+        },
       );
 
       if (success) {
@@ -418,24 +417,9 @@ class ChatBubbleService {
     }
   }
 
-  Future<void> toggleMiniChat({
-    required String userId,
-    required String userName,
-    required String avatarUrl,
-  }) async {
-    await hideChatBubble(userId);
-    await Future.delayed(Duration(milliseconds: 200));
-    await showMiniChat(
-      userId: userId,
-      userName: userName,
-      avatarUrl: avatarUrl,
-    );
-  }
-
   // ===========================================
   // UTILITY METHODS
   // ===========================================
-
   Future<void> updateBubbleMessage({
     required String userId,
     required String message,
@@ -454,7 +438,6 @@ class ChatBubbleService {
         _activeBubblesController.add(Map.from(_activeBubbles));
       }
 
-      // ✅ NEW: Save updated state
       await _saveBubbles();
     }
   }
@@ -483,7 +466,6 @@ class ChatBubbleService {
 // ===========================================
 // DATA MODELS
 // ===========================================
-
 class BubbleData {
   final String userId;
   final String userName;

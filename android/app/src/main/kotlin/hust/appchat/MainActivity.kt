@@ -24,20 +24,14 @@ class MainActivity : FlutterActivity() {
     private var bubbleClickReceiver: BroadcastReceiver? = null
     private var bubbleMessageReceiver: BroadcastReceiver? = null
     private var eventSink: EventChannel.EventSink? = null
-
-    // ✅ NEW: Track permission request result
     private var pendingPermissionResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        // Initialize BubbleManager
         BubbleManager.init(this)
 
-        // ✅ Setup Method Channel
         setupMethodChannel(flutterEngine)
-
-        // ✅ Setup Event Channel
         setupEventChannel(flutterEngine)
     }
 
@@ -71,10 +65,7 @@ class MainActivity : FlutterActivity() {
                         val lastMessage = call.argument<String>("lastMessage")
 
                         if (userId != null && userName != null) {
-                            android.util.Log.d(
-                                "MainActivity",
-                                "🎈 Creating bubble for: $userName"
-                            )
+                            android.util.Log.d("MainActivity", "🎈 Creating bubble for: $userName")
 
                             BubbleManager.showBubble(
                                 this,
@@ -109,17 +100,13 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     }
 
-                    // ✅ NEW: Show Mini Chat
                     "showMiniChat" -> {
                         val userId = call.argument<String>("userId")
                         val userName = call.argument<String>("userName")
                         val avatarUrl = call.argument<String>("avatarUrl")
 
                         if (userId != null && userName != null) {
-                            android.util.Log.d(
-                                "MainActivity",
-                                "💬 Opening mini chat for: $userName"
-                            )
+                            android.util.Log.d("MainActivity", "💬 Opening mini chat for: $userName")
 
                             val intent = Intent(this, BubbleOverlayService::class.java).apply {
                                 action = BubbleOverlayService.ACTION_SHOW_MINI_CHAT
@@ -136,10 +123,7 @@ class MainActivity : FlutterActivity() {
                                 }
                                 result.success(true)
                             } catch (e: Exception) {
-                                android.util.Log.e(
-                                    "MainActivity",
-                                    "❌ Failed to show mini chat: $e"
-                                )
+                                android.util.Log.e("MainActivity", "❌ Failed to show mini chat: $e")
                                 result.success(false)
                             }
                         } else {
@@ -147,7 +131,6 @@ class MainActivity : FlutterActivity() {
                         }
                     }
 
-                    // ✅ NEW: Hide Mini Chat
                     "hideMiniChat" -> {
                         android.util.Log.d("MainActivity", "🔚 Hiding mini chat")
 
@@ -226,10 +209,7 @@ class MainActivity : FlutterActivity() {
                 true
             }
 
-            android.util.Log.d(
-                "MainActivity",
-                "📱 Permission result: $hasPermission"
-            )
+            android.util.Log.d("MainActivity", "📱 Permission result: $hasPermission")
 
             pendingPermissionResult?.success(hasPermission)
             pendingPermissionResult = null
@@ -237,22 +217,20 @@ class MainActivity : FlutterActivity() {
     }
 
     // ===========================================
-    // BROADCAST RECEIVERS
+    // BROADCAST RECEIVERS - FIXED
     // ===========================================
     private fun setupBubbleListeners() {
         // ✅ Bubble click listener
         bubbleClickReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action == "CHAT_BUBBLE_CLICKED") {
-                    val userId = intent.getStringExtra("userId")
-                    val userName = intent.getStringExtra("userName")
-                    val avatarUrl = intent.getStringExtra("avatarUrl")
+                    val userId = intent.getStringExtra("userId") ?: ""
+                    val userName = intent.getStringExtra("userName") ?: ""
+                    val avatarUrl = intent.getStringExtra("avatarUrl") ?: ""
 
-                    android.util.Log.d(
-                        "MainActivity",
-                        "🫧 Bubble clicked: $userName"
-                    )
+                    android.util.Log.d("MainActivity", "🫧 Bubble clicked broadcast received: $userName")
 
+                    // ✅ Send to Flutter via EventSink
                     eventSink?.success(
                         mapOf(
                             "type" to "click",
@@ -269,14 +247,12 @@ class MainActivity : FlutterActivity() {
         bubbleMessageReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action == "CHAT_BUBBLE_MESSAGE") {
-                    val userId = intent.getStringExtra("userId")
-                    val message = intent.getStringExtra("message")
+                    val userId = intent.getStringExtra("userId") ?: ""
+                    val message = intent.getStringExtra("message") ?: ""
 
-                    android.util.Log.d(
-                        "MainActivity",
-                        "💬 Mini chat message from $userId: $message"
-                    )
+                    android.util.Log.d("MainActivity", "💬 Mini chat message broadcast received from $userId")
 
+                    // ✅ Send to Flutter via EventSink
                     eventSink?.success(
                         mapOf(
                             "type" to "message",
@@ -288,19 +264,23 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        // Register receivers
-        val clickFilter = IntentFilter("CHAT_BUBBLE_CLICKED")
-        val messageFilter = IntentFilter("CHAT_BUBBLE_MESSAGE")
+        // ✅ Register receivers with proper flags
+        try {
+            val clickFilter = IntentFilter("CHAT_BUBBLE_CLICKED")
+            val messageFilter = IntentFilter("CHAT_BUBBLE_MESSAGE")
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(bubbleClickReceiver, clickFilter, Context.RECEIVER_EXPORTED)
-            registerReceiver(bubbleMessageReceiver, messageFilter, Context.RECEIVER_EXPORTED)
-        } else {
-            registerReceiver(bubbleClickReceiver, clickFilter)
-            registerReceiver(bubbleMessageReceiver, messageFilter)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(bubbleClickReceiver, clickFilter, Context.RECEIVER_EXPORTED)
+                registerReceiver(bubbleMessageReceiver, messageFilter, Context.RECEIVER_EXPORTED)
+            } else {
+                registerReceiver(bubbleClickReceiver, clickFilter)
+                registerReceiver(bubbleMessageReceiver, messageFilter)
+            }
+
+            android.util.Log.d("MainActivity", "✅ Broadcast receivers registered successfully")
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "❌ Error registering receivers: $e")
         }
-
-        android.util.Log.d("MainActivity", "✅ Broadcast receivers registered")
     }
 
     private fun unsetupBubbleListeners() {
