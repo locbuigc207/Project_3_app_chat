@@ -15,6 +15,7 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ChatPage extends StatefulWidget {
   const ChatPage({super.key, required this.arguments});
@@ -349,6 +350,34 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         );
       },
     );
+  }
+
+  /// Open location in Google Maps
+  Future<void> _openLocationInMaps(String mapsUrl) async {
+    try {
+      final uri = Uri.parse(mapsUrl);
+
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(
+          uri,
+          mode:
+              LaunchMode.externalApplication, // Mở bằng app Google Maps nếu có
+        );
+        print('✅ Opened Maps: $mapsUrl');
+      } else {
+        Fluttertoast.showToast(
+          msg: '❌ Cannot open Google Maps',
+          backgroundColor: Colors.red,
+        );
+        print('❌ Cannot launch URL: $mapsUrl');
+      }
+    } catch (e) {
+      print('❌ Error opening Maps: $e');
+      Fluttertoast.showToast(
+        msg: '❌ Failed to open location',
+        backgroundColor: Colors.red,
+      );
+    }
   }
 
   Future<void> _showChatBubbleIfNeeded() async {
@@ -1599,6 +1628,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
 
     // Text Message
+    // Text Message
     if (messageChat.type == TypeMessage.text) {
       final location =
           _locationProvider?.parseLocationFromMessage(messageChat.content);
@@ -1643,6 +1673,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              // Location icon và title
                               Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
@@ -1664,14 +1695,75 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                                   ),
                                 ],
                               ),
-                              SizedBox(height: 4),
+                              SizedBox(height: 8),
+
+                              // Address
                               Text(
-                                messageChat.content.split('\n').first,
+                                location.address,
                                 style: TextStyle(
                                   color: isMyMessage
                                       ? Colors.white
                                       : Colors.black87,
-                                  fontSize: 12,
+                                  fontSize: 13,
+                                ),
+                              ),
+
+                              SizedBox(height: 8),
+
+                              // Clickable Maps link
+                              InkWell(
+                                onTap: () =>
+                                    _openLocationInMaps(location.mapsUrl),
+                                child: Container(
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: isMyMessage
+                                        ? Colors.white.withOpacity(0.2)
+                                        : ColorConstants.primaryColor
+                                            .withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: isMyMessage
+                                          ? Colors.white.withOpacity(0.3)
+                                          : ColorConstants.primaryColor
+                                              .withOpacity(0.3),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.map,
+                                        size: 16,
+                                        color: isMyMessage
+                                            ? Colors.white
+                                            : ColorConstants.primaryColor,
+                                      ),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        'View on Google Maps',
+                                        style: TextStyle(
+                                          color: isMyMessage
+                                              ? Colors.white
+                                              : ColorConstants.primaryColor,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          decoration: TextDecoration.underline,
+                                        ),
+                                      ),
+                                      SizedBox(width: 4),
+                                      Icon(
+                                        Icons.open_in_new,
+                                        size: 14,
+                                        color: isMyMessage
+                                            ? Colors.white
+                                            : ColorConstants.primaryColor,
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ],
@@ -1730,6 +1822,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 ],
               ],
             ),
+            // Reactions display (giữ nguyên)
             StreamBuilder<QuerySnapshot>(
               stream: _reactionProvider.getReactions(_groupChatId, document.id),
               builder: (context, snapshot) {

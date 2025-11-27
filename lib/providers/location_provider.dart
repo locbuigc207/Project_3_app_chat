@@ -227,20 +227,23 @@ class LocationProvider {
     return '''📍 Location
 ${locationData.address}
 
-🗺️ View on map: ${locationData.mapsUrl}''';
+🗺️ View on map:
+${locationData.mapsUrl}''';
   }
 
   /// Parse location from message
+  /// Parse location from message
   LocationData? parseLocationFromMessage(String message) {
     try {
-      // Extract coordinates
-      final coordPattern = RegExp(r'([-\d.]+),\s*([-\d.]+)');
-      final coordMatch = coordPattern.firstMatch(message);
+      // Extract Maps URL first (more reliable)
+      final urlPattern = RegExp(
+          r'https://www\.google\.com/maps/search/\?api=1&query=([-\d.]+),([-\d.]+)');
+      final urlMatch = urlPattern.firstMatch(message);
 
-      if (coordMatch == null) return null;
+      if (urlMatch == null) return null;
 
-      final lat = double.tryParse(coordMatch.group(1)!);
-      final lng = double.tryParse(coordMatch.group(2)!);
+      final lat = double.tryParse(urlMatch.group(1)!);
+      final lng = double.tryParse(urlMatch.group(2)!);
 
       if (lat == null || lng == null) return null;
 
@@ -258,22 +261,12 @@ ${locationData.address}
         address = addressMatch.group(1)!.trim();
       }
 
-      // Extract Maps URL
-      String mapsUrl = generateMapsLinkFromCoords(lat, lng);
-      final urlPattern =
-          RegExp(r'https://www\.google\.com/maps\?q=[-\d.]+,[-\d.]+');
-      final urlMatch = urlPattern.firstMatch(message);
-
-      if (urlMatch != null) {
-        mapsUrl = urlMatch.group(0)!;
-      }
-
       return LocationData(
         latitude: lat,
         longitude: lng,
         address: address,
         shortAddress: address.split(',').first,
-        mapsUrl: mapsUrl,
+        mapsUrl: urlMatch.group(0)!,
       );
     } catch (e) {
       print('❌ Error parsing location: $e');
