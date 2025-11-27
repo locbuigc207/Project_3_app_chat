@@ -1289,20 +1289,51 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
     if (mounted) setState(() => _isLoading = true);
 
-    // ✅ FIX: Get location with full details
-    final locationData =
-        await _locationProvider!.getCurrentLocationWithDetails();
+    try {
+      // ✅ Request permission first
+      final hasPermission =
+          await _locationProvider!.requestLocationPermission();
 
-    if (mounted && !_isDisposed) setState(() => _isLoading = false);
+      if (!hasPermission) {
+        if (mounted && !_isDisposed) setState(() => _isLoading = false);
+        Fluttertoast.showToast(
+          msg: '📍 Location permission required',
+          backgroundColor: Colors.red,
+        );
+        return;
+      }
 
-    if (locationData != null && !_isDisposed) {
-      // ✅ FIX: Use formatLocationMessage from provider
-      final message = _locationProvider!.formatLocationMessage(locationData);
+      // ✅ Get location with full details
+      final locationData =
+          await _locationProvider!.getCurrentLocationWithDetails();
 
-      await _onSendMessageWithAutoDelete(message, TypeMessage.text);
-      Fluttertoast.showToast(msg: '📍 Location shared');
-    } else {
-      Fluttertoast.showToast(msg: 'Failed to get location');
+      if (mounted && !_isDisposed) setState(() => _isLoading = false);
+
+      if (locationData != null && !_isDisposed) {
+        // ✅ Format message with clickable link
+        final message = _locationProvider!.formatLocationMessage(locationData);
+
+        await _onSendMessageWithAutoDelete(message, TypeMessage.text);
+
+        Fluttertoast.showToast(
+          msg: '📍 Location shared successfully',
+          backgroundColor: Colors.green,
+        );
+
+        print('✅ Location sent: ${locationData.mapsUrl}');
+      } else {
+        Fluttertoast.showToast(
+          msg: '❌ Failed to get location. Please try again.',
+          backgroundColor: Colors.red,
+        );
+      }
+    } catch (e) {
+      print('❌ Location share error: $e');
+      if (mounted && !_isDisposed) setState(() => _isLoading = false);
+      Fluttertoast.showToast(
+        msg: '❌ Failed to get location',
+        backgroundColor: Colors.red,
+      );
     }
   }
 

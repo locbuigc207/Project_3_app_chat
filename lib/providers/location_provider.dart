@@ -219,7 +219,7 @@ class LocationProvider {
 
   /// Generate Google Maps link
   String generateMapsLink(Position position) {
-    return 'https://www.google.com/maps?q=${position.latitude},${position.longitude}';
+    return 'https://www.google.com/maps/search/?api=1&query=${position.latitude},${position.longitude}';
   }
 
   /// Format location message (modern style like Zalo/Messenger)
