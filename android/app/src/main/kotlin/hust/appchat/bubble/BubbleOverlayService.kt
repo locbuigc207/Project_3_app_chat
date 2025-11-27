@@ -13,25 +13,28 @@ import androidx.core.app.NotificationCompat
 import hust.appchat.R
 
 /**
- * ✅ FIXED: Service with proper WindowManager configuration
+ * ✅ FIXED: Service with proper touch handling & cleanup
  *
  * KEY FIXES:
- * 1. FLAG_NOT_TOUCH_MODAL instead of FLAG_NOT_FOCUSABLE for bubbles
- * 2. Proper position update handling
- * 3. Mini chat with correct flags and keyboard support
- * 4. Reference tracking for WindowManager updates
+ * 1. FLAG_NOT_FOCUSABLE for bubbles (NOT FLAG_NOT_TOUCH_MODAL)
+ * 2. Proper cleanup of all views when stopping
+ * 3. Click handling without broadcast (direct callback)
  */
 class BubbleOverlayService : Service() {
 
     private var windowManager: WindowManager? = null
 
-    // ✅ FIXED: Track bubble views AND their params for updates
     private val bubbleViews = mutableMapOf<String, BubbleView>()
     private val bubbleParams = mutableMapOf<String, WindowManager.LayoutParams>()
 
     private var miniChatWindow: MiniChatWindow? = null
     private var miniChatParams: WindowManager.LayoutParams? = null
     private var currentMiniChatUserId: String? = null
+
+    // ✅ NEW: Delete zone indicator
+    private var deleteZoneView: DeleteZoneView? = null
+    private var deleteZoneParams: WindowManager.LayoutParams? = null
+    private var isDraggingAnyBubble = false
 
     private var screenWidth = 0
     private var screenHeight = 0
@@ -40,9 +43,10 @@ class BubbleOverlayService : Service() {
         const val ACTION_SHOW_BUBBLE = "SHOW_BUBBLE"
         const val ACTION_HIDE_BUBBLE = "HIDE_BUBBLE"
         const val ACTION_UPDATE_BUBBLE = "UPDATE_BUBBLE"
-        const val ACTION_UPDATE_BUBBLE_POSITION = "UPDATE_BUBBLE_POSITION"  // ✅ ADDED
+        const val ACTION_UPDATE_BUBBLE_POSITION = "UPDATE_BUBBLE_POSITION"
         const val ACTION_SHOW_MINI_CHAT = "SHOW_MINI_CHAT"
         const val ACTION_HIDE_MINI_CHAT = "HIDE_MINI_CHAT"
+        const val ACTION_HIDE_ALL_BUBBLES = "HIDE_ALL_BUBBLES"
 
         private const val NOTIFICATION_ID = 12345
         private const val CHANNEL_ID = "chat_bubbles"
@@ -114,7 +118,6 @@ class BubbleOverlayService : Service() {
                     updateBubble(userId, unreadCount, lastMessage)
                 }
 
-                // ✅ FIXED: Handle position updates
                 ACTION_UPDATE_BUBBLE_POSITION -> {
                     val userId = intent.getStringExtra("userId") ?: return
                     val positionX = intent.getIntExtra("positionX", -1)
@@ -140,13 +143,17 @@ class BubbleOverlayService : Service() {
                 ACTION_HIDE_MINI_CHAT -> {
                     hideMiniChat()
                 }
+
+                ACTION_HIDE_ALL_BUBBLES -> {
+                    hideAllBubbles()
+                }
             }
         } catch (e: Exception) {
             android.util.Log.e("BubbleService", "❌ Error handling intent: $e")
         }
     }
 
-    // ✅ FIXED: Bubble with FLAG_NOT_TOUCH_MODAL
+    // ✅ FIXED: Use FLAG_NOT_FOCUSABLE instead of FLAG_NOT_TOUCH_MODAL
     private fun showBubble(
         userId: String,
         userName: String,
@@ -172,25 +179,33 @@ class BubbleOverlayService : Service() {
             bubbleView.updateUnreadCount(unreadCount)
             bubbleView.updateLastMessage(lastMessage)
 
-            // ✅ Set click listener - handle internally instead of broadcast
+            // ✅ Set click listener - DIRECT callback, no broadcast
             bubbleView.setOnClickListener {
                 android.util.Log.d("BubbleService", "🫧 Bubble clicked: $userName")
                 onBubbleClicked(userId, userName, avatarUrl)
             }
 
-            // ✅ Set drag listener with position callback
+            // ✅ Set drag listener
             bubbleView.setOnDragListener { isInDeleteZone, deltaX, deltaY ->
+                // ✅ Show/hide delete zone
+                if (!isDraggingAnyBubble && (deltaX != 0f || deltaY != 0f)) {
+                    isDraggingAnyBubble = true
+                    showDeleteZone()
+                }
+
                 if (isInDeleteZone) {
+                    updateDeleteZone(true)
                     bubbleView.animateDelete {
+                        hideDeleteZone()
+                        isDraggingAnyBubble = false
                         BubbleManager.removeBubble(this, userId)
                     }
                 } else {
-                    // Update position during drag
+                    updateDeleteZone(false)
                     bubbleParams[userId]?.let { params ->
                         params.x += deltaX.toInt()
                         params.y += deltaY.toInt()
 
-                        // Ensure within bounds
                         params.x = params.x.coerceIn(0, screenWidth - bubbleView.width)
                         params.y = params.y.coerceIn(0, screenHeight - bubbleView.height)
 
@@ -203,7 +218,12 @@ class BubbleOverlayService : Service() {
                 }
             }
 
-            // ✅ CRITICAL FIX: Use FLAG_NOT_TOUCH_MODAL instead of FLAG_NOT_FOCUSABLE
+            // ✅ On drag end
+            bubbleView.setOnDragEndListener {
+                hideDeleteZone()
+                isDraggingAnyBubble = false
+            }
+
             val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             } else {
@@ -211,13 +231,15 @@ class BubbleOverlayService : Service() {
                 WindowManager.LayoutParams.TYPE_PHONE
             }
 
+            // ✅ CRITICAL FIX: Use FLAG_NOT_FOCUSABLE for bubbles
             val params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 layoutFlag,
-                // ✅ FIXED: NOT_TOUCH_MODAL allows bubble to receive touches
-                // while still passing touches outside bubble bounds to views below
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                // ✅ FIXED FLAGS for bubble:
+                // - NOT_FOCUSABLE: Bubble doesn't take focus, passes events through
+                // - WATCH_OUTSIDE_TOUCH: Detect touches outside
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                         WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
                         WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
                 PixelFormat.TRANSLUCENT
@@ -229,7 +251,6 @@ class BubbleOverlayService : Service() {
 
             windowManager?.addView(bubbleView, params)
 
-            // ✅ FIXED: Store both view and params for updates
             bubbleViews[userId] = bubbleView
             bubbleParams[userId] = params
 
@@ -250,19 +271,17 @@ class BubbleOverlayService : Service() {
         }
     }
 
-    // ✅ NEW: Snap bubble to screen edge
     private fun snapBubbleToEdge(userId: String) {
         val bubbleView = bubbleViews[userId] ?: return
         val params = bubbleParams[userId] ?: return
 
         val centerX = params.x + bubbleView.width / 2
         val targetX = if (centerX < screenWidth / 2) {
-            20 // Left edge
+            20
         } else {
-            screenWidth - bubbleView.width - 20 // Right edge
+            screenWidth - bubbleView.width - 20
         }
 
-        // Animate position change
         android.animation.ValueAnimator.ofInt(params.x, targetX).apply {
             duration = 300
             interpolator = android.view.animation.OvershootInterpolator(1.5f)
@@ -281,7 +300,6 @@ class BubbleOverlayService : Service() {
         }
     }
 
-    // ✅ NEW: Update bubble position (from BubbleManager or rotation)
     private fun updateBubblePosition(userId: String, x: Int, y: Int) {
         android.util.Log.d("BubbleService", "📍 Updating bubble position: $userId to ($x, $y)")
 
@@ -323,6 +341,7 @@ class BubbleOverlayService : Service() {
             bubbleParams.remove(userId)
 
             view?.let {
+                it.cleanup()
                 windowManager?.removeView(it)
                 android.util.Log.d("BubbleService", "✅ Bubble removed: $userId")
             }
@@ -333,6 +352,34 @@ class BubbleOverlayService : Service() {
             }
         } catch (e: Exception) {
             android.util.Log.e("BubbleService", "❌ Error removing bubble: $e")
+        }
+    }
+
+    // ✅ NEW: Hide all bubbles
+    private fun hideAllBubbles() {
+        android.util.Log.d("BubbleService", "🗑️ Hiding all bubbles")
+
+        try {
+            bubbleViews.values.forEach { view ->
+                try {
+                    view.cleanup()
+                    windowManager?.removeView(view)
+                } catch (e: Exception) {
+                    android.util.Log.e("BubbleService", "⚠️ Error removing bubble: $e")
+                }
+            }
+
+            bubbleViews.clear()
+            bubbleParams.clear()
+
+            if (miniChatWindow == null) {
+                stopForeground(true)
+                stopSelf()
+            }
+
+            android.util.Log.d("BubbleService", "✅ All bubbles hidden")
+        } catch (e: Exception) {
+            android.util.Log.e("BubbleService", "❌ Error hiding all bubbles: $e")
         }
     }
 
@@ -349,7 +396,7 @@ class BubbleOverlayService : Service() {
             // Mark as read
             BubbleManager.markAsRead(userId)
 
-            // ✅ OPTIONAL: Send broadcast to Flutter if needed
+            // Send broadcast to Flutter (optional)
             val intent = Intent("CHAT_BUBBLE_CLICKED").apply {
                 putExtra("userId", userId)
                 putExtra("userName", userName)
@@ -363,7 +410,7 @@ class BubbleOverlayService : Service() {
         }
     }
 
-    // ✅ FIXED: Mini chat with proper flags and keyboard support
+    // ✅ FIXED: Mini chat with FLAG_NOT_TOUCH_MODAL (allows interaction)
     private fun showMiniChat(userId: String, userName: String, avatarUrl: String) {
         android.util.Log.d("BubbleService", "💬 Showing mini chat: $userName")
 
@@ -416,28 +463,24 @@ class BubbleOverlayService : Service() {
                 WindowManager.LayoutParams.TYPE_PHONE
             }
 
-            // ✅ Calculate size (90% width, 70% height) with boundaries
-            val width = (screenWidth * 0.9).toInt().coerceAtMost(600) // Max 600dp wide
-            val height = (screenHeight * 0.7).toInt().coerceAtMost(800) // Max 800dp tall
+            val width = (screenWidth * 0.9).toInt().coerceAtMost(600)
+            val height = (screenHeight * 0.7).toInt().coerceAtMost(800)
 
             android.util.Log.d("BubbleService", "📏 Mini chat size: ${width}x${height}")
 
-            // ✅ CRITICAL FIX: Proper flags for mini chat
+            // ✅ FIXED FLAGS for mini chat:
             val params = WindowManager.LayoutParams(
                 width,
                 height,
                 layoutFlag,
-                // ✅ FIXED FLAGS:
-                // - NOT_TOUCH_MODAL: Allows interaction within window
-                // - WATCH_OUTSIDE_TOUCH: Detect touches outside
-                // - No LAYOUT_NO_LIMITS: Keep within screen bounds
+                // ✅ NOT_TOUCH_MODAL: Allows interaction within window
+                // ✅ NOT_FOCUSABLE removed: Mini chat NEEDS focus for input
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                         WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
                         WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
                 PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.CENTER
-                // ✅ CRITICAL: Keyboard support
                 softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or
                         WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
             }
@@ -470,6 +513,55 @@ class BubbleOverlayService : Service() {
         } catch (e: Exception) {
             android.util.Log.e("BubbleService", "❌ Error closing mini chat: $e")
         }
+    }
+
+    // ✅ NEW: Delete zone management
+    private fun showDeleteZone() {
+        if (deleteZoneView != null) {
+            deleteZoneView?.show()
+            return
+        }
+
+        try {
+            val deleteZone = DeleteZoneView(this)
+
+            val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                @Suppress("DEPRECATION")
+                WindowManager.LayoutParams.TYPE_PHONE
+            }
+
+            val params = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                150,
+                layoutFlag,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                        WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                gravity = Gravity.BOTTOM
+            }
+
+            windowManager?.addView(deleteZone, params)
+            deleteZoneView = deleteZone
+            deleteZoneParams = params
+
+            deleteZone.show()
+
+            android.util.Log.d("BubbleService", "✅ Delete zone shown")
+        } catch (e: Exception) {
+            android.util.Log.e("BubbleService", "❌ Failed to show delete zone: $e")
+        }
+    }
+
+    private fun hideDeleteZone() {
+        deleteZoneView?.hide()
+    }
+
+    private fun updateDeleteZone(isActive: Boolean) {
+        deleteZoneView?.setActive(isActive)
     }
 
     private fun createNotificationChannel() {
@@ -511,10 +603,25 @@ class BubbleOverlayService : Service() {
 
     override fun onDestroy() {
         try {
+            android.util.Log.d("BubbleService", "🛑 Service destroying...")
+
             BubbleManager.cleanup()
 
+            // Clean up delete zone
+            deleteZoneView?.let {
+                try {
+                    windowManager?.removeView(it)
+                } catch (e: Exception) {
+                    android.util.Log.e("BubbleService", "⚠️ Error removing delete zone: $e")
+                }
+            }
+            deleteZoneView = null
+            deleteZoneParams = null
+
+            // Clean up all bubbles
             bubbleViews.values.forEach { view ->
                 try {
+                    view.cleanup()
                     windowManager?.removeView(view)
                 } catch (e: Exception) {
                     android.util.Log.e("BubbleService", "⚠️ Error removing bubble: $e")
@@ -523,6 +630,7 @@ class BubbleOverlayService : Service() {
             bubbleViews.clear()
             bubbleParams.clear()
 
+            // Clean up mini chat
             miniChatWindow?.let {
                 try {
                     it.cleanup()
@@ -531,6 +639,8 @@ class BubbleOverlayService : Service() {
                     android.util.Log.e("BubbleService", "⚠️ Error removing mini chat: $e")
                 }
             }
+            miniChatWindow = null
+            miniChatParams = null
 
             android.util.Log.d("BubbleService", "✅ Service destroyed")
         } catch (e: Exception) {

@@ -1,4 +1,4 @@
-// android/app/src/main/kotlin/hust/appchat/bubble/BubbleView.kt - FIXED
+// android/app/src/main/kotlin/hust/appchat/bubble/BubbleView.kt - COMPLETE
 package hust.appchat.bubble
 
 import android.animation.ValueAnimator
@@ -18,13 +18,7 @@ import hust.appchat.R
 import kotlin.math.abs
 
 /**
- * ✅ FIXED: BubbleView với touch interaction đúng
- *
- * KEY FIXES:
- * 1. Không tự update WindowManager layout
- * 2. Chỉ notify listener về drag events
- * 3. Service sẽ handle actual position updates
- * 4. Proper touch event handling
+ * ✅ COMPLETE: BubbleView with drag end listener
  */
 class BubbleView(
     context: Context,
@@ -38,8 +32,9 @@ class BubbleView(
     private val onlineIndicator: View
     private val deleteIndicator: ImageView
 
-    // ✅ FIXED: Listener now reports delta X/Y instead of trying to update layout
+    // ✅ All listeners
     private var onDragListener: ((Boolean, Float, Float) -> Unit)? = null
+    private var onDragEndListener: (() -> Unit)? = null
     private var onClickListener: (() -> Unit)? = null
 
     private var isDragging = false
@@ -111,7 +106,6 @@ class BubbleView(
         }
     }
 
-    // ✅ FIXED: Touch listener only tracks and notifies, doesn't update layout
     private fun setupTouchListener() {
         setOnTouchListener { view, event ->
             if (isDetached) return@setOnTouchListener false
@@ -177,8 +171,7 @@ class BubbleView(
             val currentY = event.rawY
             val inDeleteZone = currentY > (screenHeight - DELETE_ZONE_HEIGHT)
 
-            // ✅ FIXED: Notify listener with delta movement
-            // Service will handle actual position update
+            // ✅ Notify listener with delta movement
             onDragListener?.invoke(false, moveX, moveY)
 
             // Visual feedback
@@ -225,6 +218,9 @@ class BubbleView(
             } else {
                 android.util.Log.d("BubbleView", "🫧 Drag ended - snap to edge (handled by Service)")
             }
+
+            // ✅ CRITICAL: Notify drag end
+            onDragEndListener?.invoke()
         } else if (touchDuration < CLICK_TIMEOUT && distance < TOUCH_SLOP) {
             // Click detected
             android.util.Log.d("BubbleView", "👆 Click detected")
@@ -284,9 +280,6 @@ class BubbleView(
             .setDuration(150)
             .start()
     }
-
-    // ✅ REMOVED: updateLayout() - no longer needed
-    // ✅ REMOVED: snapToEdge() - Service handles this
 
     fun updateUnreadCount(count: Int) {
         if (isDetached) return
@@ -396,9 +389,13 @@ class BubbleView(
         }
     }
 
-    // ✅ FIXED: Listener signature changed to include delta X/Y
+    // ✅ COMPLETE: All listener setters
     fun setOnDragListener(listener: (Boolean, Float, Float) -> Unit) {
         this.onDragListener = listener
+    }
+
+    fun setOnDragEndListener(listener: () -> Unit) {
+        this.onDragEndListener = listener
     }
 
     fun setOnClickListener(listener: () -> Unit) {
@@ -419,6 +416,7 @@ class BubbleView(
     fun cleanup() {
         isDetached = true
         onDragListener = null
+        onDragEndListener = null
         onClickListener = null
 
         try {
