@@ -1,4 +1,4 @@
-// android/app/src/main/kotlin/hust/appchat/bubble/BubbleView.kt - ENHANCED COMPLETE
+// android/app/src/main/kotlin/hust/appchat/bubble/BubbleView.kt
 package hust.appchat.bubble
 
 import android.animation.ValueAnimator
@@ -18,11 +18,7 @@ import hust.appchat.R
 import kotlin.math.abs
 
 /**
- * Enhanced BubbleView with improved features:
- * ✅ Better avatar loading with caching
- * ✅ Smooth animations
- * ✅ Optimized drag performance
- * ✅ Memory leak prevention
+ * ✅ FIXED: BubbleView with proper click handling
  */
 class BubbleView(
     context: Context,
@@ -34,10 +30,12 @@ class BubbleView(
     private val avatarImageView: ImageView
     private val unreadBadge: TextView
     private val onlineIndicator: View
+    private val deleteIndicator: ImageView
 
     private var onDragListener: ((Boolean) -> Unit)? = null
     private var isDragging = false
     private var isDetached = false
+    private var isInDeleteZone = false
 
     // Touch tracking
     private var initialX = 0
@@ -66,19 +64,18 @@ class BubbleView(
         avatarImageView = findViewById(R.id.bubble_avatar)
         unreadBadge = findViewById(R.id.bubble_unread_badge)
         onlineIndicator = findViewById(R.id.bubble_online_indicator)
+        deleteIndicator = findViewById(R.id.delete_indicator)
 
-        // Load avatar
+        // ✅ CRITICAL: Make view clickable
+        isClickable = true
+        isFocusable = true
+
         loadAvatar()
-
-        // Setup touch listener
         setupTouchListener()
 
         android.util.Log.d("BubbleView", "✅ Enhanced bubble created for: $userName")
     }
 
-    /**
-     * ✅ ENHANCED: Load avatar with better caching and error handling
-     */
     private fun loadAvatar() {
         if (isDetached) return
 
@@ -88,7 +85,7 @@ class BubbleView(
                 .diskCacheStrategy(DiskCacheStrategy.ALL)
                 .placeholder(R.drawable.bubble_background)
                 .error(R.drawable.bubble_background)
-                .override(100, 100) // Optimize size
+                .override(100, 100)
 
             if (avatarUrl.isNotEmpty()) {
                 Glide.with(context)
@@ -96,7 +93,6 @@ class BubbleView(
                     .apply(requestOptions)
                     .into(avatarImageView)
             } else {
-                // Fallback: show first letter of name
                 avatarImageView.setImageResource(R.drawable.bubble_background)
             }
         } catch (e: Exception) {
@@ -105,39 +101,31 @@ class BubbleView(
         }
     }
 
-    /**
-     * ✅ ENHANCED: Improved drag handling with better performance
-     */
     private fun setupTouchListener() {
         setOnTouchListener { view, event ->
             if (isDetached) return@setOnTouchListener false
 
-            val params = layoutParams as? WindowManager.LayoutParams ?: return@setOnTouchListener false
+            val params = layoutParams as? WindowManager.LayoutParams
+                ?: return@setOnTouchListener false
 
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     handleTouchDown(params, event)
                     true
                 }
-
                 MotionEvent.ACTION_MOVE -> {
                     handleTouchMove(params, event)
                     true
                 }
-
                 MotionEvent.ACTION_UP -> {
                     handleTouchUp(params)
                     true
                 }
-
                 else -> false
             }
         }
     }
 
-    /**
-     * Handle touch down event
-     */
     private fun handleTouchDown(params: WindowManager.LayoutParams, event: MotionEvent) {
         initialX = params.x
         initialY = params.y
@@ -145,10 +133,8 @@ class BubbleView(
         initialTouchY = event.rawY
         isDragging = false
 
-        // Cancel any ongoing animation
         currentAnimator?.cancel()
 
-        // Scale down animation
         animate()
             .scaleX(BUBBLE_SCALE_DOWN)
             .scaleY(BUBBLE_SCALE_DOWN)
@@ -156,14 +142,10 @@ class BubbleView(
             .start()
     }
 
-    /**
-     * Handle touch move event
-     */
     private fun handleTouchMove(params: WindowManager.LayoutParams, event: MotionEvent) {
         val deltaX = event.rawX - initialTouchX
         val deltaY = event.rawY - initialTouchY
 
-        // Check if movement exceeds touch slop
         if (!isDragging && (abs(deltaX) > TOUCH_SLOP || abs(deltaY) > TOUCH_SLOP)) {
             isDragging = true
         }
@@ -172,14 +154,13 @@ class BubbleView(
             params.x = (initialX + deltaX).toInt()
             params.y = (initialY + deltaY).toInt()
 
-            // Update view position
             updateLayout(params)
 
-            // Check delete zone
             val screenHeight = context.resources.displayMetrics.heightPixels
             val inDeleteZone = params.y > (screenHeight - DELETE_ZONE_HEIGHT)
 
-            // Visual feedback for delete zone
+            updateDeleteIndicator(inDeleteZone)
+
             if (inDeleteZone) {
                 alpha = DELETE_ZONE_ALPHA
                 scaleX = BUBBLE_SCALE_DELETE
@@ -192,11 +173,7 @@ class BubbleView(
         }
     }
 
-    /**
-     * Handle touch up event
-     */
     private fun handleTouchUp(params: WindowManager.LayoutParams) {
-        // Restore scale
         animate()
             .scaleX(1f)
             .scaleY(1f)
@@ -204,28 +181,55 @@ class BubbleView(
             .setDuration(150)
             .start()
 
+        hideDeleteIndicator()
+
         if (isDragging) {
             val screenHeight = context.resources.displayMetrics.heightPixels
             val inDeleteZone = params.y > (screenHeight - DELETE_ZONE_HEIGHT)
 
             if (inDeleteZone) {
-                // Notify listener to delete
                 onDragListener?.invoke(true)
             } else {
-                // Snap to edge
                 snapToEdge(context.resources.displayMetrics.widthPixels)
             }
         } else {
-            // Quick tap - trigger click
+            // ✅ FIXED: Trigger click
+            android.util.Log.d("BubbleView", "👆 Tap detected, calling performClick()")
             performClick()
         }
 
         isDragging = false
     }
 
-    /**
-     * ✅ ENHANCED: Better layout update with error handling
-     */
+    // ✅ CRITICAL: Override performClick for accessibility
+    override fun performClick(): Boolean {
+        android.util.Log.d("BubbleView", "🫧 performClick() called")
+        super.performClick()
+        return true
+    }
+
+    private fun updateDeleteIndicator(show: Boolean) {
+        if (isInDeleteZone == show) return
+        isInDeleteZone = show
+
+        deleteIndicator.animate()
+            .alpha(if (show) 1f else 0f)
+            .scaleX(if (show) 1.2f else 1f)
+            .scaleY(if (show) 1.2f else 1f)
+            .setDuration(150)
+            .start()
+    }
+
+    private fun hideDeleteIndicator() {
+        isInDeleteZone = false
+        deleteIndicator.animate()
+            .alpha(0f)
+            .scaleX(1f)
+            .scaleY(1f)
+            .setDuration(150)
+            .start()
+    }
+
     private fun updateLayout(params: WindowManager.LayoutParams) {
         if (isDetached) return
 
@@ -237,30 +241,24 @@ class BubbleView(
         }
     }
 
-    /**
-     * ✅ ENHANCED: Smoother snap animation with better edge detection
-     */
     fun snapToEdge(screenWidth: Int) {
         if (isDetached) return
 
         val params = layoutParams as? WindowManager.LayoutParams ?: return
         val centerX = params.x + width / 2
 
-        // Determine target edge (with 30% dead zone in center)
         val deadZoneStart = screenWidth * 0.35
         val deadZoneEnd = screenWidth * 0.65
 
         val targetX = when {
-            centerX < deadZoneStart -> 20 // Left edge
-            centerX > deadZoneEnd -> screenWidth - width - 20 // Right edge
-            centerX < screenWidth / 2 -> 20 // Closer to left
-            else -> screenWidth - width - 20 // Closer to right
+            centerX < deadZoneStart -> 20
+            centerX > deadZoneEnd -> screenWidth - width - 20
+            centerX < screenWidth / 2 -> 20
+            else -> screenWidth - width - 20
         }
 
-        // Cancel any ongoing animation
         currentAnimator?.cancel()
 
-        // Smooth animation to target position
         currentAnimator = ValueAnimator.ofInt(params.x, targetX).apply {
             duration = SNAP_ANIMATION_DURATION
             interpolator = OvershootInterpolator()
@@ -279,18 +277,17 @@ class BubbleView(
         }
     }
 
-    /**
-     * ✅ ENHANCED: Better unread count update with animation
-     */
     fun updateUnreadCount(count: Int) {
         if (isDetached) return
 
         post {
             if (count > 0) {
                 unreadBadge.visibility = View.VISIBLE
-                unreadBadge.text = if (count > 99) "99+" else count.toString()
+                unreadBadge.text = when {
+                    count > 99 -> "99+"
+                    else -> count.toString()
+                }
 
-                // Animate badge if count increased
                 if (count > currentUnreadCount) {
                     unreadBadge.animate()
                         .scaleX(1.3f)
@@ -315,21 +312,14 @@ class BubbleView(
         }
     }
 
-    /**
-     * Update last message
-     */
     fun updateLastMessage(message: String) {
         lastMessage = message
     }
 
-    /**
-     * ✅ ENHANCED: Better new message animation
-     */
     fun animateNewMessage() {
         if (isDetached) return
 
         post {
-            // "Pop" effect with rotation
             animate()
                 .scaleX(1.3f)
                 .scaleY(1.3f)
@@ -349,9 +339,6 @@ class BubbleView(
         }
     }
 
-    /**
-     * ✅ ENHANCED: Smoother deletion animation
-     */
     fun animateDelete(onComplete: () -> Unit) {
         if (isDetached) return
 
@@ -369,16 +356,6 @@ class BubbleView(
             .start()
     }
 
-    /**
-     * Set drag listener
-     */
-    fun setOnDragListener(listener: (Boolean) -> Unit) {
-        this.onDragListener = listener
-    }
-
-    /**
-     * ✅ NEW: Set online status with animation
-     */
     fun setOnlineStatus(isOnline: Boolean) {
         if (isDetached) return
 
@@ -404,9 +381,10 @@ class BubbleView(
         }
     }
 
-    /**
-     * ✅ NEW: Get bubble data for persistence
-     */
+    fun setOnDragListener(listener: (Boolean) -> Unit) {
+        this.onDragListener = listener
+    }
+
     fun getBubbleData(): Map<String, Any> {
         return mapOf(
             "userId" to userId,
@@ -418,16 +396,12 @@ class BubbleView(
         )
     }
 
-    /**
-     * ✅ NEW: Cleanup resources
-     */
     fun cleanup() {
         isDetached = true
         currentAnimator?.cancel()
         currentAnimator = null
         onDragListener = null
 
-        // Clear Glide resources
         try {
             Glide.with(context).clear(avatarImageView)
         } catch (e: Exception) {

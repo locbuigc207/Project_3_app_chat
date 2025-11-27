@@ -8,6 +8,7 @@ import android.os.Looper
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
+import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.*
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -20,16 +21,17 @@ import hust.appchat.R
 import hust.appchat.adapter.MiniChatAdapter
 
 /**
- * ✅ COMPLETE FIXED: Mini Chat Window with all features
+ * ✅ COMPLETE: Mini Chat Window với tất cả requirements
  *
  * Features:
- * - Real Firebase message sync
- * - Send messages to Flutter via broadcast
- * - Draggable header
- * - Auto-scroll to latest
- * - Proper keyboard handling
- * - Memory leak prevention
- * - Error handling
+ * 1. ✅ WindowManager overlay (TYPE_APPLICATION_OVERLAY)
+ * 2. ✅ Draggable header (OnTouchListener)
+ * 3. ✅ Send messages (Firebase + broadcast to Flutter)
+ * 4. ✅ Receive messages realtime (Firestore snapshot listener)
+ * 5. ✅ Auto-scroll to new messages
+ * 6. ✅ Loading/Empty/Error states
+ * 7. ✅ Retry mechanism
+ * 8. ✅ Proper input focus handling
  */
 class MiniChatWindow(
     context: Context,
@@ -42,7 +44,7 @@ class MiniChatWindow(
     private var messageListener: ListenerRegistration? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    // Views
+    // ===== Views =====
     private val avatarView: ImageView
     private val nameView: TextView
     private val btnMinimize: ImageView
@@ -51,24 +53,36 @@ class MiniChatWindow(
     private val inputField: EditText
     private val btnSend: ImageView
     private val header: View
-    private val loadingIndicator: ProgressBar
 
-    // Listeners
+    // State Views
+    private val loadingIndicator: ProgressBar
+    private val emptyStateView: LinearLayout
+    private val errorStateView: LinearLayout
+    private val errorText: TextView
+    private val btnRetry: Button
+    private val typingIndicator: LinearLayout
+    private val sendLoading: ProgressBar
+
+    // ===== Listeners =====
     private var onMinimizeListener: (() -> Unit)? = null
     private var onCloseListener: (() -> Unit)? = null
     private var onMessageSentListener: ((String) -> Unit)? = null
 
-    // Message data
+    // ===== State =====
     private val messages = mutableListOf<MiniChatAdapter.ChatMessage>()
     private val adapter = MiniChatAdapter(messages)
     private var isLoadingMessages = false
+    private var isSendingMessage = false
     private var isDetached = false
+
+    private var retryCount = 0
+    private val maxRetries = 3
 
     init {
         try {
             LayoutInflater.from(context).inflate(R.layout.mini_chat_window, this, true)
 
-            // Initialize views
+            // Initialize all views
             avatarView = findViewById(R.id.mini_chat_avatar)
             nameView = findViewById(R.id.mini_chat_name)
             btnMinimize = findViewById(R.id.btn_minimize)
@@ -77,7 +91,14 @@ class MiniChatWindow(
             inputField = findViewById(R.id.mini_chat_input)
             btnSend = findViewById(R.id.btn_send)
             header = findViewById(R.id.mini_chat_header)
+
             loadingIndicator = findViewById(R.id.mini_chat_loading)
+            emptyStateView = findViewById(R.id.mini_chat_empty_state)
+            errorStateView = findViewById(R.id.mini_chat_error_state)
+            errorText = findViewById(R.id.mini_chat_error_text)
+            btnRetry = findViewById(R.id.btn_retry)
+            typingIndicator = findViewById(R.id.typing_indicator)
+            sendLoading = findViewById(R.id.send_loading)
 
             setupUI()
             setupListeners()
@@ -86,13 +107,19 @@ class MiniChatWindow(
             android.util.Log.d("MiniChat", "✅ Mini chat initialized for: $userName")
         } catch (e: Exception) {
             android.util.Log.e("MiniChat", "❌ Failed to initialize: $e")
+            android.util.Log.e("MiniChat", "Stack trace: ${e.stackTraceToString()}")
             throw e
         }
     }
 
-    /**
-     * ✅ Setup UI components
-     */
+    // ========================================
+    // REQUIREMENT 1: WindowManager Overlay
+    // Được xử lý trong BubbleOverlayService
+    // ========================================
+
+    // ========================================
+    // UI SETUP
+    // ========================================
     private fun setupUI() {
         try {
             // Set user info
@@ -112,41 +139,59 @@ class MiniChatWindow(
 
             // Setup RecyclerView
             val layoutManager = LinearLayoutManager(context).apply {
-                reverseLayout = true
+                reverseLayout = true  // Latest messages at bottom
                 stackFromEnd = false
             }
             recyclerView.layoutManager = layoutManager
             recyclerView.adapter = adapter
 
-            // Show loading
-            loadingIndicator.visibility = View.VISIBLE
+            // ✅ Optimize RecyclerView for realtime updates
+            recyclerView.setHasFixedSize(true)
+            recyclerView.itemAnimator?.changeDuration = 0
+            recyclerView.itemAnimator?.addDuration = 150
+            recyclerView.itemAnimator?.removeDuration = 150
+
+            showLoading()
 
             android.util.Log.d("MiniChat", "✅ UI setup complete")
         } catch (e: Exception) {
             android.util.Log.e("MiniChat", "❌ Failed to setup UI: $e")
+            showError("Failed to setup UI: ${e.message}")
         }
     }
 
-    /**
-     * ✅ Setup all listeners
-     */
+    // ========================================
+    // REQUIREMENT 2: Kéo thả mini chat
+    // Implement OnTouchListener với ACTION_MOVE
+    // ========================================
     private fun setupListeners() {
         try {
+            // Minimize button
             btnMinimize.setOnClickListener {
                 android.util.Log.d("MiniChat", "🔽 Minimize clicked")
+                hideKeyboard()
                 onMinimizeListener?.invoke()
             }
 
+            // Close button
             btnClose.setOnClickListener {
                 android.util.Log.d("MiniChat", "❌ Close clicked")
+                hideKeyboard()
                 onCloseListener?.invoke()
             }
 
+            // Send button
             btnSend.setOnClickListener {
                 sendMessage()
             }
 
-            // Send on enter key
+            // Retry button
+            btnRetry.setOnClickListener {
+                retryCount++
+                loadMessages()
+            }
+
+            // Send on enter
             inputField.setOnEditorActionListener { _, actionId, _ ->
                 if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND) {
                     sendMessage()
@@ -156,7 +201,16 @@ class MiniChatWindow(
                 }
             }
 
-            // Setup drag
+            // Text change listener
+            inputField.addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) {
+                    // Can send typing status here
+                }
+            })
+
+            // ✅ REQUIREMENT 2: Setup drag listener with ACTION_MOVE
             setupDragListener()
 
             android.util.Log.d("MiniChat", "✅ Listeners setup complete")
@@ -165,9 +219,7 @@ class MiniChatWindow(
         }
     }
 
-    /**
-     * ✅ Make header draggable
-     */
+    // ✅ REQUIREMENT 2: Drag implementation
     private fun setupDragListener() {
         var initialX = 0
         var initialY = 0
@@ -177,46 +229,124 @@ class MiniChatWindow(
         header.setOnTouchListener { _, event ->
             if (isDetached) return@setOnTouchListener false
 
-            val params = layoutParams as? android.view.WindowManager.LayoutParams
+            val params = layoutParams as? WindowManager.LayoutParams
                 ?: return@setOnTouchListener false
 
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
+                    // Store initial position
                     initialX = params.x
                     initialY = params.y
                     initialTouchX = event.rawX
                     initialTouchY = event.rawY
+
+                    android.util.Log.d("MiniChat", "👇 Drag started at (${params.x}, ${params.y})")
                     true
                 }
-                MotionEvent.ACTION_MOVE -> {
-                    params.x = (initialX + (event.rawX - initialTouchX)).toInt()
-                    params.y = (initialY + (event.rawY - initialTouchY)).toInt()
 
+                // ✅ REQUIREMENT 2: Handle ACTION_MOVE
+                MotionEvent.ACTION_MOVE -> {
+                    // Calculate delta
+                    val deltaX = event.rawX - initialTouchX
+                    val deltaY = event.rawY - initialTouchY
+
+                    // Update position
+                    params.x = (initialX + deltaX).toInt()
+                    params.y = (initialY + deltaY).toInt()
+
+                    // Apply to WindowManager
                     val windowManager = context.getSystemService(Context.WINDOW_SERVICE)
-                            as? android.view.WindowManager
+                            as? WindowManager
                     try {
                         windowManager?.updateViewLayout(this, params)
                     } catch (e: Exception) {
                         android.util.Log.e("MiniChat", "❌ Failed to update layout: $e")
                     }
+
                     true
                 }
+
+                MotionEvent.ACTION_UP -> {
+                    android.util.Log.d("MiniChat", "👆 Drag ended at (${params.x}, ${params.y})")
+                    true
+                }
+
                 else -> false
             }
         }
     }
 
-    /**
-     * ✅ CRITICAL: Load messages from Firestore
-     */
+    // ========================================
+    // STATE MANAGEMENT
+    // ========================================
+    private fun showLoading() {
+        mainHandler.post {
+            if (isDetached) return@post
+            loadingIndicator.visibility = View.VISIBLE
+            recyclerView.visibility = View.GONE
+            emptyStateView.visibility = View.GONE
+            errorStateView.visibility = View.GONE
+        }
+    }
+
+    private fun showEmptyState() {
+        mainHandler.post {
+            if (isDetached) return@post
+            loadingIndicator.visibility = View.GONE
+            recyclerView.visibility = View.GONE
+            emptyStateView.visibility = View.VISIBLE
+            errorStateView.visibility = View.GONE
+        }
+    }
+
+    private fun showError(message: String) {
+        mainHandler.post {
+            if (isDetached) return@post
+            loadingIndicator.visibility = View.GONE
+            recyclerView.visibility = View.GONE
+            emptyStateView.visibility = View.GONE
+            errorStateView.visibility = View.VISIBLE
+            errorText.text = message
+
+            btnRetry.visibility = if (retryCount >= maxRetries) View.GONE else View.VISIBLE
+        }
+    }
+
+    private fun showMessages() {
+        mainHandler.post {
+            if (isDetached) return@post
+            loadingIndicator.visibility = View.GONE
+            recyclerView.visibility = View.VISIBLE
+            emptyStateView.visibility = View.GONE
+            errorStateView.visibility = View.GONE
+        }
+    }
+
+    private fun setSendLoading(isLoading: Boolean) {
+        mainHandler.post {
+            if (isDetached) return@post
+            isSendingMessage = isLoading
+            btnSend.visibility = if (isLoading) View.GONE else View.VISIBLE
+            sendLoading.visibility = if (isLoading) View.VISIBLE else View.GONE
+            inputField.isEnabled = !isLoading
+        }
+    }
+
+    // ========================================
+    // REQUIREMENT 4: Nhận tin nhắn mới
+    // Realtime Firebase Firestore listener
+    // ========================================
     private fun loadMessages() {
         if (isLoadingMessages || isDetached) return
         isLoadingMessages = true
 
+        showLoading()
+
         val currentUserId = BubbleManager.getCurrentUserId()
         if (currentUserId == null) {
             android.util.Log.e("MiniChat", "❌ Current user ID is null")
-            hideLoading()
+            showError("Authentication error")
+            isLoadingMessages = false
             return
         }
 
@@ -230,6 +360,8 @@ class MiniChatWindow(
 
         try {
             messageListener?.remove()
+
+            // ✅ REQUIREMENT 4: Setup Firestore snapshot listener
             messageListener = firestore
                 .collection("messages")
                 .document(conversationId)
@@ -241,39 +373,49 @@ class MiniChatWindow(
 
                     if (error != null) {
                         android.util.Log.e("MiniChat", "❌ Listen error: $error")
-                        hideLoading()
-                        showError("Failed to load messages")
+                        isLoadingMessages = false
+                        showError("Failed to load messages: ${error.message}")
                         return@addSnapshotListener
                     }
 
                     if (snapshot != null) {
-                        snapshot.documentChanges.forEach { change ->
-                            when (change.type) {
-                                com.google.firebase.firestore.DocumentChange.Type.ADDED -> {
-                                    handleNewMessage(change.document, currentUserId)
+                        if (snapshot.isEmpty) {
+                            android.util.Log.d("MiniChat", "📭 No messages in conversation")
+                            isLoadingMessages = false
+                            showEmptyState()
+                        } else {
+                            // ✅ REQUIREMENT 4: Handle realtime updates
+                            snapshot.documentChanges.forEach { change ->
+                                when (change.type) {
+                                    com.google.firebase.firestore.DocumentChange.Type.ADDED -> {
+                                        handleNewMessage(change.document, currentUserId)
+                                    }
+                                    com.google.firebase.firestore.DocumentChange.Type.MODIFIED -> {
+                                        handleModifiedMessage(change.document, currentUserId)
+                                    }
+                                    com.google.firebase.firestore.DocumentChange.Type.REMOVED -> {
+                                        handleRemovedMessage(change.document.id)
+                                    }
                                 }
-                                com.google.firebase.firestore.DocumentChange.Type.MODIFIED -> {
-                                    // Handle edited messages if needed
-                                }
-                                else -> {}
+                            }
+
+                            if (messages.isNotEmpty()) {
+                                isLoadingMessages = false
+                                showMessages()
                             }
                         }
                     }
-
-                    hideLoading()
                 }
 
             android.util.Log.d("MiniChat", "✅ Message listener setup")
         } catch (e: Exception) {
             android.util.Log.e("MiniChat", "❌ Failed to setup listener: $e")
-            hideLoading()
-            showError("Failed to setup message listener")
+            isLoadingMessages = false
+            showError("Connection failed: ${e.message}")
         }
     }
 
-    /**
-     * ✅ Handle new incoming message
-     */
+    // ✅ REQUIREMENT 4: Handle new message từ Firebase
     private fun handleNewMessage(
         document: com.google.firebase.firestore.DocumentSnapshot,
         currentUserId: String
@@ -301,12 +443,14 @@ class MiniChatWindow(
                 if (isDetached) return@post
 
                 if (existingIndex == -1) {
-                    // Add new message at top
+                    // ✅ REQUIREMENT 4: Add new message to adapter
                     messages.add(0, message)
                     adapter.notifyItemInserted(0)
-                    recyclerView.smoothScrollToPosition(0)
 
-                    android.util.Log.d("MiniChat", "✅ Message added: ${message.content}")
+                    // ✅ Auto-scroll to new message
+                    scrollToLatestMessage()
+
+                    android.util.Log.d("MiniChat", "✅ New message added: ${message.content}")
                 }
             }
         } catch (e: Exception) {
@@ -314,21 +458,91 @@ class MiniChatWindow(
         }
     }
 
-    /**
-     * ✅ CRITICAL: Send message to Firebase AND Flutter
-     */
-    private fun sendMessage() {
+    // ✅ Handle modified message
+    private fun handleModifiedMessage(
+        document: com.google.firebase.firestore.DocumentSnapshot,
+        currentUserId: String
+    ) {
         if (isDetached) return
 
+        try {
+            val messageId = document.id
+            val existingIndex = messages.indexOfFirst { it.id == messageId }
+
+            if (existingIndex != -1) {
+                val content = document.getString("content") ?: ""
+                val type = document.getLong("type")?.toInt() ?: 0
+                val idFrom = document.getString("idFrom") ?: ""
+                val timestamp = document.getString("timestamp")?.toLongOrNull() ?: 0L
+
+                val updatedMessage = MiniChatAdapter.ChatMessage(
+                    id = messageId,
+                    content = if (type == 0) content else "📷 Image",
+                    isFromMe = idFrom == currentUserId,
+                    timestamp = timestamp,
+                    type = type
+                )
+
+                mainHandler.post {
+                    if (!isDetached) {
+                        messages[existingIndex] = updatedMessage
+                        adapter.notifyItemChanged(existingIndex)
+                        android.util.Log.d("MiniChat", "✅ Message updated: $messageId")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MiniChat", "❌ Error handling modified message: $e")
+        }
+    }
+
+    // ✅ Handle removed message
+    private fun handleRemovedMessage(messageId: String) {
+        if (isDetached) return
+
+        val existingIndex = messages.indexOfFirst { it.id == messageId }
+        if (existingIndex != -1) {
+            mainHandler.post {
+                if (!isDetached) {
+                    messages.removeAt(existingIndex)
+                    adapter.notifyItemRemoved(existingIndex)
+                    android.util.Log.d("MiniChat", "✅ Message removed: $messageId")
+                }
+            }
+        }
+    }
+
+    // ✅ Auto-scroll to latest message
+    private fun scrollToLatestMessage() {
+        if (isDetached) return
+
+        try {
+            if (recyclerView.canScrollVertically(-1)) {
+                recyclerView.smoothScrollToPosition(0)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MiniChat", "⚠️ Error scrolling: $e")
+        }
+    }
+
+    // ========================================
+    // REQUIREMENT 3: Gửi tin nhắn
+    // Lấy text từ EditText → Add to RecyclerView → Send to Firebase
+    // ========================================
+    private fun sendMessage() {
+        if (isDetached || isSendingMessage) return
+
+        // ✅ REQUIREMENT 3.1: Lấy text từ EditText
         val content = inputField.text.toString().trim()
         if (content.isEmpty()) {
             android.util.Log.w("MiniChat", "⚠️ Empty message, not sending")
+            Toast.makeText(context, "Please type a message", Toast.LENGTH_SHORT).show()
             return
         }
 
         val currentUserId = BubbleManager.getCurrentUserId()
         if (currentUserId == null) {
-            showError("User not logged in")
+            Toast.makeText(context, "Authentication error", Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -350,10 +564,27 @@ class MiniChatWindow(
 
         android.util.Log.d("MiniChat", "✉️ Sending message: $content")
 
-        // Disable send button temporarily
-        btnSend.isEnabled = false
+        // Show send loading
+        setSendLoading(true)
 
-        // 1. Save to Firebase
+        // ✅ REQUIREMENT 3.2: Add to RecyclerView trước (optimistic update)
+        val optimisticMessage = MiniChatAdapter.ChatMessage(
+            id = messageId,
+            content = content,
+            isFromMe = true,
+            timestamp = messageId.toLong(),
+            type = 0
+        )
+
+        mainHandler.post {
+            if (!isDetached) {
+                messages.add(0, optimisticMessage)
+                adapter.notifyItemInserted(0)
+                scrollToLatestMessage()
+            }
+        }
+
+        // ✅ REQUIREMENT 3.3: Send to Firebase
         firestore
             .collection("messages")
             .document(conversationId)
@@ -367,35 +598,40 @@ class MiniChatWindow(
                     if (!isDetached) {
                         inputField.text.clear()
                         hideKeyboard()
-                        btnSend.isEnabled = true
+                        setSendLoading(false)
 
                         android.util.Log.d("MiniChat", "✅ Message saved to Firebase")
 
-                        // 2. Send broadcast to Flutter
+                        // Send broadcast to Flutter
                         sendBroadcastToFlutter(content)
 
-                        // 3. Notify listener
+                        // Notify listener
                         onMessageSentListener?.invoke(content)
 
-                        // 4. Update conversation
+                        // Update conversation
                         updateConversation(conversationId, content)
                     }
                 }
             }
             .addOnFailureListener { e ->
                 android.util.Log.e("MiniChat", "❌ Failed to send message: $e")
+
+                // Remove optimistic message on failure
                 mainHandler.post {
                     if (!isDetached) {
-                        btnSend.isEnabled = true
-                        showError("Failed to send message")
+                        val index = messages.indexOfFirst { it.id == messageId }
+                        if (index != -1) {
+                            messages.removeAt(index)
+                            adapter.notifyItemRemoved(index)
+                        }
+
+                        setSendLoading(false)
+                        Toast.makeText(context, "Failed to send: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
     }
 
-    /**
-     * ✅ CRITICAL: Send broadcast to Flutter
-     */
     private fun sendBroadcastToFlutter(message: String) {
         try {
             val intent = Intent("CHAT_BUBBLE_MESSAGE").apply {
@@ -410,9 +646,6 @@ class MiniChatWindow(
         }
     }
 
-    /**
-     * ✅ Update conversation last message
-     */
     private fun updateConversation(conversationId: String, lastMessage: String) {
         try {
             firestore
@@ -433,32 +666,6 @@ class MiniChatWindow(
         }
     }
 
-    /**
-     * ✅ Show error message
-     */
-    private fun showError(message: String) {
-        mainHandler.post {
-            if (!isDetached) {
-                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    /**
-     * ✅ Hide loading indicator
-     */
-    private fun hideLoading() {
-        mainHandler.post {
-            if (!isDetached) {
-                loadingIndicator.visibility = View.GONE
-                isLoadingMessages = false
-            }
-        }
-    }
-
-    /**
-     * ✅ Hide keyboard
-     */
     private fun hideKeyboard() {
         try {
             val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
@@ -468,30 +675,24 @@ class MiniChatWindow(
         }
     }
 
-    /**
-     * ✅ Set minimize listener
-     */
+    // ========================================
+    // PUBLIC API
+    // ========================================
     fun setOnMinimizeListener(listener: () -> Unit) {
         onMinimizeListener = listener
     }
 
-    /**
-     * ✅ Set close listener
-     */
     fun setOnCloseListener(listener: () -> Unit) {
         onCloseListener = listener
     }
 
-    /**
-     * ✅ Set message sent listener
-     */
     fun setOnMessageSentListener(listener: (String) -> Unit) {
         onMessageSentListener = listener
     }
 
-    /**
-     * ✅ CRITICAL: Cleanup resources
-     */
+    // ========================================
+    // CLEANUP
+    // ========================================
     fun cleanup() {
         isDetached = true
 

@@ -1,140 +1,325 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- ✅ COMPLETE FIXED VERSION: Mini Chat Window Layout -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="320dp"
     android:layout_height="450dp"
     android:orientation="vertical"
-    android:background="#FFFFFF"
-    android:elevation="16dp">
+    android:background="@drawable/mini_chat_background"
+    android:elevation="16dp"
+    android:clickable="true"
+    android:focusable="true">
 
-    <!-- Header -->
+    <!-- ===================================== -->
+    <!-- HEADER WITH DRAG HANDLE -->
+    <!-- ===================================== -->
     <RelativeLayout
         android:id="@+id/mini_chat_header"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:background="#2196F3"
-        android:padding="8dp">
+        android:layout_height="60dp"
+        android:background="@drawable/mini_chat_header_bg"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        android:elevation="4dp">
 
+        <!-- Drag Handle Indicator -->
+        <View
+            android:id="@+id/drag_handle"
+            android:layout_width="40dp"
+            android:layout_height="4dp"
+            android:layout_centerHorizontal="true"
+            android:layout_marginTop="2dp"
+            android:background="@drawable/drag_handle"
+            android:alpha="0.3" />
+
+        <!-- User Avatar -->
         <ImageView
             android:id="@+id/mini_chat_avatar"
             android:layout_width="40dp"
             android:layout_height="40dp"
+            android:layout_below="@id/drag_handle"
             android:layout_alignParentStart="true"
             android:layout_centerVertical="true"
             android:layout_marginStart="8dp"
+            android:layout_marginTop="6dp"
             android:scaleType="centerCrop"
-            android:contentDescription="User Avatar" />
+            android:contentDescription="@string/user_avatar"
+            android:background="@drawable/avatar_border" />
 
+        <!-- User Name -->
         <TextView
             android:id="@+id/mini_chat_name"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_below="@id/drag_handle"
             android:layout_toEndOf="@id/mini_chat_avatar"
+            android:layout_toStartOf="@id/mini_chat_actions"
             android:layout_centerVertical="true"
             android:layout_marginStart="12dp"
-            android:layout_toStartOf="@id/mini_chat_actions"
-            android:text="User Name"
-            android:textColor="#FFFFFF"
+            android:layout_marginTop="6dp"
+            android:text="@string/user_name_placeholder"
+            android:textColor="@android:color/white"
             android:textSize="16sp"
             android:textStyle="bold"
             android:maxLines="1"
             android:ellipsize="end" />
 
+        <!-- Action Buttons -->
         <LinearLayout
             android:id="@+id/mini_chat_actions"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_below="@id/drag_handle"
             android:layout_alignParentEnd="true"
             android:layout_centerVertical="true"
-            android:orientation="horizontal">
+            android:layout_marginTop="6dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
+            <!-- Minimize Button -->
             <ImageView
                 android:id="@+id/btn_minimize"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:padding="6dp"
-                android:src="@android:drawable/ic_menu_revert"
-                android:tint="#FFFFFF"
-                android:contentDescription="Minimize"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="8dp"
+                android:src="@drawable/ic_minimize"
+                android:tint="@android:color/white"
+                android:contentDescription="@string/minimize"
                 android:clickable="true"
                 android:focusable="true"
                 android:background="?attr/selectableItemBackgroundBorderless" />
 
+            <!-- Close Button -->
             <ImageView
                 android:id="@+id/btn_close"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
                 android:layout_marginStart="4dp"
-                android:padding="6dp"
-                android:src="@android:drawable/ic_menu_close_clear_cancel"
-                android:tint="#FFFFFF"
-                android:contentDescription="Close"
+                android:padding="8dp"
+                android:src="@drawable/ic_close"
+                android:tint="@android:color/white"
+                android:contentDescription="@string/close"
                 android:clickable="true"
                 android:focusable="true"
                 android:background="?attr/selectableItemBackgroundBorderless" />
         </LinearLayout>
     </RelativeLayout>
 
-    <!-- Messages Container -->
+    <!-- ===================================== -->
+    <!-- MESSAGES CONTAINER WITH STATES -->
+    <!-- ===================================== -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:background="#FFFFFF">
+        android:background="@android:color/white">
 
-        <!-- RecyclerView for messages -->
+        <!-- Messages RecyclerView -->
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/mini_chat_messages"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:padding="8dp"
             android:clipToPadding="false"
-            android:background="#FFFFFF" />
+            android:background="@android:color/white"
+            android:scrollbars="vertical"
+            android:fadeScrollbars="false"
+            android:scrollbarStyle="outsideOverlay"
+            android:overScrollMode="ifContentScrolls"
+            app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
+            app:reverseLayout="true"
+            app:stackFromEnd="false" />
 
-        <!-- ✅ FIX CRITICAL: Đây là dòng 61 - KHÔNG dùng android.widget prefix -->
+        <!-- Loading State -->
         <ProgressBar
             android:id="@+id/mini_chat_loading"
+            style="?android:attr/progressBarStyle"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_gravity="center"
+            android:visibility="visible"
+            android:indeterminate="true"
+            android:indeterminateTint="#2196F3" />
+
+        <!-- Empty State -->
+        <LinearLayout
+            android:id="@+id/mini_chat_empty_state"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
-            android:visibility="visible"
-            android:indeterminate="true" />
+            android:orientation="vertical"
+            android:gravity="center"
+            android:visibility="gone">
+
+            <ImageView
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:src="@drawable/ic_chat_empty"
+                android:alpha="0.3"
+                android:contentDescription="@string/no_messages" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/no_messages_yet"
+                android:textColor="#999999"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <!-- Error State -->
+        <LinearLayout
+            android:id="@+id/mini_chat_error_state"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:visibility="gone">
+
+            <ImageView
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:src="@drawable/ic_error"
+                android:tint="#FF6B6B"
+                android:contentDescription="@string/error" />
+
+            <TextView
+                android:id="@+id/mini_chat_error_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/failed_to_load_messages"
+                android:textColor="#FF6B6B"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/btn_retry"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/retry"
+                android:textColor="@android:color/white"
+                android:background="@drawable/retry_button_bg"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp" />
+        </LinearLayout>
     </FrameLayout>
 
-    <!-- Input Area -->
+    <!-- ===================================== -->
+    <!-- INPUT AREA WITH SEND LOADING -->
+    <!-- ===================================== -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:padding="8dp"
-        android:background="#F5F5F5"
+        android:orientation="vertical"
+        android:background="@android:color/white"
         android:elevation="4dp">
 
-        <EditText
-            android:id="@+id/mini_chat_input"
-            android:layout_width="0dp"
+        <!-- Typing Indicator (Hidden by default) -->
+        <LinearLayout
+            android:id="@+id/typing_indicator"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:hint="Type a message..."
-            android:background="#FFFFFF"
-            android:padding="12dp"
-            android:maxLines="3"
-            android:textSize="14sp"
-            android:imeOptions="actionSend"
-            android:inputType="textCapSentences|textMultiLine" />
+            android:orientation="horizontal"
+            android:padding="8dp"
+            android:gravity="center_vertical"
+            android:visibility="gone">
 
-        <ImageView
-            android:id="@+id/btn_send"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:layout_marginStart="8dp"
-            android:layout_gravity="center_vertical"
-            android:src="@android:drawable/ic_menu_send"
-            android:tint="#2196F3"
-            android:contentDescription="Send"
-            android:clickable="true"
-            android:focusable="true"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:padding="8dp" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/typing"
+                android:textColor="#999999"
+                android:textSize="12sp"
+                android:textStyle="italic" />
+
+            <ProgressBar
+                style="?android:attr/progressBarStyleSmall"
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:layout_marginStart="8dp"
+                android:indeterminate="true" />
+        </LinearLayout>
+
+        <!-- Input Container -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:padding="8dp"
+            android:background="#F5F5F5"
+            android:gravity="center_vertical"
+            android:minHeight="56dp">
+
+            <!-- Attachment Button (Optional) -->
+            <ImageView
+                android:id="@+id/btn_attach"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="8dp"
+                android:src="@drawable/ic_attach"
+                android:tint="#666666"
+                android:contentDescription="@string/attach"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:visibility="gone" />
+
+            <!-- Message Input Field -->
+            <EditText
+                android:id="@+id/mini_chat_input"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="@string/type_message"
+                android:background="@drawable/input_background"
+                android:padding="12dp"
+                android:maxLines="4"
+                android:minLines="1"
+                android:maxLength="1000"
+                android:textSize="14sp"
+                android:textColor="#333333"
+                android:textColorHint="#999999"
+                android:imeOptions="actionSend"
+                android:inputType="textCapSentences|textMultiLine"
+                android:scrollbars="vertical" />
+
+            <!-- Send Button Container (with loading state) -->
+            <FrameLayout
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_marginStart="8dp">
+
+                <!-- Send Button -->
+                <ImageView
+                    android:id="@+id/btn_send"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:padding="10dp"
+                    android:src="@drawable/ic_send"
+                    android:tint="#2196F3"
+                    android:contentDescription="@string/send"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="?attr/selectableItemBackgroundBorderless" />
+
+                <!-- Send Loading (Hidden by default) -->
+                <ProgressBar
+                    android:id="@+id/send_loading"
+                    style="?android:attr/progressBarStyleSmall"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_gravity="center"
+                    android:visibility="gone"
+                    android:indeterminate="true"
+                    android:indeterminateTint="#2196F3" />
+            </FrameLayout>
+        </LinearLayout>
     </LinearLayout>
 
 </LinearLayout>

@@ -13,7 +13,12 @@ import androidx.core.app.NotificationCompat
 import hust.appchat.R
 
 /**
- * ✅ COMPLETE: Service quản lý overlay bubbles và mini chat windows
+ * ✅ COMPLETE: Service with proper WindowManager configuration
+ *
+ * REQUIREMENT 1: WindowManager overlay setup
+ * - TYPE_APPLICATION_OVERLAY (Android 8+)
+ * - FLAG_NOT_TOUCH_MODAL (allow input focus)
+ * - Proper size calculation based on screen
  */
 class BubbleOverlayService : Service() {
 
@@ -42,12 +47,14 @@ class BubbleOverlayService : Service() {
         try {
             windowManager = getSystemService(WINDOW_SERVICE) as? WindowManager
 
-            // Get screen dimensions
+            // ✅ Get screen dimensions for proper sizing
             val displayMetrics = DisplayMetrics()
             @Suppress("DEPRECATION")
             windowManager?.defaultDisplay?.getMetrics(displayMetrics)
             screenWidth = displayMetrics.widthPixels
             screenHeight = displayMetrics.heightPixels
+
+            android.util.Log.d("BubbleService", "📱 Screen: ${screenWidth}x${screenHeight}")
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 createNotificationChannel()
@@ -77,9 +84,6 @@ class BubbleOverlayService : Service() {
         return START_STICKY
     }
 
-    /**
-     * ✅ Handle incoming intents
-     */
     private fun handleIntent(intent: Intent) {
         android.util.Log.d("BubbleService", "📨 Received action: ${intent.action}")
 
@@ -101,7 +105,6 @@ class BubbleOverlayService : Service() {
                     val userId = intent.getStringExtra("userId") ?: return
                     val unreadCount = intent.getIntExtra("unreadCount", 0)
                     val lastMessage = intent.getStringExtra("lastMessage") ?: ""
-
                     updateBubble(userId, unreadCount, lastMessage)
                 }
 
@@ -114,7 +117,6 @@ class BubbleOverlayService : Service() {
                     val userId = intent.getStringExtra("userId") ?: return
                     val userName = intent.getStringExtra("userName") ?: ""
                     val avatarUrl = intent.getStringExtra("avatarUrl") ?: ""
-
                     showMiniChat(userId, userName, avatarUrl)
                 }
 
@@ -127,9 +129,6 @@ class BubbleOverlayService : Service() {
         }
     }
 
-    /**
-     * ✅ Show bubble
-     */
     private fun showBubble(
         userId: String,
         userName: String,
@@ -142,7 +141,6 @@ class BubbleOverlayService : Service() {
         android.util.Log.d("BubbleService", "🎈 Showing bubble: $userName")
 
         try {
-            // Remove existing bubble
             bubbleViews[userId]?.let {
                 try {
                     windowManager?.removeView(it)
@@ -151,17 +149,15 @@ class BubbleOverlayService : Service() {
                 }
             }
 
-            // Create new bubble
             val bubbleView = BubbleView(this, userId, userName, avatarUrl)
             bubbleView.updateUnreadCount(unreadCount)
             bubbleView.updateLastMessage(lastMessage)
 
-            // Set click listener
             bubbleView.setOnClickListener {
+                android.util.Log.d("BubbleService", "🫧 Bubble clicked: $userName")
                 onBubbleClicked(userId, userName, avatarUrl)
             }
 
-            // Set drag listener
             bubbleView.setOnDragListener { isInDeleteZone ->
                 if (isInDeleteZone) {
                     bubbleView.animateDelete {
@@ -170,7 +166,6 @@ class BubbleOverlayService : Service() {
                 }
             }
 
-            // Layout params
             val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             } else {
@@ -192,16 +187,13 @@ class BubbleOverlayService : Service() {
                 y = positionY
             }
 
-            // Add to window
             windowManager?.addView(bubbleView, params)
             bubbleViews[userId] = bubbleView
 
-            // Snap to edge
             bubbleView.postDelayed({
                 bubbleView.snapToEdge(screenWidth)
             }, 300)
 
-            // Update notification
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val notificationManager = getSystemService(NotificationManager::class.java)
                 notificationManager?.notify(NOTIFICATION_ID, createNotification())
@@ -213,9 +205,6 @@ class BubbleOverlayService : Service() {
         }
     }
 
-    /**
-     * ✅ Update bubble
-     */
     private fun updateBubble(userId: String, unreadCount: Int, lastMessage: String) {
         try {
             bubbleViews[userId]?.let { bubble ->
@@ -229,9 +218,6 @@ class BubbleOverlayService : Service() {
         }
     }
 
-    /**
-     * ✅ Hide bubble
-     */
     private fun hideBubble(userId: String) {
         try {
             bubbleViews.remove(userId)?.let { view ->
@@ -239,7 +225,6 @@ class BubbleOverlayService : Service() {
                 android.util.Log.d("BubbleService", "✅ Bubble removed: $userId")
             }
 
-            // Stop service if no more bubbles and no mini chat
             if (bubbleViews.isEmpty() && miniChatWindow == null) {
                 stopForeground(true)
                 stopSelf()
@@ -249,56 +234,51 @@ class BubbleOverlayService : Service() {
         }
     }
 
-    /**
-     * ✅ Bubble clicked
-     */
     private fun onBubbleClicked(userId: String, userName: String, avatarUrl: String) {
         android.util.Log.d("BubbleService", "🫧 Bubble clicked: $userName")
 
         try {
-            // Hide bubble
             bubbleViews[userId]?.visibility = View.GONE
-
-            // Show mini chat
             showMiniChat(userId, userName, avatarUrl)
-
-            // Mark as read
             BubbleManager.markAsRead(userId)
 
-            // Send broadcast to Flutter
             val intent = Intent("CHAT_BUBBLE_CLICKED").apply {
                 putExtra("userId", userId)
                 putExtra("userName", userName)
                 putExtra("avatarUrl", avatarUrl)
             }
             sendBroadcast(intent)
+
+            android.util.Log.d("BubbleService", "📡 Broadcast sent: CHAT_BUBBLE_CLICKED")
         } catch (e: Exception) {
             android.util.Log.e("BubbleService", "❌ Error handling bubble click: $e")
         }
     }
 
-    /**
-     * ✅ Show mini chat
-     */
+    // ✅ REQUIREMENT 1: WindowManager configuration cho Mini Chat
     private fun showMiniChat(userId: String, userName: String, avatarUrl: String) {
         android.util.Log.d("BubbleService", "💬 Showing mini chat: $userName")
 
         try {
-            // Remove existing mini chat
             miniChatWindow?.let {
                 try {
                     it.cleanup()
                     windowManager?.removeView(it)
                 } catch (e: Exception) {
-                    android.util.Log.e("BubbleService", "⚠️ Error removing mini chat: $e")
+                    android.util.Log.e("BubbleService", "⚠️ Error removing old mini chat: $e")
                 }
             }
 
-            // Create mini chat
-            val miniChat = MiniChatWindow(this, userId, userName, avatarUrl)
+            val miniChat = try {
+                MiniChatWindow(this, userId, userName, avatarUrl)
+            } catch (e: Exception) {
+                android.util.Log.e("BubbleService", "❌ Failed to create MiniChatWindow: $e")
+                android.util.Log.e("BubbleService", "Stack trace: ${e.stackTraceToString()}")
+                return
+            }
+
             currentMiniChatUserId = userId
 
-            // Set listeners
             miniChat.setOnMinimizeListener {
                 android.util.Log.d("BubbleService", "⬇️ Minimize mini chat")
                 hideMiniChat()
@@ -313,7 +293,6 @@ class BubbleOverlayService : Service() {
 
             miniChat.setOnMessageSentListener { message ->
                 android.util.Log.d("BubbleService", "✉️ Message sent: $message")
-
                 val intent = Intent("CHAT_BUBBLE_MESSAGE").apply {
                     putExtra("userId", userId)
                     putExtra("message", message)
@@ -321,7 +300,7 @@ class BubbleOverlayService : Service() {
                 sendBroadcast(intent)
             }
 
-            // Layout params
+            // ✅ REQUIREMENT 1: Proper WindowManager.LayoutParams
             val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             } else {
@@ -329,10 +308,17 @@ class BubbleOverlayService : Service() {
                 WindowManager.LayoutParams.TYPE_PHONE
             }
 
+            // ✅ Calculate proper size (90% width, 70% height)
+            val width = (screenWidth * 0.9).toInt()
+            val height = (screenHeight * 0.7).toInt()
+
+            android.util.Log.d("BubbleService", "📏 Mini chat size: ${width}x${height}")
+
             val params = WindowManager.LayoutParams(
-                (screenWidth * 0.9).toInt(),
-                (screenHeight * 0.7).toInt(),
+                width,
+                height,
                 layoutFlag,
+                // ✅ CRITICAL: Use FLAG_NOT_TOUCH_MODAL to allow input focus
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                         WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
                         WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
@@ -341,18 +327,20 @@ class BubbleOverlayService : Service() {
                 gravity = Gravity.CENTER
             }
 
-            windowManager?.addView(miniChat, params)
-            miniChatWindow = miniChat
-
-            android.util.Log.d("BubbleService", "✅ Mini chat opened")
+            try {
+                windowManager?.addView(miniChat, params)
+                miniChatWindow = miniChat
+                android.util.Log.d("BubbleService", "✅ Mini chat opened successfully")
+            } catch (e: Exception) {
+                android.util.Log.e("BubbleService", "❌ Failed to add mini chat to window: $e")
+                android.util.Log.e("BubbleService", "Stack trace: ${e.stackTraceToString()}")
+            }
         } catch (e: Exception) {
             android.util.Log.e("BubbleService", "❌ Failed to show mini chat: $e")
+            android.util.Log.e("BubbleService", "Stack trace: ${e.stackTraceToString()}")
         }
     }
 
-    /**
-     * ✅ Hide mini chat
-     */
     private fun hideMiniChat() {
         try {
             miniChatWindow?.let { view ->
@@ -367,9 +355,6 @@ class BubbleOverlayService : Service() {
         }
     }
 
-    /**
-     * ✅ Create notification channel
-     */
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -386,9 +371,6 @@ class BubbleOverlayService : Service() {
         }
     }
 
-    /**
-     * ✅ Create notification
-     */
     private fun createNotification(): Notification {
         val bubbleCount = bubbleViews.size
         val hasMiniChat = miniChatWindow != null
@@ -410,14 +392,10 @@ class BubbleOverlayService : Service() {
             .build()
     }
 
-    /**
-     * ✅ Cleanup
-     */
     override fun onDestroy() {
         try {
             BubbleManager.cleanup()
 
-            // Remove all bubbles
             bubbleViews.values.forEach { view ->
                 try {
                     windowManager?.removeView(view)
@@ -427,7 +405,6 @@ class BubbleOverlayService : Service() {
             }
             bubbleViews.clear()
 
-            // Remove mini chat
             miniChatWindow?.let {
                 try {
                     it.cleanup()

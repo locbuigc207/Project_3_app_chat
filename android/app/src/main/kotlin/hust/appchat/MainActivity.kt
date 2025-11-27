@@ -217,7 +217,7 @@ class MainActivity : FlutterActivity() {
     }
 
     // ===========================================
-    // BROADCAST RECEIVERS - FIXED
+    // BROADCAST RECEIVERS - ✅ FIXED API COMPATIBILITY
     // ===========================================
     private fun setupBubbleListeners() {
         // ✅ Bubble click listener
@@ -230,7 +230,7 @@ class MainActivity : FlutterActivity() {
 
                     android.util.Log.d("MainActivity", "🫧 Bubble clicked broadcast received: $userName")
 
-                    // ✅ Send to Flutter via EventSink
+                    // Send to Flutter via EventSink
                     eventSink?.success(
                         mapOf(
                             "type" to "click",
@@ -252,7 +252,7 @@ class MainActivity : FlutterActivity() {
 
                     android.util.Log.d("MainActivity", "💬 Mini chat message broadcast received from $userId")
 
-                    // ✅ Send to Flutter via EventSink
+                    // Send to Flutter via EventSink
                     eventSink?.success(
                         mapOf(
                             "type" to "message",
@@ -264,20 +264,26 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        // ✅ Register receivers with proper flags
+        // ✅ FIXED: Register receivers with API compatibility
         try {
             val clickFilter = IntentFilter("CHAT_BUBBLE_CLICKED")
             val messageFilter = IntentFilter("CHAT_BUBBLE_MESSAGE")
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                // Android 13+ (API 33+): Must specify RECEIVER_EXPORTED or RECEIVER_NOT_EXPORTED
                 registerReceiver(bubbleClickReceiver, clickFilter, Context.RECEIVER_EXPORTED)
                 registerReceiver(bubbleMessageReceiver, messageFilter, Context.RECEIVER_EXPORTED)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                // Android 8-12 (API 26-32): Use registerReceiver without flags
+                registerReceiver(bubbleClickReceiver, clickFilter)
+                registerReceiver(bubbleMessageReceiver, messageFilter)
             } else {
+                // Android 7 and below (API < 26): Legacy registration
                 registerReceiver(bubbleClickReceiver, clickFilter)
                 registerReceiver(bubbleMessageReceiver, messageFilter)
             }
 
-            android.util.Log.d("MainActivity", "✅ Broadcast receivers registered successfully")
+            android.util.Log.d("MainActivity", "✅ Broadcast receivers registered successfully (API ${Build.VERSION.SDK_INT})")
         } catch (e: Exception) {
             android.util.Log.e("MainActivity", "❌ Error registering receivers: $e")
         }
