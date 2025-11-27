@@ -1,19 +1,16 @@
-// android/app/src/main/kotlin/hust/appchat/bubble/BubbleManager.kt - COMPLETE FIXED
+// android/app/src/main/kotlin/hust/appchat/bubble/BubbleManager.kt - ENHANCED
 package hust.appchat.bubble
 
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Build
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 
 /**
- * BubbleManager - Quản lý toàn bộ lifecycle của chat bubbles
- * ✅ NEW Features:
- * - Multi-bubble layout optimization
- * - Persistence support
- * - Better error handling
+ * ✅ ENHANCED: BubbleManager với screen rotation & lifecycle support
  */
 object BubbleManager {
     private val activeBubbles = mutableMapOf<String, BubbleData>()
@@ -21,9 +18,14 @@ object BubbleManager {
     private var auth: FirebaseAuth? = null
     private val messageListeners = mutableMapOf<String, ListenerRegistration>()
 
-    // ✅ NEW: Track bubble positions for layout optimization
+    // ✅ NEW: Position tracking với screen orientation
     private val bubblePositions = mutableMapOf<String, BubblePosition>()
     private var nextYPosition = 200
+
+    // ✅ NEW: Screen dimensions tracking
+    private var lastScreenWidth = 0
+    private var lastScreenHeight = 0
+    private var lastOrientation = Configuration.ORIENTATION_UNDEFINED
 
     data class BubbleData(
         val userId: String,
@@ -37,22 +39,88 @@ object BubbleManager {
     data class BubblePosition(
         var x: Int,
         var y: Int,
-        val userId: String
+        val userId: String,
+        var isRelative: Boolean = false // ✅ NEW: For percentage-based positioning
     )
 
     fun init(context: Context) {
         try {
             firestore = FirebaseFirestore.getInstance()
             auth = FirebaseAuth.getInstance()
+
+            // ✅ NEW: Store initial screen dimensions
+            updateScreenDimensions(context)
+
             android.util.Log.d("BubbleManager", "✅ Initialized")
         } catch (e: Exception) {
             android.util.Log.e("BubbleManager", "❌ Failed to init Firebase: $e")
         }
     }
 
-    /**
-     * ✅ UPDATED: Show bubble with layout optimization
-     */
+    // ✅ NEW: Handle configuration changes (rotation)
+    fun onConfigurationChanged(context: Context, newConfig: Configuration) {
+        if (newConfig.orientation != lastOrientation) {
+            android.util.Log.d("BubbleManager", "📱 Orientation changed: ${newConfig.orientation}")
+
+            val oldWidth = lastScreenWidth
+            val oldHeight = lastScreenHeight
+
+            updateScreenDimensions(context)
+
+            // ✅ Reposition all bubbles for new orientation
+            repositionBubblesForRotation(context, oldWidth, oldHeight)
+
+            lastOrientation = newConfig.orientation
+        }
+    }
+
+    private fun updateScreenDimensions(context: Context) {
+        val displayMetrics = context.resources.displayMetrics
+        lastScreenWidth = displayMetrics.widthPixels
+        lastScreenHeight = displayMetrics.heightPixels
+
+        android.util.Log.d("BubbleManager", "📱 Screen: ${lastScreenWidth}x${lastScreenHeight}")
+    }
+
+    // ✅ NEW: Reposition bubbles after rotation
+    private fun repositionBubblesForRotation(
+        context: Context,
+        oldWidth: Int,
+        oldHeight: Int
+    ) {
+        if (activeBubbles.isEmpty()) return
+
+        bubblePositions.forEach { (userId, position) ->
+            // Convert to percentage-based positioning
+            val xPercent = position.x.toFloat() / oldWidth
+            val yPercent = position.y.toFloat() / oldHeight
+
+            // Calculate new position
+            position.x = (xPercent * lastScreenWidth).toInt()
+            position.y = (yPercent * lastScreenHeight).toInt()
+
+            // Ensure within bounds
+            position.x = position.x.coerceIn(0, lastScreenWidth - 100)
+            position.y = position.y.coerceIn(0, lastScreenHeight - 100)
+
+            // Update bubble position
+            val intent = Intent(context, BubbleOverlayService::class.java).apply {
+                action = "UPDATE_BUBBLE_POSITION"
+                putExtra("userId", userId)
+                putExtra("positionX", position.x)
+                putExtra("positionY", position.y)
+            }
+
+            try {
+                context.startService(intent)
+            } catch (e: Exception) {
+                android.util.Log.e("BubbleManager", "❌ Failed to update position: $e")
+            }
+        }
+
+        android.util.Log.d("BubbleManager", "✅ Repositioned ${activeBubbles.size} bubbles after rotation")
+    }
+
     fun showBubble(
         context: Context,
         userId: String,
@@ -73,8 +141,8 @@ object BubbleManager {
             bubbleData.timestamp = System.currentTimeMillis()
         }
 
-        // ✅ Calculate position for new bubble
-        val position = calculateBubblePosition(userId)
+        // ✅ Calculate position (handle rotation)
+        val position = calculateBubblePosition(context, userId)
 
         // Start service to show bubble
         val intent = Intent(context, BubbleOverlayService::class.java).apply {
@@ -103,50 +171,37 @@ object BubbleManager {
         listenToMessages(context, userId)
     }
 
-    /**
-     * ✅ NEW: Calculate optimal position for new bubble
-     * Prevents overlap and arranges bubbles vertically
-     */
-    private fun calculateBubblePosition(userId: String): BubblePosition {
+    private fun calculateBubblePosition(context: Context, userId: String): BubblePosition {
         // Check if bubble already has position
         bubblePositions[userId]?.let {
             return it
         }
 
-        // Calculate new position
-        val screenWidth = android.content.res.Resources.getSystem().displayMetrics.widthPixels
-        val x = screenWidth - 100 // Right edge
+        // ✅ IMPROVED: Smart positioning based on screen size
+        updateScreenDimensions(context)
 
-        // ✅ NEW: Smart vertical positioning
+        val x = lastScreenWidth - 100 // Right edge
+
+        // ✅ Vertical stacking with dynamic spacing
+        val bubbleHeight = 80
+        val maxBubblesVisible = (lastScreenHeight - 300) / bubbleHeight
+
         val y = if (activeBubbles.size <= 1) {
             200 // First bubble
         } else {
-            // Stack bubbles with 80dp spacing
-            nextYPosition
+            // Stack with spacing, wrap if too many
+            val index = (activeBubbles.size - 1) % maxBubblesVisible
+            200 + (index * bubbleHeight)
         }
 
         val position = BubblePosition(x, y, userId)
         bubblePositions[userId] = position
 
-        // Update next position
-        nextYPosition += 80
-
-        // ✅ Reset if too many bubbles (> 8)
-        if (activeBubbles.size > 8) {
-            nextYPosition = 200
-        }
-
-        android.util.Log.d(
-            "BubbleManager",
-            "📍 Position for $userId: x=$x, y=$y"
-        )
+        android.util.Log.d("BubbleManager", "📍 Position for $userId: x=$x, y=$y")
 
         return position
     }
 
-    /**
-     * ✅ UPDATED: Listen to realtime messages
-     */
     private fun listenToMessages(context: Context, userId: String) {
         if (messageListeners.containsKey(userId)) {
             android.util.Log.d("BubbleManager", "ℹ️ Already listening for: $userId")
@@ -178,10 +233,7 @@ object BubbleManager {
                             val message = change.document.getString("content") ?: ""
                             val type = change.document.getLong("type")?.toInt() ?: 0
 
-                            android.util.Log.d(
-                                "BubbleManager",
-                                "📨 New message from $userId: $message"
-                            )
+                            android.util.Log.d("BubbleManager", "📨 New message from $userId: $message")
 
                             // Update bubble
                             activeBubbles[userId]?.let { bubble ->
@@ -203,9 +255,6 @@ object BubbleManager {
         }
     }
 
-    /**
-     * ✅ Notify service to update bubble
-     */
     private fun notifyBubbleUpdate(context: Context, userId: String, bubble: BubbleData) {
         val intent = Intent(context, BubbleOverlayService::class.java).apply {
             action = BubbleOverlayService.ACTION_UPDATE_BUBBLE
@@ -221,9 +270,6 @@ object BubbleManager {
         }
     }
 
-    /**
-     * ✅ UPDATED: Remove bubble and cleanup position
-     */
     fun removeBubble(context: Context, userId: String) {
         android.util.Log.d("BubbleManager", "🗑️ Removing bubble: $userId")
 
@@ -247,9 +293,6 @@ object BubbleManager {
         repositionBubbles(context)
     }
 
-    /**
-     * ✅ NEW: Reposition bubbles after removal
-     */
     private fun repositionBubbles(context: Context) {
         if (activeBubbles.isEmpty()) {
             nextYPosition = 200
@@ -264,22 +307,13 @@ object BubbleManager {
 
         nextYPosition = yPos
 
-        android.util.Log.d(
-            "BubbleManager",
-            "📍 Repositioned ${activeBubbles.size} bubbles"
-        )
+        android.util.Log.d("BubbleManager", "📍 Repositioned ${activeBubbles.size} bubbles")
     }
 
-    /**
-     * ✅ Reset unread count
-     */
     fun markAsRead(userId: String) {
         activeBubbles[userId]?.unreadCount = 0
     }
 
-    /**
-     * ✅ Get current user ID
-     */
     fun getCurrentUserId(): String? {
         return try {
             auth?.currentUser?.uid
@@ -289,30 +323,36 @@ object BubbleManager {
         }
     }
 
-    /**
-     * ✅ Get bubble data
-     */
     fun getBubbleData(userId: String): BubbleData? {
         return activeBubbles[userId]
     }
 
-    /**
-     * ✅ Check if bubble is active
-     */
     fun isBubbleActive(userId: String): Boolean {
         return activeBubbles.containsKey(userId)
     }
 
-    /**
-     * ✅ Get all active bubbles
-     */
     fun getActiveBubbles(): Map<String, BubbleData> {
         return activeBubbles.toMap()
     }
 
-    /**
-     * ✅ Cleanup all resources
-     */
+    // ✅ NEW: Lifecycle methods
+    fun onAppPaused() {
+        android.util.Log.d("BubbleManager", "⏸️ App paused - bubbles persist")
+    }
+
+    fun onAppResumed(context: Context) {
+        android.util.Log.d("BubbleManager", "▶️ App resumed - checking bubbles")
+
+        // Verify all active bubbles still exist
+        activeBubbles.keys.toList().forEach { userId ->
+            val bubble = activeBubbles[userId]
+            if (bubble != null) {
+                // Refresh bubble
+                showBubble(context, userId, bubble.userName, bubble.avatarUrl)
+            }
+        }
+    }
+
     fun cleanup() {
         android.util.Log.d("BubbleManager", "🧹 Cleaning up")
 
@@ -328,6 +368,7 @@ object BubbleManager {
         activeBubbles.clear()
         bubblePositions.clear()
         nextYPosition = 200
+        lastOrientation = Configuration.ORIENTATION_UNDEFINED
 
         android.util.Log.d("BubbleManager", "✅ Cleanup complete")
     }
