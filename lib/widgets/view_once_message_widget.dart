@@ -1,4 +1,4 @@
-// View Once Message Widget
+// lib/widgets/view_once_message_widget.dart - UPDATED (No countdown UI)
 import 'package:flutter/material.dart';
 import 'package:flutter_chat_demo/constants/constants.dart';
 import 'package:flutter_chat_demo/providers/providers.dart';
@@ -29,29 +29,24 @@ class ViewOnceMessageWidget extends StatefulWidget {
 
 class _ViewOnceMessageWidgetState extends State<ViewOnceMessageWidget> {
   bool _isRevealed = false;
-  int _countdown = 10;
 
   void _revealMessage() async {
     setState(() => _isRevealed = true);
 
-    // Mark as viewed
+    // Mark as viewed and schedule auto-delete (10 seconds)
     await widget.provider.markAsViewed(
       groupChatId: widget.groupChatId,
       messageId: widget.messageId,
       userId: widget.currentUserId,
     );
 
-    // Start countdown
-    for (int i = 10; i > 0; i--) {
-      await Future.delayed(const Duration(seconds: 1));
-      if (mounted) {
-        setState(() => _countdown = i - 1);
-      }
-    }
+    // Message will be auto-deleted by the provider after 10 seconds
+    // No need to show countdown UI
   }
 
   @override
   Widget build(BuildContext context) {
+    // Already viewed and not revealed = show "opened" message
     if (widget.isViewed && !_isRevealed) {
       return Container(
         padding: const EdgeInsets.all(16),
@@ -76,6 +71,7 @@ class _ViewOnceMessageWidgetState extends State<ViewOnceMessageWidget> {
       );
     }
 
+    // Not yet viewed = show "tap to view" button
     if (!_isRevealed) {
       return GestureDetector(
         onTap: _revealMessage,
@@ -107,63 +103,43 @@ class _ViewOnceMessageWidgetState extends State<ViewOnceMessageWidget> {
       );
     }
 
-    return Stack(
-      children: [
-        // Message Content
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: ColorConstants.greyColor2,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: widget.type == TypeMessage.text
-              ? Text(widget.content)
-              : widget.type == TypeMessage.image
-              ? Image.network(
-            widget.content,
-            width: 200,
-            height: 200,
-            fit: BoxFit.cover,
-          )
-              : const SizedBox.shrink(),
-        ),
-
-        // Countdown Overlay
-        Positioned(
-          top: 8,
-          right: 8,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.7),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.timer,
-                  size: 16,
-                  color: Colors.white,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  '$_countdown',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
+    // Revealed = show actual message content (will auto-delete after 10s)
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: ColorConstants.greyColor2,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: widget.type == TypeMessage.text
+          ? Text(
+              widget.content,
+              style: const TextStyle(
+                color: ColorConstants.primaryColor,
+                fontSize: 14,
+              ),
+            )
+          : widget.type == TypeMessage.image
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    widget.content,
+                    width: 200,
+                    height: 200,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      width: 200,
+                      height: 200,
+                      color: ColorConstants.greyColor2,
+                      child: const Icon(Icons.error),
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
+                )
+              : const SizedBox.shrink(),
     );
   }
 }
 
-// Send View Once Dialog
+// Send View Once Dialog (unchanged)
 class SendViewOnceDialog extends StatefulWidget {
   final Function(String content, int type) onSend;
 
@@ -191,7 +167,7 @@ class _SendViewOnceDialogState extends State<SendViewOnceDialog> {
         mainAxisSize: MainAxisSize.min,
         children: [
           const Text(
-            'This message will disappear after being opened',
+            'This message will disappear 10 seconds after being opened',
             style: TextStyle(
               color: ColorConstants.greyColor,
               fontSize: 14,
@@ -211,6 +187,7 @@ class _SendViewOnceDialogState extends State<SendViewOnceDialog> {
                     backgroundColor: _isText
                         ? ColorConstants.primaryColor
                         : ColorConstants.greyColor2,
+                    foregroundColor: _isText ? Colors.white : Colors.black,
                   ),
                 ),
               ),
@@ -226,6 +203,7 @@ class _SendViewOnceDialogState extends State<SendViewOnceDialog> {
                     backgroundColor: !_isText
                         ? ColorConstants.primaryColor
                         : ColorConstants.greyColor2,
+                    foregroundColor: !_isText ? Colors.white : Colors.black,
                   ),
                 ),
               ),

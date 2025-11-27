@@ -43,6 +43,23 @@
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 
+    <queries>
+        <!-- For opening URLs in browser -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+        <!-- For Google Maps -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
+        </intent>
+    </queries>
+
     <application
         android:icon="@mipmap/ic_launcher"
         android:label="flutter_chat"

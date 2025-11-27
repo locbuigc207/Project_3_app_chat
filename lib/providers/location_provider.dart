@@ -1,24 +1,57 @@
-// lib/providers/location_provider.dart - COMPLETE FIXED
+// lib/providers/location_provider.dart - MODERN UPGRADE
+import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
+
+class LocationData {
+  final double latitude;
+  final double longitude;
+  final String address;
+  final String shortAddress;
+  final String mapsUrl;
+
+  LocationData({
+    required this.latitude,
+    required this.longitude,
+    required this.address,
+    required this.shortAddress,
+    required this.mapsUrl,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'latitude': latitude,
+      'longitude': longitude,
+      'address': address,
+      'shortAddress': shortAddress,
+      'mapsUrl': mapsUrl,
+    };
+  }
+
+  factory LocationData.fromJson(Map<String, dynamic> json) {
+    return LocationData(
+      latitude: json['latitude'] ?? 0.0,
+      longitude: json['longitude'] ?? 0.0,
+      address: json['address'] ?? '',
+      shortAddress: json['shortAddress'] ?? '',
+      mapsUrl: json['mapsUrl'] ?? '',
+    );
+  }
+}
 
 class LocationProvider {
   /// Request location permission
   Future<bool> requestLocationPermission() async {
     try {
-      // Check if location services are enabled
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         print('❌ Location services are disabled');
-        // Try to open location settings
         await Geolocator.openLocationSettings();
         return false;
       }
 
-      // Check current permission status
       LocationPermission permission = await Geolocator.checkPermission();
 
       if (permission == LocationPermission.denied) {
-        // Request permission
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
           print('❌ Location permission denied');
@@ -28,7 +61,6 @@ class LocationProvider {
 
       if (permission == LocationPermission.deniedForever) {
         print('❌ Location permission permanently denied');
-        // Open app settings to allow user to enable
         await Geolocator.openAppSettings();
         return false;
       }
@@ -41,29 +73,44 @@ class LocationProvider {
     }
   }
 
-  /// Check if location permission is granted
-  Future<bool> hasLocationPermission() async {
+  /// Get current location with full details (like Zalo/Messenger)
+  Future<LocationData?> getCurrentLocationWithDetails() async {
     try {
-      final permission = await Geolocator.checkPermission();
-      return permission == LocationPermission.always ||
-          permission == LocationPermission.whileInUse;
+      // Get position
+      final position = await getCurrentLocation();
+      if (position == null) return null;
+
+      // Get address from coordinates (reverse geocoding)
+      final address = await _getAddressFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+
+      // Generate Maps URL
+      final mapsUrl = generateMapsLink(position);
+
+      return LocationData(
+        latitude: position.latitude,
+        longitude: position.longitude,
+        address: address['full'] ?? 'Unknown location',
+        shortAddress: address['short'] ?? 'Unknown',
+        mapsUrl: mapsUrl,
+      );
     } catch (e) {
-      print('❌ Error checking permission: $e');
-      return false;
+      print('❌ Error getting location with details: $e');
+      return null;
     }
   }
 
-  /// Get current location
+  /// Get current position
   Future<Position?> getCurrentLocation() async {
     try {
-      // Check if location service is enabled
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         print('❌ Location services are disabled');
         return null;
       }
 
-      // Check permission
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
@@ -78,7 +125,6 @@ class LocationProvider {
         return null;
       }
 
-      // Get position with timeout
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
@@ -94,24 +140,81 @@ class LocationProvider {
     }
   }
 
-  /// Get last known location (faster, might be less accurate)
-  Future<Position?> getLastKnownLocation() async {
+  /// Get address from coordinates (reverse geocoding)
+  Future<Map<String, String>> _getAddressFromCoordinates(
+    double latitude,
+    double longitude,
+  ) async {
     try {
-      final position = await Geolocator.getLastKnownPosition();
-      if (position != null) {
-        print(
-            '✅ Last known location: ${position.latitude}, ${position.longitude}');
-      }
-      return position;
-    } catch (e) {
-      print('❌ Error getting last known location: $e');
-      return null;
-    }
-  }
+      List<Placemark> placemarks = await placemarkFromCoordinates(
+        latitude,
+        longitude,
+      );
 
-  /// Format location for message
-  String formatLocation(Position position) {
-    return '📍 Location: ${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}';
+      if (placemarks.isEmpty) {
+        return {
+          'full':
+              'Lat: ${latitude.toStringAsFixed(6)}, Lng: ${longitude.toStringAsFixed(6)}',
+          'short': 'Unknown location',
+        };
+      }
+
+      final place = placemarks.first;
+
+      // Build full address (like Messenger/Zalo)
+      List<String> addressParts = [];
+
+      if (place.name != null && place.name!.isNotEmpty) {
+        addressParts.add(place.name!);
+      }
+      if (place.street != null &&
+          place.street!.isNotEmpty &&
+          place.street != place.name) {
+        addressParts.add(place.street!);
+      }
+      if (place.subLocality != null && place.subLocality!.isNotEmpty) {
+        addressParts.add(place.subLocality!);
+      }
+      if (place.locality != null && place.locality!.isNotEmpty) {
+        addressParts.add(place.locality!);
+      }
+      if (place.administrativeArea != null &&
+          place.administrativeArea!.isNotEmpty) {
+        addressParts.add(place.administrativeArea!);
+      }
+      if (place.country != null && place.country!.isNotEmpty) {
+        addressParts.add(place.country!);
+      }
+
+      final fullAddress = addressParts.isNotEmpty
+          ? addressParts.join(', ')
+          : 'Lat: ${latitude.toStringAsFixed(6)}, Lng: ${longitude.toStringAsFixed(6)}';
+
+      // Build short address (for preview)
+      List<String> shortParts = [];
+      if (place.name != null && place.name!.isNotEmpty) {
+        shortParts.add(place.name!);
+      }
+      if (place.locality != null && place.locality!.isNotEmpty) {
+        shortParts.add(place.locality!);
+      }
+
+      final shortAddress = shortParts.isNotEmpty
+          ? shortParts.join(', ')
+          : place.country ?? 'Unknown location';
+
+      return {
+        'full': fullAddress,
+        'short': shortAddress,
+      };
+    } catch (e) {
+      print('❌ Error getting address: $e');
+      return {
+        'full':
+            'Lat: ${latitude.toStringAsFixed(6)}, Lng: ${longitude.toStringAsFixed(6)}',
+        'short': 'Unknown location',
+      };
+    }
   }
 
   /// Generate Google Maps link
@@ -119,57 +222,74 @@ class LocationProvider {
     return 'https://www.google.com/maps?q=${position.latitude},${position.longitude}';
   }
 
-  /// Generate Apple Maps link
-  String generateAppleMapsLink(Position position) {
-    return 'https://maps.apple.com/?q=${position.latitude},${position.longitude}';
-  }
+  /// Format location message (modern style like Zalo/Messenger)
+  String formatLocationMessage(LocationData locationData) {
+    return '''📍 Location
+${locationData.address}
 
-  /// Generate full location message with link
-  String generateLocationMessage(Position position) {
-    final locationText = formatLocation(position);
-    final mapsLink = generateMapsLink(position);
-    return '$locationText\n$mapsLink';
+🗺️ View on map: ${locationData.mapsUrl}''';
   }
 
   /// Parse location from message
-  Map<String, double>? parseLocation(String message) {
+  LocationData? parseLocationFromMessage(String message) {
     try {
-      // Pattern: Location: lat, lng or 📍 Location: lat, lng
-      final patterns = [
-        RegExp(r'Location:\s*([-\d.]+),\s*([-\d.]+)'),
-        RegExp(r'📍\s*Location:\s*([-\d.]+),\s*([-\d.]+)'),
-        RegExp(r'([-\d.]+),\s*([-\d.]+)'), // Simple lat,lng format
-      ];
+      // Extract coordinates
+      final coordPattern = RegExp(r'([-\d.]+),\s*([-\d.]+)');
+      final coordMatch = coordPattern.firstMatch(message);
 
-      for (final pattern in patterns) {
-        final match = pattern.firstMatch(message);
-        if (match != null && match.groupCount >= 2) {
-          final lat = double.tryParse(match.group(1)!);
-          final lng = double.tryParse(match.group(2)!);
+      if (coordMatch == null) return null;
 
-          if (lat != null && lng != null) {
-            // Validate coordinates
-            if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-              return {
-                'latitude': lat,
-                'longitude': lng,
-              };
-            }
-          }
-        }
+      final lat = double.tryParse(coordMatch.group(1)!);
+      final lng = double.tryParse(coordMatch.group(2)!);
+
+      if (lat == null || lng == null) return null;
+
+      // Validate coordinates
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        return null;
       }
-      return null;
+
+      // Extract address (text between 📍 Location and 🗺️)
+      String address = 'Location';
+      final addressPattern = RegExp(r'📍 Location\n(.*?)\n\n🗺️', dotAll: true);
+      final addressMatch = addressPattern.firstMatch(message);
+
+      if (addressMatch != null && addressMatch.group(1) != null) {
+        address = addressMatch.group(1)!.trim();
+      }
+
+      // Extract Maps URL
+      String mapsUrl = generateMapsLinkFromCoords(lat, lng);
+      final urlPattern =
+          RegExp(r'https://www\.google\.com/maps\?q=[-\d.]+,[-\d.]+');
+      final urlMatch = urlPattern.firstMatch(message);
+
+      if (urlMatch != null) {
+        mapsUrl = urlMatch.group(0)!;
+      }
+
+      return LocationData(
+        latitude: lat,
+        longitude: lng,
+        address: address,
+        shortAddress: address.split(',').first,
+        mapsUrl: mapsUrl,
+      );
     } catch (e) {
       print('❌ Error parsing location: $e');
       return null;
     }
   }
 
+  /// Generate Maps link from coordinates
+  String generateMapsLinkFromCoords(double lat, double lng) {
+    return 'https://www.google.com/maps?q=$lat,$lng';
+  }
+
   /// Check if message contains location
   bool isLocationMessage(String message) {
-    return parseLocation(message) != null ||
-        message.contains('google.com/maps') ||
-        message.contains('maps.apple.com');
+    return message.contains('📍 Location') &&
+        message.contains('🗺️ View on map:');
   }
 
   /// Calculate distance between two positions
@@ -186,20 +306,29 @@ class LocationProvider {
   String formatDistance(double meters) {
     if (meters < 1000) {
       return '${meters.toStringAsFixed(0)} m';
-    } else {
+    } else if (meters < 10000) {
       return '${(meters / 1000).toStringAsFixed(1)} km';
+    } else {
+      return '${(meters / 1000).toStringAsFixed(0)} km';
     }
   }
 
-  /// Get address from coordinates (reverse geocoding)
-  /// Note: This requires additional setup with a geocoding service
-  Future<String?> getAddressFromCoordinates(Position position) async {
-    // For full address lookup, you would integrate with:
-    // - Google Geocoding API
-    // - OpenStreetMap Nominatim
-    // - Mapbox Geocoding
-    // For now, return formatted coordinates
-    return 'Lat: ${position.latitude.toStringAsFixed(4)}, Lng: ${position.longitude.toStringAsFixed(4)}';
+  /// Get nearby places name (simplified)
+  Future<String?> getNearbyPlaceName(double latitude, double longitude) async {
+    try {
+      List<Placemark> placemarks = await placemarkFromCoordinates(
+        latitude,
+        longitude,
+      );
+
+      if (placemarks.isEmpty) return null;
+
+      final place = placemarks.first;
+      return place.name ?? place.street ?? place.locality;
+    } catch (e) {
+      print('❌ Error getting nearby place: $e');
+      return null;
+    }
   }
 
   /// Stream location updates

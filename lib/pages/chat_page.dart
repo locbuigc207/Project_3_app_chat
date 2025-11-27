@@ -1289,14 +1289,15 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
     if (mounted) setState(() => _isLoading = true);
 
-    final position = await _locationProvider!.getCurrentLocation();
+    // ✅ FIX: Get location with full details
+    final locationData =
+        await _locationProvider!.getCurrentLocationWithDetails();
 
     if (mounted && !_isDisposed) setState(() => _isLoading = false);
 
-    if (position != null && !_isDisposed) {
-      final locationText = _locationProvider!.formatLocation(position);
-      final mapsLink = _locationProvider!.generateMapsLink(position);
-      final message = '$locationText\n$mapsLink';
+    if (locationData != null && !_isDisposed) {
+      // ✅ FIX: Use formatLocationMessage from provider
+      final message = _locationProvider!.formatLocationMessage(locationData);
 
       await _onSendMessageWithAutoDelete(message, TypeMessage.text);
       Fluttertoast.showToast(msg: '📍 Location shared');
@@ -1568,7 +1569,8 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
     // Text Message
     if (messageChat.type == TypeMessage.text) {
-      final location = _locationProvider?.parseLocation(messageChat.content);
+      final location =
+          _locationProvider?.parseLocationFromMessage(messageChat.content);
 
       return Container(
         margin: EdgeInsets.only(bottom: 10),
