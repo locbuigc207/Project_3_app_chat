@@ -1,4 +1,5 @@
-// android/app/src/main/kotlin/hust/appchat/bubble/BubbleManager.kt - ENHANCED
+// android/app/src/main/kotlin/hust/appchat/bubble/BubbleManager.kt - HOÀN CHỈNH
+
 package hust.appchat.bubble
 
 import android.content.Context
@@ -8,9 +9,11 @@ import android.os.Build
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import java.text.SimpleDateFormat // Import cần thiết cho formatTimestamp
+import java.util.* // Import cần thiết cho formatTimestamp
 
 /**
- * ✅ ENHANCED: BubbleManager với screen rotation & lifecycle support
+ * ✅ HOÀN CHỈNH: BubbleManager với đầy đủ tính năng: quản lý trạng thái, xoay màn hình, và thông báo cập nhật badge unread
  */
 object BubbleManager {
     private val activeBubbles = mutableMapOf<String, BubbleData>()
@@ -18,11 +21,11 @@ object BubbleManager {
     private var auth: FirebaseAuth? = null
     private val messageListeners = mutableMapOf<String, ListenerRegistration>()
 
-    // ✅ NEW: Position tracking với screen orientation
+    // ✅ Position tracking với screen orientation
     private val bubblePositions = mutableMapOf<String, BubblePosition>()
     private var nextYPosition = 200
 
-    // ✅ NEW: Screen dimensions tracking
+    // ✅ Screen dimensions tracking
     private var lastScreenWidth = 0
     private var lastScreenHeight = 0
     private var lastOrientation = Configuration.ORIENTATION_UNDEFINED
@@ -40,7 +43,7 @@ object BubbleManager {
         var x: Int,
         var y: Int,
         val userId: String,
-        var isRelative: Boolean = false // ✅ NEW: For percentage-based positioning
+        var isRelative: Boolean = false
     )
 
     fun init(context: Context) {
@@ -48,7 +51,7 @@ object BubbleManager {
             firestore = FirebaseFirestore.getInstance()
             auth = FirebaseAuth.getInstance()
 
-            // ✅ NEW: Store initial screen dimensions
+            // ✅ Store initial screen dimensions
             updateScreenDimensions(context)
 
             android.util.Log.d("BubbleManager", "✅ Initialized")
@@ -57,7 +60,18 @@ object BubbleManager {
         }
     }
 
-    // ✅ NEW: Handle configuration changes (rotation)
+    // ⭐ BỔ SUNG: Hàm formatTimestamp (sử dụng cho MiniChatWindow hiển thị Last seen)
+    fun formatTimestamp(timestamp: Long): String {
+        return try {
+            val date = Date(timestamp)
+            val formatter = SimpleDateFormat("HH:mm dd/MM/yyyy", Locale.getDefault())
+            formatter.format(date)
+        } catch (e: Exception) {
+            "Unknown"
+        }
+    }
+
+    // ✅ Handle configuration changes (rotation)
     fun onConfigurationChanged(context: Context, newConfig: Configuration) {
         if (newConfig.orientation != lastOrientation) {
             android.util.Log.d("BubbleManager", "📱 Orientation changed: ${newConfig.orientation}")
@@ -82,7 +96,7 @@ object BubbleManager {
         android.util.Log.d("BubbleManager", "📱 Screen: ${lastScreenWidth}x${lastScreenHeight}")
     }
 
-    // ✅ NEW: Reposition bubbles after rotation
+    // ✅ Reposition bubbles after rotation
     private fun repositionBubblesForRotation(
         context: Context,
         oldWidth: Int,
@@ -177,7 +191,7 @@ object BubbleManager {
             return it
         }
 
-        // ✅ IMPROVED: Smart positioning based on screen size
+        // ✅ Smart positioning based on screen size
         updateScreenDimensions(context)
 
         val x = lastScreenWidth - 100 // Right edge
@@ -310,8 +324,22 @@ object BubbleManager {
         android.util.Log.d("BubbleManager", "📍 Repositioned ${activeBubbles.size} bubbles")
     }
 
-    fun markAsRead(userId: String) {
+    // ⭐ SỬA: Hàm markAsRead có Context để gửi Intent xóa badge unread
+    fun markAsRead(context: Context, userId: String) {
         activeBubbles[userId]?.unreadCount = 0
+
+        // Cần gửi lệnh update để Service xóa unread badge
+        val intent = Intent(context, BubbleOverlayService::class.java).apply {
+            action = BubbleOverlayService.ACTION_UPDATE_BUBBLE
+            putExtra("userId", userId)
+            putExtra("unreadCount", 0) // Thiết lập về 0
+            putExtra("lastMessage", activeBubbles[userId]?.lastMessage ?: "")
+        }
+        try {
+            context.startService(intent)
+        } catch (e: Exception) {
+            android.util.Log.e("BubbleManager", "❌ Failed to notify read status update: $e")
+        }
     }
 
     fun getCurrentUserId(): String? {
@@ -335,7 +363,7 @@ object BubbleManager {
         return activeBubbles.toMap()
     }
 
-    // ✅ NEW: Lifecycle methods
+    // ✅ Lifecycle methods
     fun onAppPaused() {
         android.util.Log.d("BubbleManager", "⏸️ App paused - bubbles persist")
     }

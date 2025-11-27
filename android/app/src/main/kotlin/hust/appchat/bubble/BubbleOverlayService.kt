@@ -1,4 +1,5 @@
-// android/app/src/main/kotlin/hust/appchat/bubble/BubbleOverlayService.kt - FIXED
+// android/app/src/main/kotlin/hust/appchat/bubble/BubbleOverlayService.kt - HOÀN CHỈNH VÀ TỐI ƯU
+
 package hust.appchat.bubble
 
 import android.app.*
@@ -9,16 +10,12 @@ import android.os.Build
 import android.os.IBinder
 import android.util.DisplayMetrics
 import android.view.*
+import android.widget.Toast // ⭐ ĐÃ THÊM IMPORT ĐỂ KHẮC PHỤC LỖI BIÊN DỊCH
 import androidx.core.app.NotificationCompat
 import hust.appchat.R
 
 /**
- * ✅ FIXED: Service with proper touch handling & cleanup
- *
- * KEY FIXES:
- * 1. FLAG_NOT_FOCUSABLE for bubbles (NOT FLAG_NOT_TOUCH_MODAL)
- * 2. Proper cleanup of all views when stopping
- * 3. Click handling without broadcast (direct callback)
+ * ✅ FIXED: Service với bộ WindowManager Flags tối ưu nhất
  */
 class BubbleOverlayService : Service() {
 
@@ -31,7 +28,6 @@ class BubbleOverlayService : Service() {
     private var miniChatParams: WindowManager.LayoutParams? = null
     private var currentMiniChatUserId: String? = null
 
-    // ✅ NEW: Delete zone indicator
     private var deleteZoneView: DeleteZoneView? = null
     private var deleteZoneParams: WindowManager.LayoutParams? = null
     private var isDraggingAnyBubble = false
@@ -64,15 +60,12 @@ class BubbleOverlayService : Service() {
             screenWidth = displayMetrics.widthPixels
             screenHeight = displayMetrics.heightPixels
 
-            android.util.Log.d("BubbleService", "📱 Screen: ${screenWidth}x${screenHeight}")
-
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 createNotificationChannel()
             }
 
             BubbleManager.init(this)
 
-            android.util.Log.d("BubbleService", "✅ Service created")
         } catch (e: Exception) {
             android.util.Log.e("BubbleService", "❌ Failed to create service: $e")
         }
@@ -95,8 +88,6 @@ class BubbleOverlayService : Service() {
     }
 
     private fun handleIntent(intent: Intent) {
-        android.util.Log.d("BubbleService", "📨 Received action: ${intent.action}")
-
         try {
             when (intent.action) {
                 ACTION_SHOW_BUBBLE -> {
@@ -153,7 +144,8 @@ class BubbleOverlayService : Service() {
         }
     }
 
-    // ✅ FIXED: Use FLAG_NOT_FOCUSABLE instead of FLAG_NOT_TOUCH_MODAL
+
+    // ⭐ BỘ FLAGS TỐI ƯU NHẤT CHO BUBBLE
     private fun showBubble(
         userId: String,
         userName: String,
@@ -179,7 +171,7 @@ class BubbleOverlayService : Service() {
             bubbleView.updateUnreadCount(unreadCount)
             bubbleView.updateLastMessage(lastMessage)
 
-            // ✅ Set click listener - DIRECT callback, no broadcast
+            // ✅ Set click listener
             bubbleView.setOnClickListener {
                 android.util.Log.d("BubbleService", "🫧 Bubble clicked: $userName")
                 onBubbleClicked(userId, userName, avatarUrl)
@@ -187,7 +179,6 @@ class BubbleOverlayService : Service() {
 
             // ✅ Set drag listener
             bubbleView.setOnDragListener { isInDeleteZone, deltaX, deltaY ->
-                // ✅ Show/hide delete zone
                 if (!isDraggingAnyBubble && (deltaX != 0f || deltaY != 0f)) {
                     isDraggingAnyBubble = true
                     showDeleteZone()
@@ -231,17 +222,16 @@ class BubbleOverlayService : Service() {
                 WindowManager.LayoutParams.TYPE_PHONE
             }
 
-            // ✅ CRITICAL FIX: Use FLAG_NOT_FOCUSABLE for bubbles
+            // ⭐ BỘ FLAGS TỐI ƯU NHẤT CHO BUBBLE (Tương tác + Tránh Clipping)
             val params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 layoutFlag,
-                // ✅ FIXED FLAGS for bubble:
-                // - NOT_FOCUSABLE: Bubble doesn't take focus, passes events through
-                // - WATCH_OUTSIDE_TOUCH: Detect touches outside
+                // Flags cho phép tương tác và xử lý tọa độ/clipping trên mọi ROM:
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                         WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
-                        WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+                        WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.TOP or Gravity.START
@@ -355,7 +345,6 @@ class BubbleOverlayService : Service() {
         }
     }
 
-    // ✅ NEW: Hide all bubbles
     private fun hideAllBubbles() {
         android.util.Log.d("BubbleService", "🗑️ Hiding all bubbles")
 
@@ -393,8 +382,8 @@ class BubbleOverlayService : Service() {
             // Show mini chat
             showMiniChat(userId, userName, avatarUrl)
 
-            // Mark as read
-            BubbleManager.markAsRead(userId)
+            // Mark as read in BubbleManager
+            BubbleManager.markAsRead(this, userId)
 
             // Send broadcast to Flutter (optional)
             val intent = Intent("CHAT_BUBBLE_CLICKED").apply {
@@ -410,7 +399,7 @@ class BubbleOverlayService : Service() {
         }
     }
 
-    // ✅ FIXED: Mini chat with FLAG_NOT_TOUCH_MODAL (allows interaction)
+    // ⭐ BỘ FLAGS TỐI ƯU NHẤT CHO MINI CHAT (Focus + Keyboard)
     private fun showMiniChat(userId: String, userName: String, avatarUrl: String) {
         android.util.Log.d("BubbleService", "💬 Showing mini chat: $userName")
 
@@ -428,8 +417,10 @@ class BubbleOverlayService : Service() {
             val miniChat = try {
                 MiniChatWindow(this, userId, userName, avatarUrl)
             } catch (e: Exception) {
+                // Đây có thể là nguồn gây crash: MiniChatWindow constructor bị lỗi.
                 android.util.Log.e("BubbleService", "❌ Failed to create MiniChatWindow: $e")
                 android.util.Log.e("BubbleService", "Stack trace: ${e.stackTraceToString()}")
+                Toast.makeText(this, "Failed to open chat: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
                 return
             }
 
@@ -468,16 +459,15 @@ class BubbleOverlayService : Service() {
 
             android.util.Log.d("BubbleService", "📏 Mini chat size: ${width}x${height}")
 
-            // ✅ FIXED FLAGS for mini chat:
+            // ⭐ BỘ FLAGS TỐI ƯU NHẤT CHO MINI CHAT (Focus, Keyboard)
             val params = WindowManager.LayoutParams(
                 width,
                 height,
                 layoutFlag,
-                // ✅ NOT_TOUCH_MODAL: Allows interaction within window
-                // ✅ NOT_FOCUSABLE removed: Mini chat NEEDS focus for input
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
-                        WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+                // Flags cho phép tương tác đầy đủ, không chặn sự kiện focus/touch
+                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
+                        WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.CENTER
@@ -493,6 +483,8 @@ class BubbleOverlayService : Service() {
             } catch (e: Exception) {
                 android.util.Log.e("BubbleService", "❌ Failed to add mini chat to window: $e")
                 android.util.Log.e("BubbleService", "Stack trace: ${e.stackTraceToString()}")
+                // Thêm Toast thông báo lỗi nếu không thể add view
+                Toast.makeText(this, "Failed to display chat: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
             }
         } catch (e: Exception) {
             android.util.Log.e("BubbleService", "❌ Failed to show mini chat: $e")
@@ -515,7 +507,6 @@ class BubbleOverlayService : Service() {
         }
     }
 
-    // ✅ NEW: Delete zone management
     private fun showDeleteZone() {
         if (deleteZoneView != null) {
             deleteZoneView?.show()
@@ -550,7 +541,6 @@ class BubbleOverlayService : Service() {
 
             deleteZone.show()
 
-            android.util.Log.d("BubbleService", "✅ Delete zone shown")
         } catch (e: Exception) {
             android.util.Log.e("BubbleService", "❌ Failed to show delete zone: $e")
         }
@@ -611,9 +601,7 @@ class BubbleOverlayService : Service() {
             deleteZoneView?.let {
                 try {
                     windowManager?.removeView(it)
-                } catch (e: Exception) {
-                    android.util.Log.e("BubbleService", "⚠️ Error removing delete zone: $e")
-                }
+                } catch (e: Exception) {}
             }
             deleteZoneView = null
             deleteZoneParams = null
@@ -623,9 +611,7 @@ class BubbleOverlayService : Service() {
                 try {
                     view.cleanup()
                     windowManager?.removeView(view)
-                } catch (e: Exception) {
-                    android.util.Log.e("BubbleService", "⚠️ Error removing bubble: $e")
-                }
+                } catch (e: Exception) {}
             }
             bubbleViews.clear()
             bubbleParams.clear()
@@ -635,9 +621,7 @@ class BubbleOverlayService : Service() {
                 try {
                     it.cleanup()
                     windowManager?.removeView(it)
-                } catch (e: Exception) {
-                    android.util.Log.e("BubbleService", "⚠️ Error removing mini chat: $e")
-                }
+                } catch (e: Exception) {}
             }
             miniChatWindow = null
             miniChatParams = null
