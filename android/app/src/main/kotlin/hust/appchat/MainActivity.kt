@@ -1,4 +1,4 @@
-// android/app/src/main/kotlin/hust/appchat/MainActivity.kt - COMPLETE FIXED
+// android/app/src/main/kotlin/hust/appchat/MainActivity.kt - FULLY FIXED
 package hust.appchat
 
 import android.content.Intent
@@ -16,6 +16,14 @@ import io.flutter.plugin.common.EventChannel
 import hust.appchat.bubble.BubbleManager
 import hust.appchat.bubble.BubbleOverlayService
 
+/**
+ * ✅ FULLY FIXED: MainActivity without lifecycle issues
+ *
+ * FIXES:
+ * 1. Removed LifecycleObserver (causes override conflicts)
+ * 2. Use standard Activity lifecycle methods
+ * 3. RECEIVER_NOT_EXPORTED for internal broadcasts
+ */
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "chat_bubble_overlay"
     private val EVENT_CHANNEL = "chat_bubble_events"
@@ -26,6 +34,8 @@ class MainActivity : FlutterActivity() {
     private var eventSink: EventChannel.EventSink? = null
     private var pendingPermissionResult: MethodChannel.Result? = null
 
+    private var receiversRegistered = false
+
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -35,9 +45,6 @@ class MainActivity : FlutterActivity() {
         setupEventChannel(flutterEngine)
     }
 
-    // ===========================================
-    // METHOD CHANNEL SETUP
-    // ===========================================
     private fun setupMethodChannel(flutterEngine: FlutterEngine) {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
@@ -155,9 +162,6 @@ class MainActivity : FlutterActivity() {
             }
     }
 
-    // ===========================================
-    // EVENT CHANNEL SETUP
-    // ===========================================
     private fun setupEventChannel(flutterEngine: FlutterEngine) {
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
             .setStreamHandler(object : EventChannel.StreamHandler {
@@ -175,9 +179,6 @@ class MainActivity : FlutterActivity() {
             })
     }
 
-    // ===========================================
-    // PERMISSION HANDLING
-    // ===========================================
     private fun requestOverlayPermission(result: MethodChannel.Result) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (!Settings.canDrawOverlays(this)) {
@@ -216,11 +217,13 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    // ===========================================
-    // BROADCAST RECEIVERS - ✅ FIXED API COMPATIBILITY
-    // ===========================================
+    // ✅ FIXED: Proper receiver registration with NOT_EXPORTED
     private fun setupBubbleListeners() {
-        // ✅ Bubble click listener
+        if (receiversRegistered) {
+            android.util.Log.d("MainActivity", "ℹ️ Receivers already registered")
+            return
+        }
+
         bubbleClickReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action == "CHAT_BUBBLE_CLICKED") {
@@ -230,7 +233,6 @@ class MainActivity : FlutterActivity() {
 
                     android.util.Log.d("MainActivity", "🫧 Bubble clicked broadcast received: $userName")
 
-                    // Send to Flutter via EventSink
                     eventSink?.success(
                         mapOf(
                             "type" to "click",
@@ -243,7 +245,6 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        // ✅ Mini chat message listener
         bubbleMessageReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action == "CHAT_BUBBLE_MESSAGE") {
@@ -252,7 +253,6 @@ class MainActivity : FlutterActivity() {
 
                     android.util.Log.d("MainActivity", "💬 Mini chat message broadcast received from $userId")
 
-                    // Send to Flutter via EventSink
                     eventSink?.success(
                         mapOf(
                             "type" to "message",
@@ -264,32 +264,32 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        // ✅ FIXED: Register receivers with API compatibility
         try {
             val clickFilter = IntentFilter("CHAT_BUBBLE_CLICKED")
             val messageFilter = IntentFilter("CHAT_BUBBLE_MESSAGE")
 
+            // ✅ CRITICAL FIX: Use RECEIVER_NOT_EXPORTED for internal broadcasts
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                // Android 13+ (API 33+): Must specify RECEIVER_EXPORTED or RECEIVER_NOT_EXPORTED
-                registerReceiver(bubbleClickReceiver, clickFilter, Context.RECEIVER_EXPORTED)
-                registerReceiver(bubbleMessageReceiver, messageFilter, Context.RECEIVER_EXPORTED)
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                // Android 8-12 (API 26-32): Use registerReceiver without flags
-                registerReceiver(bubbleClickReceiver, clickFilter)
-                registerReceiver(bubbleMessageReceiver, messageFilter)
+                registerReceiver(bubbleClickReceiver, clickFilter, Context.RECEIVER_NOT_EXPORTED)
+                registerReceiver(bubbleMessageReceiver, messageFilter, Context.RECEIVER_NOT_EXPORTED)
             } else {
-                // Android 7 and below (API < 26): Legacy registration
                 registerReceiver(bubbleClickReceiver, clickFilter)
                 registerReceiver(bubbleMessageReceiver, messageFilter)
             }
 
+            receiversRegistered = true
             android.util.Log.d("MainActivity", "✅ Broadcast receivers registered successfully (API ${Build.VERSION.SDK_INT})")
         } catch (e: Exception) {
             android.util.Log.e("MainActivity", "❌ Error registering receivers: $e")
+            android.util.Log.e("MainActivity", "Stack trace: ${e.stackTraceToString()}")
         }
     }
 
     private fun unsetupBubbleListeners() {
+        if (!receiversRegistered) {
+            return
+        }
+
         bubbleClickReceiver?.let {
             try {
                 unregisterReceiver(it)
@@ -310,11 +310,22 @@ class MainActivity : FlutterActivity() {
 
         bubbleClickReceiver = null
         bubbleMessageReceiver = null
+        receiversRegistered = false
     }
 
-    // ===========================================
-    // LIFECYCLE
-    // ===========================================
+    // ✅ FIXED: Use standard Activity lifecycle (no @OnLifecycleEvent)
+    override fun onResume() {
+        super.onResume()
+        android.util.Log.d("MainActivity", "▶️ Activity resumed")
+        BubbleManager.onAppResumed(this)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        android.util.Log.d("MainActivity", "⏸️ Activity paused")
+        BubbleManager.onAppPaused()
+    }
+
     override fun onDestroy() {
         unsetupBubbleListeners()
         android.util.Log.d("MainActivity", "🛑 MainActivity destroyed")

@@ -1,4 +1,4 @@
-// android/app/src/main/kotlin/hust/appchat/bubble/BubbleView.kt - ENHANCED
+// android/app/src/main/kotlin/hust/appchat/bubble/BubbleView.kt - FIXED
 package hust.appchat.bubble
 
 import android.animation.ValueAnimator
@@ -8,9 +8,6 @@ import android.os.Vibrator
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
-import android.view.WindowManager
-import android.view.animation.DecelerateInterpolator
-import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
@@ -19,15 +16,15 @@ import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.request.RequestOptions
 import hust.appchat.R
 import kotlin.math.abs
-import kotlin.math.pow
 
 /**
- * ✅ ENHANCED: BubbleView với đầy đủ tính năng
- * - Haptic feedback
- * - Smooth animations
- * - Auto-hide timeout
- * - Better drag handling
- * - Screen rotation support
+ * ✅ FIXED: BubbleView với touch interaction đúng
+ *
+ * KEY FIXES:
+ * 1. Không tự update WindowManager layout
+ * 2. Chỉ notify listener về drag events
+ * 3. Service sẽ handle actual position updates
+ * 4. Proper touch event handling
  */
 class BubbleView(
     context: Context,
@@ -41,42 +38,33 @@ class BubbleView(
     private val onlineIndicator: View
     private val deleteIndicator: ImageView
 
-    private var onDragListener: ((Boolean) -> Unit)? = null
+    // ✅ FIXED: Listener now reports delta X/Y instead of trying to update layout
+    private var onDragListener: ((Boolean, Float, Float) -> Unit)? = null
     private var onClickListener: (() -> Unit)? = null
+
     private var isDragging = false
     private var isDetached = false
     private var isInDeleteZone = false
 
     // Touch tracking
-    private var initialX = 0
-    private var initialY = 0
     private var initialTouchX = 0f
     private var initialTouchY = 0f
+    private var lastTouchX = 0f
+    private var lastTouchY = 0f
     private var touchStartTime = 0L
 
     private var lastMessage: String = ""
     private var currentUnreadCount = 0
 
-    // Animation state
-    private var currentAnimator: ValueAnimator? = null
-
-    // ✅ NEW: Haptic feedback
     private val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-
-    // ✅ NEW: Auto-hide timeout
-    private var autoHideRunnable: Runnable? = null
-    private val AUTO_HIDE_DELAY = 5000L // 5 seconds
 
     companion object {
         private const val DELETE_ZONE_HEIGHT = 150
-        private const val SNAP_ANIMATION_DURATION = 300L
-        private const val TOUCH_SLOP = 15 // Increased for better drag detection
-        private const val CLICK_TIMEOUT = 300L // Max duration for click
+        private const val TOUCH_SLOP = 15
+        private const val CLICK_TIMEOUT = 300L
         private const val BUBBLE_SCALE_DOWN = 0.92f
         private const val BUBBLE_SCALE_DELETE = 0.75f
         private const val DELETE_ZONE_ALPHA = 0.6f
-
-        // ✅ NEW: Haptic constants
         private const val HAPTIC_SNAP_DURATION = 10L
         private const val HAPTIC_DELETE_DURATION = 50L
     }
@@ -95,10 +83,7 @@ class BubbleView(
         loadAvatar()
         setupTouchListener()
 
-        // ✅ NEW: Start auto-hide timer
-        resetAutoHideTimer()
-
-        android.util.Log.d("BubbleView", "✅ Enhanced bubble created for: $userName")
+        android.util.Log.d("BubbleView", "✅ Bubble created for: $userName")
     }
 
     private fun loadAvatar() {
@@ -126,55 +111,22 @@ class BubbleView(
         }
     }
 
-    // ✅ NEW: Auto-hide functionality
-    private fun resetAutoHideTimer() {
-        autoHideRunnable?.let { removeCallbacks(it) }
-        autoHideRunnable = Runnable {
-            if (!isDetached && !isDragging) {
-                animateAutoHide()
-            }
-        }
-        postDelayed(autoHideRunnable, AUTO_HIDE_DELAY)
-    }
-
-    private fun animateAutoHide() {
-        animate()
-            .alpha(0.5f)
-            .scaleX(0.8f)
-            .scaleY(0.8f)
-            .setDuration(300)
-            .setInterpolator(DecelerateInterpolator())
-            .start()
-    }
-
-    fun cancelAutoHide() {
-        autoHideRunnable?.let { removeCallbacks(it) }
-        animate()
-            .alpha(1f)
-            .scaleX(1f)
-            .scaleY(1f)
-            .setDuration(200)
-            .start()
-    }
-
+    // ✅ FIXED: Touch listener only tracks and notifies, doesn't update layout
     private fun setupTouchListener() {
         setOnTouchListener { view, event ->
             if (isDetached) return@setOnTouchListener false
 
-            val params = layoutParams as? WindowManager.LayoutParams
-                ?: return@setOnTouchListener false
-
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    handleTouchDown(params, event)
+                    handleTouchDown(event)
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    handleTouchMove(params, event)
+                    handleTouchMove(event)
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    handleTouchUp(params, event)
+                    handleTouchUp(event)
                     true
                 }
                 else -> false
@@ -182,52 +134,56 @@ class BubbleView(
         }
     }
 
-    private fun handleTouchDown(params: WindowManager.LayoutParams, event: MotionEvent) {
-        initialX = params.x
-        initialY = params.y
+    private fun handleTouchDown(event: MotionEvent) {
         initialTouchX = event.rawX
         initialTouchY = event.rawY
+        lastTouchX = event.rawX
+        lastTouchY = event.rawY
         touchStartTime = System.currentTimeMillis()
         isDragging = false
 
-        currentAnimator?.cancel()
-
-        // ✅ NEW: Cancel auto-hide
-        cancelAutoHide()
-
-        // ✅ IMPROVED: Smoother scale animation
+        // Visual feedback
         animate()
             .scaleX(BUBBLE_SCALE_DOWN)
             .scaleY(BUBBLE_SCALE_DOWN)
             .setDuration(150)
-            .setInterpolator(DecelerateInterpolator())
             .start()
+
+        android.util.Log.d("BubbleView", "👆 Touch down at: (${event.rawX}, ${event.rawY})")
     }
 
-    private fun handleTouchMove(params: WindowManager.LayoutParams, event: MotionEvent) {
+    private fun handleTouchMove(event: MotionEvent) {
         val deltaX = event.rawX - initialTouchX
         val deltaY = event.rawY - initialTouchY
         val distance = Math.sqrt((deltaX * deltaX + deltaY * deltaY).toDouble())
 
-        // ✅ IMPROVED: Better drag detection
+        // Start dragging if moved beyond slop
         if (!isDragging && distance > TOUCH_SLOP) {
             isDragging = true
             performHapticFeedback(HAPTIC_SNAP_DURATION)
+            android.util.Log.d("BubbleView", "🖐️ Drag started")
         }
 
         if (isDragging) {
-            // ✅ IMPROVED: Smooth position update với damping
-            params.x = (initialX + deltaX * 0.95f).toInt()
-            params.y = (initialY + deltaY * 0.95f).toInt()
+            // Calculate delta from last position
+            val moveX = event.rawX - lastTouchX
+            val moveY = event.rawY - lastTouchY
 
-            updateLayout(params)
+            lastTouchX = event.rawX
+            lastTouchY = event.rawY
 
+            // Get screen height to check delete zone
             val screenHeight = context.resources.displayMetrics.heightPixels
-            val inDeleteZone = params.y > (screenHeight - DELETE_ZONE_HEIGHT)
+            val currentY = event.rawY
+            val inDeleteZone = currentY > (screenHeight - DELETE_ZONE_HEIGHT)
 
+            // ✅ FIXED: Notify listener with delta movement
+            // Service will handle actual position update
+            onDragListener?.invoke(false, moveX, moveY)
+
+            // Visual feedback
             updateDeleteIndicator(inDeleteZone)
 
-            // ✅ IMPROVED: Smooth scale transition
             val targetScale = if (inDeleteZone) BUBBLE_SCALE_DELETE else BUBBLE_SCALE_DOWN
             val targetAlpha = if (inDeleteZone) DELETE_ZONE_ALPHA else 1f
 
@@ -240,12 +196,13 @@ class BubbleView(
         }
     }
 
-    private fun handleTouchUp(params: WindowManager.LayoutParams, event: MotionEvent) {
+    private fun handleTouchUp(event: MotionEvent) {
         val touchDuration = System.currentTimeMillis() - touchStartTime
         val deltaX = event.rawX - initialTouchX
         val deltaY = event.rawY - initialTouchY
         val distance = Math.sqrt((deltaX * deltaX + deltaY * deltaY).toDouble())
 
+        // Reset visuals
         animate()
             .scaleX(1f)
             .scaleY(1f)
@@ -256,17 +213,20 @@ class BubbleView(
         hideDeleteIndicator()
 
         if (isDragging) {
+            // Check if in delete zone
             val screenHeight = context.resources.displayMetrics.heightPixels
-            val inDeleteZone = params.y > (screenHeight - DELETE_ZONE_HEIGHT)
+            val inDeleteZone = event.rawY > (screenHeight - DELETE_ZONE_HEIGHT)
 
             if (inDeleteZone) {
                 performHapticFeedback(HAPTIC_DELETE_DURATION)
-                onDragListener?.invoke(true)
+                // ✅ Notify listener to delete
+                onDragListener?.invoke(true, 0f, 0f)
+                android.util.Log.d("BubbleView", "🗑️ Bubble deleted")
             } else {
-                snapToEdge(context.resources.displayMetrics.widthPixels)
+                android.util.Log.d("BubbleView", "🫧 Drag ended - snap to edge (handled by Service)")
             }
         } else if (touchDuration < CLICK_TIMEOUT && distance < TOUCH_SLOP) {
-            // ✅ IMPROVED: Better click detection
+            // Click detected
             android.util.Log.d("BubbleView", "👆 Click detected")
             performHapticFeedback(HAPTIC_SNAP_DURATION)
             performClick()
@@ -274,12 +234,8 @@ class BubbleView(
         }
 
         isDragging = false
-
-        // ✅ NEW: Restart auto-hide timer
-        resetAutoHideTimer()
     }
 
-    // ✅ NEW: Haptic feedback helper
     private fun performHapticFeedback(duration: Long) {
         try {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -329,55 +285,8 @@ class BubbleView(
             .start()
     }
 
-    private fun updateLayout(params: WindowManager.LayoutParams) {
-        if (isDetached) return
-
-        val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
-        try {
-            windowManager?.updateViewLayout(this, params)
-        } catch (e: Exception) {
-            android.util.Log.e("BubbleView", "❌ Error updating layout: $e")
-        }
-    }
-
-    fun snapToEdge(screenWidth: Int) {
-        if (isDetached) return
-
-        val params = layoutParams as? WindowManager.LayoutParams ?: return
-        val centerX = params.x + width / 2
-
-        // ✅ IMPROVED: Better edge detection với magnetic zones
-        val leftMagneticZone = screenWidth * 0.3
-        val rightMagneticZone = screenWidth * 0.7
-
-        val targetX = when {
-            centerX < leftMagneticZone -> 20
-            centerX > rightMagneticZone -> screenWidth - width - 20
-            centerX < screenWidth / 2 -> 20
-            else -> screenWidth - width - 20
-        }
-
-        currentAnimator?.cancel()
-
-        currentAnimator = ValueAnimator.ofInt(params.x, targetX).apply {
-            duration = SNAP_ANIMATION_DURATION
-            interpolator = OvershootInterpolator(1.5f)
-
-            addUpdateListener { animation ->
-                if (isDetached) {
-                    cancel()
-                    return@addUpdateListener
-                }
-
-                params.x = animation.animatedValue as Int
-                updateLayout(params)
-            }
-
-            start()
-        }
-
-        performHapticFeedback(HAPTIC_SNAP_DURATION)
-    }
+    // ✅ REMOVED: updateLayout() - no longer needed
+    // ✅ REMOVED: snapToEdge() - Service handles this
 
     fun updateUnreadCount(count: Int) {
         if (isDetached) return
@@ -391,12 +300,10 @@ class BubbleView(
                 }
 
                 if (count > currentUnreadCount) {
-                    // ✅ IMPROVED: Better bounce animation
                     unreadBadge.animate()
                         .scaleX(1.4f)
                         .scaleY(1.4f)
                         .setDuration(200)
-                        .setInterpolator(OvershootInterpolator())
                         .withEndAction {
                             if (!isDetached) {
                                 unreadBadge.animate()
@@ -424,13 +331,11 @@ class BubbleView(
         if (isDetached) return
 
         post {
-            // ✅ IMPROVED: More noticeable animation
             animate()
                 .scaleX(1.2f)
                 .scaleY(1.2f)
                 .rotation(10f)
                 .setDuration(150)
-                .setInterpolator(OvershootInterpolator())
                 .withEndAction {
                     if (!isDetached) {
                         animate()
@@ -458,7 +363,6 @@ class BubbleView(
             .scaleY(0f)
             .rotation(360f)
             .setDuration(300)
-            .setInterpolator(DecelerateInterpolator())
             .withEndAction {
                 if (!isDetached) {
                     onComplete()
@@ -492,7 +396,8 @@ class BubbleView(
         }
     }
 
-    fun setOnDragListener(listener: (Boolean) -> Unit) {
+    // ✅ FIXED: Listener signature changed to include delta X/Y
+    fun setOnDragListener(listener: (Boolean, Float, Float) -> Unit) {
         this.onDragListener = listener
     }
 
@@ -513,12 +418,8 @@ class BubbleView(
 
     fun cleanup() {
         isDetached = true
-        currentAnimator?.cancel()
-        currentAnimator = null
         onDragListener = null
         onClickListener = null
-        autoHideRunnable?.let { removeCallbacks(it) }
-        autoHideRunnable = null
 
         try {
             Glide.with(context).clear(avatarImageView)

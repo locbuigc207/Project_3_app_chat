@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- ✅ FIXED: Removed problematic app: attributes -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="320dp"
     android:layout_height="450dp"
@@ -9,9 +8,7 @@
     android:clickable="true"
     android:focusable="true">
 
-    <!-- ===================================== -->
     <!-- HEADER WITH DRAG HANDLE -->
-    <!-- ===================================== -->
     <RelativeLayout
         android:id="@+id/mini_chat_header"
         android:layout_width="match_parent"
@@ -23,7 +20,6 @@
         android:paddingBottom="8dp"
         android:elevation="4dp">
 
-        <!-- Drag Handle Indicator -->
         <View
             android:id="@+id/drag_handle"
             android:layout_width="40dp"
@@ -33,7 +29,6 @@
             android:background="@drawable/drag_handle"
             android:alpha="0.3" />
 
-        <!-- User Avatar -->
         <ImageView
             android:id="@+id/mini_chat_avatar"
             android:layout_width="40dp"
@@ -47,7 +42,6 @@
             android:contentDescription="@string/user_avatar"
             android:background="@drawable/avatar_border" />
 
-        <!-- User Name -->
         <TextView
             android:id="@+id/mini_chat_name"
             android:layout_width="wrap_content"
@@ -65,7 +59,20 @@
             android:maxLines="1"
             android:ellipsize="end" />
 
-        <!-- Action Buttons -->
+        <!-- ✅ ADDED: Status text (optional, hidden by default) -->
+        <TextView
+            android:id="@+id/mini_chat_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_below="@id/mini_chat_name"
+            android:layout_toEndOf="@id/mini_chat_avatar"
+            android:layout_marginStart="12dp"
+            android:layout_marginTop="2dp"
+            android:text="Online"
+            android:textColor="#B3FFFFFF"
+            android:textSize="11sp"
+            android:visibility="gone" />
+
         <LinearLayout
             android:id="@+id/mini_chat_actions"
             android:layout_width="wrap_content"
@@ -77,7 +84,6 @@
             android:orientation="horizontal"
             android:gravity="center_vertical">
 
-            <!-- Minimize Button -->
             <ImageView
                 android:id="@+id/btn_minimize"
                 android:layout_width="36dp"
@@ -90,7 +96,6 @@
                 android:focusable="true"
                 android:background="?attr/selectableItemBackgroundBorderless" />
 
-            <!-- Close Button -->
             <ImageView
                 android:id="@+id/btn_close"
                 android:layout_width="36dp"
@@ -106,16 +111,13 @@
         </LinearLayout>
     </RelativeLayout>
 
-    <!-- ===================================== -->
     <!-- MESSAGES CONTAINER WITH STATES -->
-    <!-- ===================================== -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
         android:background="@android:color/white">
 
-        <!-- ✅ FIXED: Removed all app: attributes from RecyclerView -->
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/mini_chat_messages"
             android:layout_width="match_parent"
@@ -203,11 +205,30 @@
                 android:paddingTop="8dp"
                 android:paddingBottom="8dp" />
         </LinearLayout>
+
+        <!-- ✅ ADDED: New Message Indicator (shown when scrolled up) -->
+        <TextView
+            android:id="@+id/new_message_indicator"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|center_horizontal"
+            android:layout_marginBottom="60dp"
+            android:paddingStart="24dp"
+            android:paddingEnd="24dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:background="@drawable/retry_button_bg"
+            android:text="1 new message"
+            android:textColor="@android:color/white"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:elevation="8dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:visibility="gone" />
     </FrameLayout>
 
-    <!-- ===================================== -->
     <!-- INPUT AREA WITH SEND LOADING -->
-    <!-- ===================================== -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -251,7 +272,6 @@
             android:gravity="center_vertical"
             android:minHeight="56dp">
 
-            <!-- Message Input Field -->
             <EditText
                 android:id="@+id/mini_chat_input"
                 android:layout_width="0dp"
@@ -270,13 +290,11 @@
                 android:inputType="textCapSentences|textMultiLine"
                 android:scrollbars="vertical" />
 
-            <!-- Send Button Container (with loading state) -->
             <FrameLayout
                 android:layout_width="44dp"
                 android:layout_height="44dp"
                 android:layout_marginStart="8dp">
 
-                <!-- Send Button -->
                 <ImageView
                     android:id="@+id/btn_send"
                     android:layout_width="match_parent"
@@ -289,7 +307,6 @@
                     android:focusable="true"
                     android:background="?attr/selectableItemBackgroundBorderless" />
 
-                <!-- Send Loading (Hidden by default) -->
                 <ProgressBar
                     android:id="@+id/send_loading"
                     style="?android:attr/progressBarStyleSmall"
