@@ -1,32 +1,31 @@
-// android/app/src/main/kotlin/hust/appchat/bubble/MiniChatWindow.kt - FINAL & ROBUST
+// android/app/src/main/kotlin/hust/appchat/bubble/MiniChatWindow.kt
+// ✅ COMPLETE: 100% đồng bộ với ChatPage conversation
 
 package hust.appchat.bubble
 
 import android.content.Context
-import android.content.Intent
-import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.view.animation.AccelerateDecelerateInterpolator
-import android.view.animation.OvershootInterpolator
 import android.view.inputmethod.InputMethodManager
 import android.widget.*
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentChange
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import hust.appchat.R
 import hust.appchat.adapter.MiniChatAdapter
 
-/**
- * ✅ HOÀN CHỈNH: Mini Chat Window với đầy đủ tính năng: Chat, Online Status, Typing Indicator, Read Receipt.
- */
 class MiniChatWindow(
     context: Context,
     private val userId: String,
@@ -34,26 +33,16 @@ class MiniChatWindow(
     private val avatarUrl: String
 ) : LinearLayout(context) {
 
-    enum class ChatState {
-        CLOSED, OPENING, OPEN, TYPING, SENDING, RECEIVING, CLOSING
-    }
-
-    private var currentState = ChatState.CLOSED
-    private var isExpanded = false
-    private var isKeyboardVisible = false
-    private var savedScrollPosition = 0
-    private var savedInputText = ""
-    private val pendingMessages = mutableListOf<String>()
-
     private val firestore = FirebaseFirestore.getInstance()
-    private var messageListener: ListenerRegistration? = null
+    private val auth = FirebaseAuth.getInstance()
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    // ⭐ LISTENERS VÀ TRẠNG THÁI PRESENCE
-    private var onlineListener: ListenerRegistration? = null
+    // Listeners
+    private var messageListener: ListenerRegistration? = null
     private var typingListener: ListenerRegistration? = null
-    private var isCurrentlyTyping = false
+    private var onlineListener: ListenerRegistration? = null
 
+    // UI Components
     private val avatarView: ImageView
     private val nameView: TextView
     private val statusView: TextView
@@ -70,28 +59,30 @@ class MiniChatWindow(
     private val btnRetry: Button
     private val typingIndicator: LinearLayout
     private val sendLoading: ProgressBar
-    private lateinit var newMessageIndicator: TextView
 
-    private var onMinimizeListener: (() -> Unit)? = null
-    private var onCloseListener: (() -> Unit)? = null
-    private var onMessageSentListener: ((String) -> Unit)? = null
-    private var onStateChangedListener: ((ChatState) -> Unit)? = null
-
+    // Data
     private val messages = mutableListOf<MiniChatAdapter.ChatMessage>()
     private lateinit var adapter: MiniChatAdapter
     private lateinit var layoutManager: LinearLayoutManager
+
+    private var currentUserId: String = ""
+    private var conversationId: String = ""
+    private var isDetached = false
     private var isLoadingMessages = false
     private var isSendingMessage = false
-    private var isDetached = false
-    private var retryCount = 0
-    private val maxRetries = 3
-    private var isUserScrollingUp = false
-    private var unreadCountWhileScrolling = 0
+
+    // Callbacks
+    private var onMinimizeListener: (() -> Unit)? = null
+    private var onCloseListener: (() -> Unit)? = null
+    private var onMessageSentListener: ((String) -> Unit)? = null
 
     init {
         try {
+            android.util.Log.d("MiniChat", "🏗️ Initializing for: $userName")
+
             LayoutInflater.from(context).inflate(R.layout.mini_chat_window, this, true)
 
+            // Initialize views
             avatarView = findViewById(R.id.mini_chat_avatar)
             nameView = findViewById(R.id.mini_chat_name)
             statusView = findViewById(R.id.mini_chat_status)
@@ -109,187 +100,152 @@ class MiniChatWindow(
             typingIndicator = findViewById(R.id.typing_indicator)
             sendLoading = findViewById(R.id.send_loading)
 
-            try {
-                val indicator: TextView? = findViewById(R.id.new_message_indicator)
-                if (indicator != null) {
-                    newMessageIndicator = indicator
-                } else {
-                    newMessageIndicator = TextView(context).apply {
-                        id = View.generateViewId()
-                        val params = FrameLayout.LayoutParams(
-                            FrameLayout.LayoutParams.WRAP_CONTENT,
-                            FrameLayout.LayoutParams.WRAP_CONTENT
-                        ).apply {
-                            gravity = android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL
-                            bottomMargin = 60
-                        }
-                        layoutParams = params
-                        setPadding(24, 12, 24, 12)
-                        setBackgroundResource(R.drawable.retry_button_bg)
-                        textSize = 12f
-                        setTextColor(android.graphics.Color.WHITE)
-                        visibility = View.GONE
-                    }
-                    val messagesContainer = recyclerView.parent as? FrameLayout
-                    messagesContainer?.addView(newMessageIndicator)
-                }
-            } catch (e: Exception) {
-                android.util.Log.e("MiniChat", "❌ newMessageIndicator init failed: $e")
-                newMessageIndicator = TextView(context).apply { visibility = View.GONE }
-            }
-
             setupUI()
-            setupListeners()
             setupRecyclerView()
-            transitionToState(ChatState.OPENING)
+            setupListeners()
+            initializeChat()
 
-            val currentUserId = BubbleManager.getCurrentUserId()
-            if (currentUserId != null) {
-                setupPresenceListeners(currentUserId)
-            }
-            loadMessages()
-
-            android.util.Log.d("MiniChat", "✅ Initialized for: $userName")
+            android.util.Log.d("MiniChat", "✅ Initialization complete")
         } catch (e: Exception) {
             android.util.Log.e("MiniChat", "❌ Init failed: $e")
+            android.util.Log.e("MiniChat", "Stack: ${e.stackTraceToString()}")
             throw e
         }
-    }
-
-    private fun transitionToState(newState: ChatState) {
-        if (currentState == newState) return
-        val oldState = currentState
-        currentState = newState
-        when (newState) {
-            ChatState.OPENING -> { isExpanded = true; animateExpand() }
-            ChatState.OPEN -> { isExpanded = true; restoreState() }
-            ChatState.TYPING -> {}
-            ChatState.SENDING -> setSendLoading(true)
-            ChatState.RECEIVING -> {}
-            ChatState.CLOSING -> { isExpanded = false; saveState(); animateCollapse() }
-            ChatState.CLOSED -> isExpanded = false
-        }
-        onStateChangedListener?.invoke(newState)
-    }
-
-    private fun saveState() {
-        try {
-            savedScrollPosition = layoutManager.findFirstVisibleItemPosition()
-            savedInputText = inputField.text.toString()
-        } catch (e: Exception) {}
-    }
-
-    private fun restoreState() {
-        try {
-            if (savedInputText.isNotEmpty()) {
-                inputField.setText(savedInputText)
-                inputField.setSelection(savedInputText.length)
-            }
-            if (savedScrollPosition > 0) {
-                layoutManager.scrollToPosition(savedScrollPosition)
-            }
-        } catch (e: Exception) {}
-    }
-
-    private fun animateExpand() {
-        alpha = 0f; scaleX = 0.3f; scaleY = 0.3f
-        animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(300)
-            .setInterpolator(OvershootInterpolator(1.5f))
-            .withEndAction { if (!isDetached) transitionToState(ChatState.OPEN) }.start()
-    }
-
-    private fun animateCollapse() {
-        animate().alpha(0f).scaleX(0.3f).scaleY(0.3f).setDuration(250)
-            .setInterpolator(AccelerateDecelerateInterpolator())
-            .withEndAction { if (!isDetached) { transitionToState(ChatState.CLOSED); onMinimizeListener?.invoke() } }.start()
     }
 
     private fun setupUI() {
         try {
             nameView.text = userName
-            statusView.text = "Online"
+            statusView.text = "Connecting..."
+
             if (avatarUrl.isNotEmpty()) {
-                Glide.with(context).load(avatarUrl).circleCrop()
-                    .placeholder(R.drawable.bubble_background).error(R.drawable.bubble_background)
+                Glide.with(context)
+                    .load(avatarUrl)
+                    .circleCrop()
+                    .placeholder(R.drawable.bubble_background)
+                    .error(R.drawable.bubble_background)
                     .into(avatarView)
             } else {
                 avatarView.setImageResource(R.drawable.bubble_background)
             }
+
             showLoading()
         } catch (e: Exception) {
-            showError("Setup failed: ${e.message}")
+            android.util.Log.e("MiniChat", "❌ setupUI failed: $e")
         }
     }
 
     private fun setupRecyclerView() {
-        layoutManager = LinearLayoutManager(context).apply { reverseLayout = true; stackFromEnd = false }
+        layoutManager = LinearLayoutManager(context).apply {
+            reverseLayout = true
+            stackFromEnd = false
+        }
         adapter = MiniChatAdapter(messages)
         recyclerView.layoutManager = layoutManager
         recyclerView.adapter = adapter
         recyclerView.setHasFixedSize(true)
-        recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
-                super.onScrolled(recyclerView, dx, dy)
-                isUserScrollingUp = layoutManager.findFirstVisibleItemPosition() > 3
-                updateNewMessageIndicator()
-            }
-        })
+
+        android.util.Log.d("MiniChat", "✅ RecyclerView setup complete")
     }
 
     private fun setupListeners() {
         try {
+            // Header buttons
             btnMinimize.setOnClickListener {
+                android.util.Log.d("MiniChat", "⬇️ Minimize clicked")
                 hideKeyboard()
-                transitionToState(ChatState.CLOSING)
+                onMinimizeListener?.invoke()
             }
+
             btnClose.setOnClickListener {
+                android.util.Log.d("MiniChat", "❌ Close clicked")
                 hideKeyboard()
                 onCloseListener?.invoke()
             }
-            btnSend.setOnClickListener { sendMessage() }
-            btnRetry.setOnClickListener { retryCount++; loadMessages() }
+
+            // Send button
+            btnSend.setOnClickListener {
+                android.util.Log.d("MiniChat", "📤 Send clicked")
+                sendMessage()
+            }
+
+            // Input field
             inputField.setOnEditorActionListener { _, actionId, _ ->
                 if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND) {
-                    sendMessage(); true
+                    sendMessage()
+                    true
                 } else false
             }
-            // ⭐ LOGIC TYPING STATUS
-            inputField.addTextChangedListener(object : android.text.TextWatcher {
+
+            // Typing indicator
+            var typingTimer: android.os.CountDownTimer? = null
+
+            inputField.addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                    val currentUserId = BubbleManager.getCurrentUserId()
                     if (!s.isNullOrEmpty()) {
-                        if (currentState == ChatState.OPEN) transitionToState(ChatState.TYPING)
-                        currentUserId?.let { updateMyTypingStatus(true, it) } // Gửi trạng thái TYPING
+                        updateMyTypingStatus(true)
+
+                        typingTimer?.cancel()
+                        typingTimer = object : android.os.CountDownTimer(2000, 1000) {
+                            override fun onTick(millisUntilFinished: Long) {}
+                            override fun onFinish() {
+                                updateMyTypingStatus(false)
+                            }
+                        }.start()
                     }
                 }
-                override fun afterTextChanged(s: android.text.Editable?) {
-                    val currentUserId = BubbleManager.getCurrentUserId()
+
+                override fun afterTextChanged(s: Editable?) {
                     if (s.isNullOrEmpty()) {
-                        if (currentState == ChatState.TYPING) transitionToState(ChatState.OPEN)
-                        currentUserId?.let { updateMyTypingStatus(false, it) } // Gửi trạng thái STOP TYPING
+                        typingTimer?.cancel()
+                        updateMyTypingStatus(false)
                     }
                 }
             })
-            inputField.setOnFocusChangeListener { _, hasFocus ->
-                isKeyboardVisible = hasFocus
-                if (hasFocus) postDelayed({ scrollToLatestMessage() }, 300)
+
+            // Retry button
+            btnRetry.setOnClickListener {
+                android.util.Log.d("MiniChat", "🔄 Retry clicked")
+                loadMessages()
             }
+
             setupDragListener()
-        } catch (e: Exception) {}
+
+            android.util.Log.d("MiniChat", "✅ Listeners setup complete")
+        } catch (e: Exception) {
+            android.util.Log.e("MiniChat", "❌ setupListeners failed: $e")
+        }
     }
 
     private fun setupDragListener() {
-        var initialX = 0; var initialY = 0; var initialTouchX = 0f; var initialTouchY = 0f
+        var initialX = 0
+        var initialY = 0
+        var initialTouchX = 0f
+        var initialTouchY = 0f
+
         header.setOnTouchListener { _, event ->
             if (isDetached) return@setOnTouchListener false
+
             val params = layoutParams as? WindowManager.LayoutParams ?: return@setOnTouchListener false
+
             when (event.action) {
-                MotionEvent.ACTION_DOWN -> { initialX = params.x; initialY = params.y; initialTouchX = event.rawX; initialTouchY = event.rawY; true }
+                MotionEvent.ACTION_DOWN -> {
+                    initialX = params.x
+                    initialY = params.y
+                    initialTouchX = event.rawX
+                    initialTouchY = event.rawY
+                    true
+                }
                 MotionEvent.ACTION_MOVE -> {
                     params.x = (initialX + event.rawX - initialTouchX).toInt()
                     params.y = (initialY + event.rawY - initialTouchY).toInt()
-                    try { (context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager)?.updateViewLayout(this, params) } catch (e: Exception) {}
+
+                    try {
+                        (context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager)
+                            ?.updateViewLayout(this, params)
+                    } catch (e: Exception) {}
                     true
                 }
                 MotionEvent.ACTION_UP -> true
@@ -298,71 +254,420 @@ class MiniChatWindow(
         }
     }
 
-    private fun showLoading() { mainHandler.post { if (isDetached) return@post; loadingIndicator.visibility = View.VISIBLE; recyclerView.visibility = View.GONE; emptyStateView.visibility = View.GONE; errorStateView.visibility = View.GONE } }
-    private fun showEmptyState() { mainHandler.post { if (isDetached) return@post; loadingIndicator.visibility = View.GONE; recyclerView.visibility = View.GONE; emptyStateView.visibility = View.VISIBLE; errorStateView.visibility = View.GONE } }
-    private fun showError(message: String) { mainHandler.post { if (isDetached) return@post; loadingIndicator.visibility = View.GONE; recyclerView.visibility = View.GONE; emptyStateView.visibility = View.GONE; errorStateView.visibility = View.VISIBLE; errorText.text = message; btnRetry.visibility = if (retryCount >= maxRetries) View.GONE else View.VISIBLE } }
+    // ============================================
+    // ✅ INITIALIZE CHAT - Khởi tạo conversation
+    // ============================================
+    private fun initializeChat() {
+        currentUserId = auth.currentUser?.uid ?: ""
 
-    // ⭐ ĐÃ SỬA: emptyStateState -> emptyStateView
-    private fun showMessages() { mainHandler.post { if (isDetached) return@post; loadingIndicator.visibility = View.GONE; recyclerView.visibility = View.VISIBLE; emptyStateView.visibility = View.GONE; errorStateView.visibility = View.GONE } }
+        if (currentUserId.isEmpty()) {
+            android.util.Log.e("MiniChat", "❌ No current user")
+            showError("Not logged in")
+            return
+        }
 
-    private fun setSendLoading(isLoading: Boolean) { mainHandler.post { if (isDetached) return@post; isSendingMessage = isLoading; btnSend.visibility = if (isLoading) View.GONE else View.VISIBLE; sendLoading.visibility = if (isLoading) View.VISIBLE else View.GONE; inputField.isEnabled = !isLoading } }
-    private fun updateNewMessageIndicator() {
-        mainHandler.post {
-            if (isDetached) return@post
-            if (isUserScrollingUp && unreadCountWhileScrolling > 0) {
-                newMessageIndicator.visibility = View.VISIBLE
-                newMessageIndicator.text = "$unreadCountWhileScrolling new message${if (unreadCountWhileScrolling > 1) "s" else ""}"
-            } else { newMessageIndicator.visibility = View.GONE; unreadCountWhileScrolling = 0 }
+        // ✅ CRITICAL: Đúng với ChatPage logic
+        conversationId = if (currentUserId.compareTo(userId) > 0) {
+            "$currentUserId-$userId"
+        } else {
+            "$userId-$currentUserId"
+        }
+
+        android.util.Log.d("MiniChat", "✅ Current User: $currentUserId")
+        android.util.Log.d("MiniChat", "✅ Peer User: $userId")
+        android.util.Log.d("MiniChat", "✅ Conversation ID: $conversationId")
+
+        setupPresenceListeners()
+        loadMessages()
+        markMessagesAsRead()
+    }
+
+    // ============================================
+    // ✅ LOAD MESSAGES - 100% giống ChatPage
+    // ============================================
+    private fun loadMessages() {
+        if (isLoadingMessages) {
+            android.util.Log.d("MiniChat", "⏳ Already loading messages")
+            return
+        }
+
+        isLoadingMessages = true
+        showLoading()
+
+        try {
+            messageListener?.remove()
+
+            android.util.Log.d("MiniChat", "📥 Starting message listener for: $conversationId")
+
+            // ✅ CRITICAL: Đúng path với ChatPage
+            messageListener = firestore
+                .collection("messages")
+                .document(conversationId)
+                .collection(conversationId)
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .limit(50)
+                .addSnapshotListener { snapshot, error ->
+                    isLoadingMessages = false
+
+                    if (isDetached) {
+                        android.util.Log.d("MiniChat", "⚠️ View detached, ignoring update")
+                        return@addSnapshotListener
+                    }
+
+                    if (error != null) {
+                        android.util.Log.e("MiniChat", "❌ Listener error: $error")
+                        showError("Connection failed: ${error.message}")
+                        return@addSnapshotListener
+                    }
+
+                    if (snapshot != null) {
+                        android.util.Log.d("MiniChat", "📦 Received ${snapshot.documentChanges.size} changes")
+
+                        handleMessagesUpdate(snapshot.documentChanges)
+
+                        if (messages.isNotEmpty()) {
+                            android.util.Log.d("MiniChat", "✅ Showing ${messages.size} messages")
+                            showMessages()
+                        } else {
+                            android.util.Log.d("MiniChat", "ℹ️ No messages yet")
+                            showEmptyState()
+                        }
+                    }
+                }
+
+            android.util.Log.d("MiniChat", "✅ Message listener active")
+        } catch (e: Exception) {
+            isLoadingMessages = false
+            android.util.Log.e("MiniChat", "❌ loadMessages failed: $e")
+            android.util.Log.e("MiniChat", "Stack: ${e.stackTraceToString()}")
+            showError("Failed to load messages")
         }
     }
 
-    // ⭐ LOGIC PRESENCE VÀ TYPING CỦA NGƯỜI DÙNG ĐỐI DIỆN
-    private fun setupPresenceListeners(currentUserId: String) {
-        // 1. Lắng nghe trạng thái Online/Offline của người dùng đối diện (userId)
+    private fun handleMessagesUpdate(changes: List<DocumentChange>) {
+        mainHandler.post {
+            if (isDetached) return@post
+
+            for (change in changes) {
+                when (change.type) {
+                    DocumentChange.Type.ADDED -> {
+                        android.util.Log.d("MiniChat", "➕ Message added: ${change.document.id}")
+                        handleNewMessage(change.document)
+                    }
+                    DocumentChange.Type.MODIFIED -> {
+                        android.util.Log.d("MiniChat", "✏️ Message modified: ${change.document.id}")
+                        handleModifiedMessage(change.document)
+                    }
+                    DocumentChange.Type.REMOVED -> {
+                        android.util.Log.d("MiniChat", "➖ Message removed: ${change.document.id}")
+                        handleRemovedMessage(change.document.id)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun handleNewMessage(document: com.google.firebase.firestore.DocumentSnapshot) {
         try {
-            onlineListener?.remove()
-            onlineListener = firestore.collection("users").document(userId)
+            val data = document.data ?: return
+
+            val content = data["content"] as? String ?: ""
+            val type = (data["type"] as? Long)?.toInt() ?: 0
+            val idFrom = data["idFrom"] as? String ?: ""
+            val timestamp = (data["timestamp"] as? String)?.toLongOrNull() ?: 0L
+
+            val message = MiniChatAdapter.ChatMessage(
+                id = document.id,
+                content = if (type == 0) content else "📷 Image",
+                isFromMe = idFrom == currentUserId,
+                timestamp = timestamp,
+                type = type
+            )
+
+            val existingIndex = messages.indexOfFirst { it.id == message.id }
+
+            if (existingIndex == -1) {
+                messages.add(0, message)
+                adapter.notifyItemInserted(0)
+                scrollToLatestMessage()
+
+                android.util.Log.d("MiniChat", "✅ Added message: ${message.content.take(20)}...")
+
+                // Mark as read if received
+                if (!message.isFromMe) {
+                    mainHandler.postDelayed({
+                        markMessagesAsRead()
+                    }, 500)
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MiniChat", "❌ handleNewMessage error: $e")
+        }
+    }
+
+    private fun handleModifiedMessage(document: com.google.firebase.firestore.DocumentSnapshot) {
+        try {
+            val existingIndex = messages.indexOfFirst { it.id == document.id }
+
+            if (existingIndex != -1) {
+                val data = document.data ?: return
+
+                val content = data["content"] as? String ?: ""
+                val type = (data["type"] as? Long)?.toInt() ?: 0
+                val idFrom = data["idFrom"] as? String ?: ""
+                val timestamp = (data["timestamp"] as? String)?.toLongOrNull() ?: 0L
+
+                val updatedMessage = MiniChatAdapter.ChatMessage(
+                    id = document.id,
+                    content = if (type == 0) content else "📷 Image",
+                    isFromMe = idFrom == currentUserId,
+                    timestamp = timestamp,
+                    type = type
+                )
+
+                messages[existingIndex] = updatedMessage
+                adapter.notifyItemChanged(existingIndex)
+
+                android.util.Log.d("MiniChat", "✅ Modified message: ${document.id}")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MiniChat", "❌ handleModifiedMessage error: $e")
+        }
+    }
+
+    private fun handleRemovedMessage(messageId: String) {
+        val existingIndex = messages.indexOfFirst { it.id == messageId }
+
+        if (existingIndex != -1) {
+            messages.removeAt(existingIndex)
+            adapter.notifyItemRemoved(existingIndex)
+
+            android.util.Log.d("MiniChat", "✅ Removed message: $messageId")
+        }
+    }
+
+    // ============================================
+    // ✅ SEND MESSAGE - 100% giống ChatPage
+    // ============================================
+    private fun sendMessage() {
+        if (isDetached || isSendingMessage) return
+
+        val content = inputField.text.toString().trim()
+
+        if (content.isEmpty()) {
+            Toast.makeText(context, "Type a message", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        if (currentUserId.isEmpty()) {
+            Toast.makeText(context, "Auth error", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        isSendingMessage = true
+        setSendLoading(true)
+
+        val messageId = System.currentTimeMillis().toString()
+
+        // ✅ CRITICAL: Đúng với ChatPage data structure
+        val messageData = hashMapOf(
+            "idFrom" to currentUserId,
+            "idTo" to userId,
+            "timestamp" to messageId,
+            "content" to content,
+            "type" to 0,
+            "isRead" to false
+        )
+
+        android.util.Log.d("MiniChat", "📤 Sending message: $content")
+        android.util.Log.d("MiniChat", "📤 To conversation: $conversationId")
+        android.util.Log.d("MiniChat", "📤 Message ID: $messageId")
+
+        // Optimistic UI update
+        val optimisticMessage = MiniChatAdapter.ChatMessage(
+            id = messageId,
+            content = content,
+            isFromMe = true,
+            timestamp = messageId.toLong(),
+            type = 0
+        )
+
+        mainHandler.post {
+            if (!isDetached) {
+                messages.add(0, optimisticMessage)
+                adapter.notifyItemInserted(0)
+                scrollToLatestMessage()
+            }
+        }
+
+        // Send to Firestore
+        firestore
+            .collection("messages")
+            .document(conversationId)
+            .collection(conversationId)
+            .document(messageId)
+            .set(messageData)
+            .addOnSuccessListener {
+                android.util.Log.d("MiniChat", "✅ Message sent successfully")
+
+                mainHandler.post {
+                    if (!isDetached) {
+                        inputField.text.clear()
+                        hideKeyboard()
+                        isSendingMessage = false
+                        setSendLoading(false)
+                        updateMyTypingStatus(false)
+                        onMessageSentListener?.invoke(content)
+                        updateConversation(content)
+                    }
+                }
+            }
+            .addOnFailureListener { e ->
+                android.util.Log.e("MiniChat", "❌ Send message failed: $e")
+
+                mainHandler.post {
+                    if (!isDetached) {
+                        val index = messages.indexOfFirst { it.id == messageId }
+                        if (index != -1) {
+                            messages.removeAt(index)
+                            adapter.notifyItemRemoved(index)
+                        }
+
+                        isSendingMessage = false
+                        setSendLoading(false)
+                        Toast.makeText(context, "Failed to send: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+    }
+
+    // ============================================
+    // ✅ UPDATE CONVERSATION
+    // ============================================
+    private fun updateConversation(lastMessage: String) {
+        try {
+            val conversationData = mapOf(
+                "lastMessage" to lastMessage,
+                "lastMessageTime" to System.currentTimeMillis().toString(),
+                "lastMessageType" to 0
+            )
+
+            firestore
+                .collection("conversations")
+                .document(conversationId)
+                .update(conversationData)
+                .addOnSuccessListener {
+                    android.util.Log.d("MiniChat", "✅ Conversation updated")
+                }
+                .addOnFailureListener { e ->
+                    android.util.Log.e("MiniChat", "❌ Update conversation failed: $e")
+                }
+        } catch (e: Exception) {
+            android.util.Log.e("MiniChat", "❌ updateConversation error: $e")
+        }
+    }
+
+    // ============================================
+    // ✅ MARK AS READ
+    // ============================================
+    private fun markMessagesAsRead() {
+        if (isDetached || currentUserId.isEmpty()) return
+
+        try {
+            firestore
+                .collection("messages")
+                .document(conversationId)
+                .collection(conversationId)
+                .whereEqualTo("idTo", currentUserId)
+                .whereEqualTo("isRead", false)
+                .get()
+                .addOnSuccessListener { snapshot ->
+                    if (snapshot.isEmpty) {
+                        android.util.Log.d("MiniChat", "ℹ️ No unread messages")
+                        return@addOnSuccessListener
+                    }
+
+                    val batch = firestore.batch()
+
+                    for (doc in snapshot.documents) {
+                        batch.update(doc.reference, mapOf(
+                            "isRead" to true,
+                            "readAt" to FieldValue.serverTimestamp()
+                        ))
+                    }
+
+                    batch.commit()
+                        .addOnSuccessListener {
+                            android.util.Log.d("MiniChat", "✅ ${snapshot.size()} messages marked as read")
+
+                            // Notify BubbleManager
+                            BubbleManager.markAsRead(context, userId)
+                        }
+                        .addOnFailureListener { e ->
+                            android.util.Log.e("MiniChat", "❌ Mark read failed: $e")
+                        }
+                }
+                .addOnFailureListener { e ->
+                    android.util.Log.e("MiniChat", "❌ Get unread messages failed: $e")
+                }
+        } catch (e: Exception) {
+            android.util.Log.e("MiniChat", "❌ markMessagesAsRead error: $e")
+        }
+    }
+
+    // ============================================
+    // ✅ PRESENCE & TYPING
+    // ============================================
+    private fun setupPresenceListeners() {
+        try {
+            // Online status
+            onlineListener = firestore
+                .collection("users")
+                .document(userId)
                 .addSnapshotListener { snapshot, error ->
                     if (isDetached || error != null || snapshot == null) return@addSnapshotListener
 
                     val isOnline = snapshot.getBoolean("isOnline") ?: false
-
-                    // ⭐ FIX LỖI RUNTIME: Sử dụng kiểm tra kiểu an toàn (safe type casting)
-                    val lastSeen: Long = when (val value = snapshot["lastSeen"]) {
+                    val lastSeen = when (val value = snapshot["lastSeen"]) {
                         is Number -> value.toLong()
-                        is String -> value.toLongOrNull() ?: 0L // Xử lý nếu được lưu dưới dạng String
+                        is String -> value.toLongOrNull() ?: 0L
                         else -> 0L
                     }
 
                     updateOnlineStatus(isOnline, lastSeen)
                 }
-        } catch (e: Exception) {
-            android.util.Log.e("MiniChat", "❌ Failed to setup online listener: $e")
-        }
 
-        // 2. Lắng nghe trạng thái Typing của người dùng đối diện
-        try {
-            typingListener?.remove()
-            val typingDocId = if (currentUserId < userId) "$currentUserId-$userId" else "$userId-$currentUserId"
-            typingListener = firestore.collection("typings").document(typingDocId)
+            // Typing status
+            val typingDocId = if (currentUserId < userId) {
+                "$currentUserId-$userId"
+            } else {
+                "$userId-$currentUserId"
+            }
+
+            typingListener = firestore
+                .collection("typings")
+                .document(typingDocId)
                 .addSnapshotListener { snapshot, error ->
                     if (isDetached || error != null || snapshot == null) return@addSnapshotListener
 
                     val isTypingOpponent = snapshot.getString("idTyping") == userId
                     updateTypingIndicator(isTypingOpponent)
                 }
+
+            android.util.Log.d("MiniChat", "✅ Presence listeners active")
         } catch (e: Exception) {
-            android.util.Log.e("MiniChat", "❌ Failed to setup typing listener: $e")
+            android.util.Log.e("MiniChat", "❌ setupPresenceListeners failed: $e")
         }
     }
 
     private fun updateOnlineStatus(isOnline: Boolean, lastSeen: Long) {
         mainHandler.post {
             if (isDetached) return@post
-            if (isOnline) {
-                statusView.text = "Online"
+
+            statusView.text = if (isOnline) {
+                "Online"
             } else {
-                statusView.text = "Last seen: ${BubbleManager.formatTimestamp(lastSeen)}"
+                "Last seen: ${BubbleManager.formatTimestamp(lastSeen)}"
             }
         }
     }
@@ -370,224 +675,154 @@ class MiniChatWindow(
     private fun updateTypingIndicator(isTyping: Boolean) {
         mainHandler.post {
             if (isDetached) return@post
+
             if (isTyping) {
                 typingIndicator.visibility = View.VISIBLE
                 statusView.visibility = View.GONE
             } else {
                 typingIndicator.visibility = View.GONE
                 statusView.visibility = View.VISIBLE
-                // updateOnlineStatus sẽ xử lý việc hiển thị lại trạng thái online/last seen
             }
         }
     }
 
-    private fun updateMyTypingStatus(isTyping: Boolean, currentUserId: String) {
-        if (isCurrentlyTyping == isTyping) return
-        isCurrentlyTyping = isTyping
+    private fun updateMyTypingStatus(isTyping: Boolean) {
+        if (currentUserId.isEmpty()) return
 
-        val typingDocId = if (currentUserId < userId) "$currentUserId-$userId" else "$userId-$currentUserId"
-        val typingRef = firestore.collection("typings").document(typingDocId)
+        val typingDocId = if (currentUserId < userId) {
+            "$currentUserId-$userId"
+        } else {
+            "$userId-$currentUserId"
+        }
 
         val data = if (isTyping) {
             hashMapOf("idTyping" to currentUserId, "timestamp" to System.currentTimeMillis())
         } else {
-            // Đặt thành chuỗi rỗng để báo hiệu không gõ nữa
             hashMapOf("idTyping" to "", "timestamp" to System.currentTimeMillis())
         }
 
-        typingRef.set(data as Map<String, Any>)
-            .addOnFailureListener {
-                android.util.Log.e("MiniChat", "❌ Failed to update typing status: $it")
-            }
+        firestore
+            .collection("typings")
+            .document(typingDocId)
+            .set(data as Map<String, Any>)
     }
 
-    // ⭐ SỬA loadMessages: THÊM LOGIC ĐÁNH DẤU ĐÃ ĐỌC
-    private fun loadMessages() {
-        if (isLoadingMessages || isDetached) return
-        isLoadingMessages = true
-        showLoading()
-        val currentUserId = BubbleManager.getCurrentUserId()
-        if (currentUserId == null) { showError("Auth error"); isLoadingMessages = false; return }
-        val conversationId = if (currentUserId < userId) "$currentUserId-$userId" else "$userId-$currentUserId"
-        val messagesCollectionRef = firestore.collection("messages").document(conversationId).collection(conversationId)
-
-        try {
-            messageListener?.remove()
-            messageListener = messagesCollectionRef
-                .orderBy("timestamp", Query.Direction.DESCENDING).limit(50)
-                .addSnapshotListener { snapshot, error ->
-                    if (isDetached) return@addSnapshotListener
-                    if (error != null) { isLoadingMessages = false; showError("Load failed: ${error.message}"); return@addSnapshotListener }
-                    if (snapshot != null) {
-
-                        // ⭐ GỌI HÀM ĐÁNH DẤU ĐÃ ĐỌC (Read Receipt)
-                        markMessagesAsRead(snapshot, currentUserId, messagesCollectionRef)
-
-                        if (snapshot.isEmpty) { isLoadingMessages = false; showEmptyState() } else {
-                            snapshot.documentChanges.forEach { change ->
-                                when (change.type) {
-                                    com.google.firebase.firestore.DocumentChange.Type.ADDED -> handleNewMessage(change.document, currentUserId)
-                                    com.google.firebase.firestore.DocumentChange.Type.MODIFIED -> handleModifiedMessage(change.document, currentUserId)
-                                    com.google.firebase.firestore.DocumentChange.Type.REMOVED -> handleRemovedMessage(change.document.id)
-                                }
-                            }
-                            if (messages.isNotEmpty()) { isLoadingMessages = false; showMessages() }
-                        }
-                    }
-                }
-        } catch (e: Exception) { isLoadingMessages = false; showError("Connection failed: ${e.message}") }
-    }
-
-    // ⭐ THÊM HÀM markMessagesAsRead (Read Receipt)
-    private fun markMessagesAsRead(
-        snapshot: com.google.firebase.firestore.QuerySnapshot,
-        currentUserId: String,
-        messagesCollectionRef: com.google.firebase.firestore.CollectionReference
-    ) {
-        if (isDetached) return
-        val batch = firestore.batch()
-        var hasUnread = false
-
-        snapshot.documents.forEach { document ->
-            val idTo = document.getString("idTo") ?: ""
-            val isRead = document.getBoolean("isRead") ?: false
-
-            // Chỉ đánh dấu tin nhắn đến (idTo == currentUserId) và chưa được đọc
-            if (idTo == currentUserId && !isRead) {
-                batch.update(document.reference, "isRead", true)
-                hasUnread = true
-            }
-        }
-
-        if (hasUnread) {
-            batch.commit()
-                .addOnSuccessListener {
-                    android.util.Log.d("MiniChat", "✅ Messages marked as read.")
-                    // Cần thông báo cho BubbleManager để xóa unread badge
-                    BubbleManager.markAsRead(context, userId)
-                }
-                .addOnFailureListener { e ->
-                    android.util.Log.e("MiniChat", "❌ Failed to mark messages as read: $e")
-                }
-        }
-    }
-
-    private fun handleNewMessage(document: com.google.firebase.firestore.DocumentSnapshot, currentUserId: String) {
-        if (isDetached) return
-        try {
-            val content = document.getString("content") ?: ""
-            val type = document.getLong("type")?.toInt() ?: 0
-            val idFrom = document.getString("idFrom") ?: ""
-            val timestamp = document.getString("timestamp")?.toLongOrNull() ?: 0L
-            val message = MiniChatAdapter.ChatMessage(id = document.id, content = if (type == 0) content else "📷 Image", isFromMe = idFrom == currentUserId, timestamp = timestamp, type = type)
-            val existingIndex = messages.indexOfFirst { it.id == message.id }
-            mainHandler.post {
-                if (isDetached) return@post
-                if (existingIndex == -1) {
-                    messages.add(0, message)
-                    adapter.notifyItemInserted(0)
-                    if (currentState != ChatState.RECEIVING) {
-                        transitionToState(ChatState.RECEIVING)
-                        postDelayed({ if (currentState == ChatState.RECEIVING) transitionToState(ChatState.OPEN) }, 500)
-                    }
-                    if (!isUserScrollingUp) scrollToLatestMessage() else { unreadCountWhileScrolling++; updateNewMessageIndicator() }
-                }
-            }
-        } catch (e: Exception) {}
-    }
-
-    private fun handleModifiedMessage(document: com.google.firebase.firestore.DocumentSnapshot, currentUserId: String) {
-        if (isDetached) return
-        try {
-            val existingIndex = messages.indexOfFirst { it.id == document.id }
-            if (existingIndex != -1) {
-                val content = document.getString("content") ?: ""
-                val type = document.getLong("type")?.toInt() ?: 0
-                val idFrom = document.getString("idFrom") ?: ""
-                val timestamp = document.getString("timestamp")?.toLongOrNull() ?: 0L
-                val updatedMessage = MiniChatAdapter.ChatMessage(id = document.id, content = if (type == 0) content else "📷 Image", isFromMe = idFrom == currentUserId, timestamp = timestamp, type = type)
-                mainHandler.post { if (!isDetached) { messages[existingIndex] = updatedMessage; adapter.notifyItemChanged(existingIndex) } }
-            }
-        } catch (e: Exception) {}
-    }
-
-    private fun handleRemovedMessage(messageId: String) {
-        if (isDetached) return
-        val existingIndex = messages.indexOfFirst { it.id == messageId }
-        if (existingIndex != -1) mainHandler.post { if (!isDetached) { messages.removeAt(existingIndex); adapter.notifyItemRemoved(existingIndex) } }
-    }
-
+    // ============================================
+    // UI HELPERS
+    // ============================================
     private fun scrollToLatestMessage() {
         if (isDetached) return
-        try { if (recyclerView.canScrollVertically(-1)) recyclerView.smoothScrollToPosition(0) } catch (e: Exception) {}
-    }
-
-    private fun sendMessage() {
-        if (isDetached || isSendingMessage) return
-        val content = inputField.text.toString().trim()
-        if (content.isEmpty()) { Toast.makeText(context, "Type a message", Toast.LENGTH_SHORT).show(); return }
-        val currentUserId = BubbleManager.getCurrentUserId()
-        if (currentUserId == null) { Toast.makeText(context, "Auth error", Toast.LENGTH_SHORT).show(); return }
-        val conversationId = if (currentUserId < userId) "$currentUserId-$userId" else "$userId-$currentUserId"
-        val messageId = System.currentTimeMillis().toString()
-        val messageData = hashMapOf("idFrom" to currentUserId, "idTo" to userId, "timestamp" to messageId, "content" to content, "type" to 0, "isRead" to false)
-        transitionToState(ChatState.SENDING)
-        val optimisticMessage = MiniChatAdapter.ChatMessage(id = messageId, content = content, isFromMe = true, timestamp = messageId.toLong(), type = 0)
-        mainHandler.post { if (!isDetached) { messages.add(0, optimisticMessage); adapter.notifyItemInserted(0); scrollToLatestMessage() } }
-        firestore.collection("messages").document(conversationId).collection(conversationId).document(messageId).set(messageData)
-            .addOnSuccessListener {
-                if (isDetached) return@addOnSuccessListener
-                mainHandler.post {
-                    if (!isDetached) {
-                        inputField.text.clear(); hideKeyboard(); setSendLoading(false)
-                        transitionToState(ChatState.OPEN)
-                        onMessageSentListener?.invoke(content)
-                        updateConversation(conversationId, content)
-                    }
-                }
-            }
-            .addOnFailureListener { e ->
-                mainHandler.post {
-                    if (!isDetached) {
-                        val index = messages.indexOfFirst { it.id == messageId }
-                        if (index != -1) { messages.removeAt(index); adapter.notifyItemRemoved(index) }
-                        setSendLoading(false); transitionToState(ChatState.OPEN)
-                        Toast.makeText(context, "Failed to send", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-    }
-
-    private fun updateConversation(conversationId: String, lastMessage: String) {
         try {
-            firestore.collection("conversations").document(conversationId)
-                .update(mapOf("lastMessage" to lastMessage, "lastMessageTime" to System.currentTimeMillis().toString(), "lastMessageType" to 0))
+            if (recyclerView.canScrollVertically(-1)) {
+                recyclerView.smoothScrollToPosition(0)
+            }
         } catch (e: Exception) {}
     }
 
     private fun hideKeyboard() {
-        try { (context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)?.hideSoftInputFromWindow(inputField.windowToken, 0) } catch (e: Exception) {}
+        try {
+            (context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)
+                ?.hideSoftInputFromWindow(inputField.windowToken, 0)
+        } catch (e: Exception) {}
     }
 
-    fun setOnMinimizeListener(listener: () -> Unit) { onMinimizeListener = listener }
-    fun setOnCloseListener(listener: () -> Unit) { onCloseListener = listener }
-    fun setOnMessageSentListener(listener: (String) -> Unit) { onMessageSentListener = listener }
-    fun setOnStateChangedListener(listener: (ChatState) -> Unit) { onStateChangedListener = listener }
-    fun getCurrentState() = currentState
-    fun isExpanded() = isExpanded
-    fun getSavedState() = Bundle().apply { putInt("scroll_position", savedScrollPosition); putString("input_text", savedInputText) }
-    fun restoreFromBundle(bundle: Bundle) { savedScrollPosition = bundle.getInt("scroll_position", 0); savedInputText = bundle.getString("input_text", ""); restoreState() }
+    private fun setSendLoading(isLoading: Boolean) {
+        mainHandler.post {
+            if (isDetached) return@post
+            btnSend.visibility = if (isLoading) View.GONE else View.VISIBLE
+            sendLoading.visibility = if (isLoading) View.VISIBLE else View.GONE
+            inputField.isEnabled = !isLoading
+        }
+    }
 
-    // ⭐ SỬA cleanup: Đảm bảo loại bỏ tất cả listeners
+    private fun showLoading() {
+        mainHandler.post {
+            if (isDetached) return@post
+            loadingIndicator.visibility = View.VISIBLE
+            recyclerView.visibility = View.GONE
+            emptyStateView.visibility = View.GONE
+            errorStateView.visibility = View.GONE
+        }
+    }
+
+    private fun showEmptyState() {
+        mainHandler.post {
+            if (isDetached) return@post
+            loadingIndicator.visibility = View.GONE
+            recyclerView.visibility = View.GONE
+            emptyStateView.visibility = View.VISIBLE
+            errorStateView.visibility = View.GONE
+        }
+    }
+
+    private fun showError(message: String) {
+        mainHandler.post {
+            if (isDetached) return@post
+            loadingIndicator.visibility = View.GONE
+            recyclerView.visibility = View.GONE
+            emptyStateView.visibility = View.GONE
+            errorStateView.visibility = View.VISIBLE
+            errorText.text = message
+        }
+    }
+
+    private fun showMessages() {
+        mainHandler.post {
+            if (isDetached) return@post
+            loadingIndicator.visibility = View.GONE
+            recyclerView.visibility = View.VISIBLE
+            emptyStateView.visibility = View.GONE
+            errorStateView.visibility = View.GONE
+        }
+    }
+
+    // ============================================
+    // PUBLIC API
+    // ============================================
+    fun setOnMinimizeListener(listener: () -> Unit) {
+        onMinimizeListener = listener
+    }
+
+    fun setOnCloseListener(listener: () -> Unit) {
+        onCloseListener = listener
+    }
+
+    fun setOnMessageSentListener(listener: (String) -> Unit) {
+        onMessageSentListener = listener
+    }
+
     fun cleanup() {
         isDetached = true
-        try { messageListener?.remove(); messageListener = null } catch (e: Exception) {}
-        try { onlineListener?.remove(); onlineListener = null } catch (e: Exception) {}
-        try { typingListener?.remove(); typingListener = null } catch (e: Exception) {}
+
+        android.util.Log.d("MiniChat", "🧹 Cleaning up")
+
+        try {
+            messageListener?.remove()
+            messageListener = null
+        } catch (e: Exception) {}
+
+        try {
+            onlineListener?.remove()
+            onlineListener = null
+        } catch (e: Exception) {}
+
+        try {
+            typingListener?.remove()
+            typingListener = null
+        } catch (e: Exception) {}
+
         mainHandler.removeCallbacksAndMessages(null)
-        try { Glide.with(context).clear(avatarView) } catch (e: Exception) {}
-        onMinimizeListener = null; onCloseListener = null; onMessageSentListener = null; onStateChangedListener = null
+
+        try {
+            Glide.with(context).clear(avatarView)
+        } catch (e: Exception) {}
+
+        onMinimizeListener = null
+        onCloseListener = null
+        onMessageSentListener = null
         messages.clear()
+
+        android.util.Log.d("MiniChat", "✅ Cleanup complete")
     }
 
     override fun onDetachedFromWindow() {

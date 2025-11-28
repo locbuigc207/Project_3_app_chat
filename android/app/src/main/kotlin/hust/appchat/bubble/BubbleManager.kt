@@ -1,4 +1,5 @@
-// android/app/src/main/kotlin/hust/appchat/bubble/BubbleManager.kt - HOÀN CHỈNH
+// android/app/src/main/kotlin/hust/appchat/bubble/BubbleManager.kt
+// ✅ FIX: Bubble lifecycle để không bị destroy
 
 package hust.appchat.bubble
 
@@ -9,23 +10,21 @@ import android.os.Build
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
-import java.text.SimpleDateFormat // Import cần thiết cho formatTimestamp
-import java.util.* // Import cần thiết cho formatTimestamp
+import java.text.SimpleDateFormat
+import java.util.*
 
-/**
- * ✅ HOÀN CHỈNH: BubbleManager với đầy đủ tính năng: quản lý trạng thái, xoay màn hình, và thông báo cập nhật badge unread
- */
 object BubbleManager {
     private val activeBubbles = mutableMapOf<String, BubbleData>()
     private var firestore: FirebaseFirestore? = null
     private var auth: FirebaseAuth? = null
     private val messageListeners = mutableMapOf<String, ListenerRegistration>()
 
-    // ✅ Position tracking với screen orientation
+    // ✅ CRITICAL: Track if service is running
+    private var isServiceRunning = false
+
     private val bubblePositions = mutableMapOf<String, BubblePosition>()
     private var nextYPosition = 200
 
-    // ✅ Screen dimensions tracking
     private var lastScreenWidth = 0
     private var lastScreenHeight = 0
     private var lastOrientation = Configuration.ORIENTATION_UNDEFINED
@@ -51,16 +50,14 @@ object BubbleManager {
             firestore = FirebaseFirestore.getInstance()
             auth = FirebaseAuth.getInstance()
 
-            // ✅ Store initial screen dimensions
             updateScreenDimensions(context)
 
             android.util.Log.d("BubbleManager", "✅ Initialized")
         } catch (e: Exception) {
-            android.util.Log.e("BubbleManager", "❌ Failed to init Firebase: $e")
+            android.util.Log.e("BubbleManager", "❌ Failed to init: $e")
         }
     }
 
-    // ⭐ BỔ SUNG: Hàm formatTimestamp (sử dụng cho MiniChatWindow hiển thị Last seen)
     fun formatTimestamp(timestamp: Long): String {
         return try {
             val date = Date(timestamp)
@@ -71,17 +68,14 @@ object BubbleManager {
         }
     }
 
-    // ✅ Handle configuration changes (rotation)
     fun onConfigurationChanged(context: Context, newConfig: Configuration) {
         if (newConfig.orientation != lastOrientation) {
-            android.util.Log.d("BubbleManager", "📱 Orientation changed: ${newConfig.orientation}")
+            android.util.Log.d("BubbleManager", "📱 Orientation changed")
 
             val oldWidth = lastScreenWidth
             val oldHeight = lastScreenHeight
 
             updateScreenDimensions(context)
-
-            // ✅ Reposition all bubbles for new orientation
             repositionBubblesForRotation(context, oldWidth, oldHeight)
 
             lastOrientation = newConfig.orientation
@@ -96,7 +90,6 @@ object BubbleManager {
         android.util.Log.d("BubbleManager", "📱 Screen: ${lastScreenWidth}x${lastScreenHeight}")
     }
 
-    // ✅ Reposition bubbles after rotation
     private fun repositionBubblesForRotation(
         context: Context,
         oldWidth: Int,
@@ -105,19 +98,15 @@ object BubbleManager {
         if (activeBubbles.isEmpty()) return
 
         bubblePositions.forEach { (userId, position) ->
-            // Convert to percentage-based positioning
             val xPercent = position.x.toFloat() / oldWidth
             val yPercent = position.y.toFloat() / oldHeight
 
-            // Calculate new position
             position.x = (xPercent * lastScreenWidth).toInt()
             position.y = (yPercent * lastScreenHeight).toInt()
 
-            // Ensure within bounds
             position.x = position.x.coerceIn(0, lastScreenWidth - 100)
             position.y = position.y.coerceIn(0, lastScreenHeight - 100)
 
-            // Update bubble position
             val intent = Intent(context, BubbleOverlayService::class.java).apply {
                 action = "UPDATE_BUBBLE_POSITION"
                 putExtra("userId", userId)
@@ -127,12 +116,8 @@ object BubbleManager {
 
             try {
                 context.startService(intent)
-            } catch (e: Exception) {
-                android.util.Log.e("BubbleManager", "❌ Failed to update position: $e")
-            }
+            } catch (e: Exception) {}
         }
-
-        android.util.Log.d("BubbleManager", "✅ Repositioned ${activeBubbles.size} bubbles after rotation")
     }
 
     fun showBubble(
@@ -142,23 +127,20 @@ object BubbleManager {
         avatarUrl: String,
         message: String? = null
     ) {
-        android.util.Log.d("BubbleManager", "🎈 Showing bubble for: $userName")
+        android.util.Log.d("BubbleManager", "🎈 showBubble: $userName")
 
         val bubbleData = activeBubbles.getOrPut(userId) {
             BubbleData(userId, userName, avatarUrl)
         }
 
-        // Update data
         message?.let {
             bubbleData.lastMessage = it
             bubbleData.unreadCount++
             bubbleData.timestamp = System.currentTimeMillis()
         }
 
-        // ✅ Calculate position (handle rotation)
         val position = calculateBubblePosition(context, userId)
 
-        // Start service to show bubble
         val intent = Intent(context, BubbleOverlayService::class.java).apply {
             action = BubbleOverlayService.ACTION_SHOW_BUBBLE
             putExtra("userId", userId)
@@ -176,34 +158,33 @@ object BubbleManager {
             } else {
                 context.startService(intent)
             }
-            android.util.Log.d("BubbleManager", "✅ Service started for: $userName")
+
+            // ✅ Mark service as running
+            isServiceRunning = true
+
+            android.util.Log.d("BubbleManager", "✅ Service started")
         } catch (e: Exception) {
             android.util.Log.e("BubbleManager", "❌ Failed to start service: $e")
         }
 
-        // Listen to new messages
         listenToMessages(context, userId)
     }
 
     private fun calculateBubblePosition(context: Context, userId: String): BubblePosition {
-        // Check if bubble already has position
         bubblePositions[userId]?.let {
             return it
         }
 
-        // ✅ Smart positioning based on screen size
         updateScreenDimensions(context)
 
-        val x = lastScreenWidth - 100 // Right edge
+        val x = lastScreenWidth - 100
 
-        // ✅ Vertical stacking with dynamic spacing
         val bubbleHeight = 80
         val maxBubblesVisible = (lastScreenHeight - 300) / bubbleHeight
 
         val y = if (activeBubbles.size <= 1) {
-            200 // First bubble
+            200
         } else {
-            // Stack with spacing, wrap if too many
             val index = (activeBubbles.size - 1) % maxBubblesVisible
             200 + (index * bubbleHeight)
         }
@@ -218,7 +199,6 @@ object BubbleManager {
 
     private fun listenToMessages(context: Context, userId: String) {
         if (messageListeners.containsKey(userId)) {
-            android.util.Log.d("BubbleManager", "ℹ️ Already listening for: $userId")
             return
         }
 
@@ -238,7 +218,6 @@ object BubbleManager {
                 ?.whereEqualTo("isRead", false)
                 ?.addSnapshotListener { snapshot, error ->
                     if (error != null) {
-                        android.util.Log.e("BubbleManager", "❌ Listen error: $error")
                         return@addSnapshotListener
                     }
 
@@ -247,15 +226,11 @@ object BubbleManager {
                             val message = change.document.getString("content") ?: ""
                             val type = change.document.getLong("type")?.toInt() ?: 0
 
-                            android.util.Log.d("BubbleManager", "📨 New message from $userId: $message")
-
-                            // Update bubble
                             activeBubbles[userId]?.let { bubble ->
                                 bubble.lastMessage = if (type == 0) message else "📷 Image"
                                 bubble.unreadCount++
                                 bubble.timestamp = System.currentTimeMillis()
 
-                                // Notify service to update UI
                                 notifyBubbleUpdate(context, userId, bubble)
                             }
                         }
@@ -263,7 +238,7 @@ object BubbleManager {
                 }
 
             listener?.let { messageListeners[userId] = it }
-            android.util.Log.d("BubbleManager", "✅ Listener setup for: $userId")
+            android.util.Log.d("BubbleManager", "✅ Listener setup: $userId")
         } catch (e: Exception) {
             android.util.Log.e("BubbleManager", "❌ Failed to setup listener: $e")
         }
@@ -279,9 +254,7 @@ object BubbleManager {
 
         try {
             context.startService(intent)
-        } catch (e: Exception) {
-            android.util.Log.e("BubbleManager", "❌ Failed to notify update: $e")
-        }
+        } catch (e: Exception) {}
     }
 
     fun removeBubble(context: Context, userId: String) {
@@ -299,12 +272,14 @@ object BubbleManager {
         try {
             context.startService(intent)
             android.util.Log.d("BubbleManager", "✅ Bubble removed: $userId")
-        } catch (e: Exception) {
-            android.util.Log.e("BubbleManager", "❌ Failed to remove bubble: $e")
-        }
+        } catch (e: Exception) {}
 
-        // ✅ Reposition remaining bubbles
         repositionBubbles(context)
+
+        // ✅ Check if should stop service
+        if (activeBubbles.isEmpty()) {
+            isServiceRunning = false
+        }
     }
 
     private fun repositionBubbles(context: Context) {
@@ -320,33 +295,26 @@ object BubbleManager {
         }
 
         nextYPosition = yPos
-
-        android.util.Log.d("BubbleManager", "📍 Repositioned ${activeBubbles.size} bubbles")
     }
 
-    // ⭐ SỬA: Hàm markAsRead có Context để gửi Intent xóa badge unread
     fun markAsRead(context: Context, userId: String) {
         activeBubbles[userId]?.unreadCount = 0
 
-        // Cần gửi lệnh update để Service xóa unread badge
         val intent = Intent(context, BubbleOverlayService::class.java).apply {
             action = BubbleOverlayService.ACTION_UPDATE_BUBBLE
             putExtra("userId", userId)
-            putExtra("unreadCount", 0) // Thiết lập về 0
+            putExtra("unreadCount", 0)
             putExtra("lastMessage", activeBubbles[userId]?.lastMessage ?: "")
         }
         try {
             context.startService(intent)
-        } catch (e: Exception) {
-            android.util.Log.e("BubbleManager", "❌ Failed to notify read status update: $e")
-        }
+        } catch (e: Exception) {}
     }
 
     fun getCurrentUserId(): String? {
         return try {
             auth?.currentUser?.uid
         } catch (e: Exception) {
-            android.util.Log.e("BubbleManager", "❌ Failed to get current user: $e")
             null
         }
     }
@@ -363,33 +331,28 @@ object BubbleManager {
         return activeBubbles.toMap()
     }
 
-    // ✅ Lifecycle methods
     fun onAppPaused() {
-        android.util.Log.d("BubbleManager", "⏸️ App paused - bubbles persist")
+        android.util.Log.d("BubbleManager", "⏸️ App paused")
     }
 
     fun onAppResumed(context: Context) {
-        android.util.Log.d("BubbleManager", "▶️ App resumed - checking bubbles")
+        android.util.Log.d("BubbleManager", "▶️ App resumed")
 
-        // Verify all active bubbles still exist
         activeBubbles.keys.toList().forEach { userId ->
             val bubble = activeBubbles[userId]
             if (bubble != null) {
-                // Refresh bubble
                 showBubble(context, userId, bubble.userName, bubble.avatarUrl)
             }
         }
     }
 
     fun cleanup() {
-        android.util.Log.d("BubbleManager", "🧹 Cleaning up")
+        android.util.Log.d("BubbleManager", "🧹 Cleanup")
 
         messageListeners.values.forEach {
             try {
                 it.remove()
-            } catch (e: Exception) {
-                android.util.Log.e("BubbleManager", "❌ Failed to remove listener: $e")
-            }
+            } catch (e: Exception) {}
         }
 
         messageListeners.clear()
@@ -397,7 +360,6 @@ object BubbleManager {
         bubblePositions.clear()
         nextYPosition = 200
         lastOrientation = Configuration.ORIENTATION_UNDEFINED
-
-        android.util.Log.d("BubbleManager", "✅ Cleanup complete")
+        isServiceRunning = false
     }
 }
