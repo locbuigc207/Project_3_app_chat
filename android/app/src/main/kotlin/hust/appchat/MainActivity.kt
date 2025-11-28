@@ -1,4 +1,6 @@
-// android/app/src/main/kotlin/hust/appchat/MainActivity.kt - FULLY FIXED
+// android/app/src/main/kotlin/hust/appchat/MainActivity.kt
+// ✅ XIAOMI 14T PRO - ANDROID 16 COMPATIBLE
+
 package hust.appchat
 
 import android.content.Intent
@@ -16,14 +18,6 @@ import io.flutter.plugin.common.EventChannel
 import hust.appchat.bubble.BubbleManager
 import hust.appchat.bubble.BubbleOverlayService
 
-/**
- * ✅ FULLY FIXED: MainActivity without lifecycle issues
- *
- * FIXES:
- * 1. Removed LifecycleObserver (causes override conflicts)
- * 2. Use standard Activity lifecycle methods
- * 3. RECEIVER_NOT_EXPORTED for internal broadcasts
- */
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "chat_bubble_overlay"
     private val EVENT_CHANNEL = "chat_bubble_events"
@@ -56,11 +50,7 @@ class MainActivity : FlutterActivity() {
                     }
 
                     "hasPermission" -> {
-                        val hasPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                            Settings.canDrawOverlays(this)
-                        } else {
-                            true
-                        }
+                        val hasPermission = checkOverlayPermission()
                         android.util.Log.d("MainActivity", "✅ Has permission: $hasPermission")
                         result.success(hasPermission)
                     }
@@ -91,7 +81,6 @@ class MainActivity : FlutterActivity() {
                     "hideBubble" -> {
                         val userId = call.argument<String>("userId")
                         if (userId != null) {
-                            android.util.Log.d("MainActivity", "🫧 Hiding bubble: $userId")
                             BubbleManager.removeBubble(this, userId)
                             result.success(true)
                         } else {
@@ -100,7 +89,6 @@ class MainActivity : FlutterActivity() {
                     }
 
                     "hideAllBubbles" -> {
-                        android.util.Log.d("MainActivity", "🗑️ Hiding all bubbles")
                         val intent = Intent(this, BubbleOverlayService::class.java)
                         stopService(intent)
                         BubbleManager.cleanup()
@@ -113,8 +101,6 @@ class MainActivity : FlutterActivity() {
                         val avatarUrl = call.argument<String>("avatarUrl")
 
                         if (userId != null && userName != null) {
-                            android.util.Log.d("MainActivity", "💬 Opening mini chat for: $userName")
-
                             val intent = Intent(this, BubbleOverlayService::class.java).apply {
                                 action = BubbleOverlayService.ACTION_SHOW_MINI_CHAT
                                 putExtra("userId", userId)
@@ -139,8 +125,6 @@ class MainActivity : FlutterActivity() {
                     }
 
                     "hideMiniChat" -> {
-                        android.util.Log.d("MainActivity", "🔚 Hiding mini chat")
-
                         val intent = Intent(this, BubbleOverlayService::class.java).apply {
                             action = BubbleOverlayService.ACTION_HIDE_MINI_CHAT
                         }
@@ -149,13 +133,11 @@ class MainActivity : FlutterActivity() {
                             startService(intent)
                             result.success(true)
                         } catch (e: Exception) {
-                            android.util.Log.e("MainActivity", "❌ Failed to hide mini chat: $e")
                             result.success(false)
                         }
                     }
 
                     else -> {
-                        android.util.Log.w("MainActivity", "⚠️ Unknown method: ${call.method}")
                         result.notImplemented()
                     }
                 }
@@ -166,33 +148,55 @@ class MainActivity : FlutterActivity() {
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
-                    android.util.Log.d("MainActivity", "📡 Event channel listening")
                     eventSink = events
                     setupBubbleListeners()
                 }
 
                 override fun onCancel(arguments: Any?) {
-                    android.util.Log.d("MainActivity", "📡 Event channel cancelled")
                     eventSink = null
                     unsetupBubbleListeners()
                 }
             })
     }
 
+    // ✅ XIAOMI SPECIFIC: Enhanced permission check
+    private fun checkOverlayPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Settings.canDrawOverlays(this)
+        } else {
+            true
+        }
+    }
+
+    // ✅ XIAOMI SPECIFIC: Enhanced permission request with fallback
     private fun requestOverlayPermission(result: MethodChannel.Result) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (!Settings.canDrawOverlays(this)) {
-                android.util.Log.d("MainActivity", "📱 Requesting overlay permission")
+                android.util.Log.d("MainActivity", "📱 Requesting overlay permission (Xiaomi)")
 
                 pendingPermissionResult = result
 
-                val intent = Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
-                )
-                startActivityForResult(intent, OVERLAY_PERMISSION_REQUEST)
+                try {
+                    // ✅ Standard Android permission request
+                    val intent = Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")
+                    )
+                    startActivityForResult(intent, OVERLAY_PERMISSION_REQUEST)
+                } catch (e: Exception) {
+                    android.util.Log.e("MainActivity", "❌ Failed to open permission settings: $e")
+
+                    // ✅ XIAOMI FALLBACK: Try MIUI/HyperOS specific settings
+                    try {
+                        val xiaomiIntent = Intent("miui.intent.action.APP_PERM_EDITOR")
+                        xiaomiIntent.putExtra("extra_pkgname", packageName)
+                        startActivityForResult(xiaomiIntent, OVERLAY_PERMISSION_REQUEST)
+                    } catch (e2: Exception) {
+                        android.util.Log.e("MainActivity", "❌ Xiaomi fallback failed: $e2")
+                        result.success(false)
+                    }
+                }
             } else {
-                android.util.Log.d("MainActivity", "✅ Permission already granted")
                 result.success(true)
             }
         } else {
@@ -204,12 +208,7 @@ class MainActivity : FlutterActivity() {
         super.onActivityResult(requestCode, resultCode, data)
 
         if (requestCode == OVERLAY_PERMISSION_REQUEST) {
-            val hasPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                Settings.canDrawOverlays(this)
-            } else {
-                true
-            }
-
+            val hasPermission = checkOverlayPermission()
             android.util.Log.d("MainActivity", "📱 Permission result: $hasPermission")
 
             pendingPermissionResult?.success(hasPermission)
@@ -217,12 +216,8 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    // ✅ FIXED: Proper receiver registration with NOT_EXPORTED
     private fun setupBubbleListeners() {
-        if (receiversRegistered) {
-            android.util.Log.d("MainActivity", "ℹ️ Receivers already registered")
-            return
-        }
+        if (receiversRegistered) return
 
         bubbleClickReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
@@ -230,8 +225,6 @@ class MainActivity : FlutterActivity() {
                     val userId = intent.getStringExtra("userId") ?: ""
                     val userName = intent.getStringExtra("userName") ?: ""
                     val avatarUrl = intent.getStringExtra("avatarUrl") ?: ""
-
-                    android.util.Log.d("MainActivity", "🫧 Bubble clicked broadcast received: $userName")
 
                     eventSink?.success(
                         mapOf(
@@ -251,8 +244,6 @@ class MainActivity : FlutterActivity() {
                     val userId = intent.getStringExtra("userId") ?: ""
                     val message = intent.getStringExtra("message") ?: ""
 
-                    android.util.Log.d("MainActivity", "💬 Mini chat message broadcast received from $userId")
-
                     eventSink?.success(
                         mapOf(
                             "type" to "message",
@@ -268,7 +259,6 @@ class MainActivity : FlutterActivity() {
             val clickFilter = IntentFilter("CHAT_BUBBLE_CLICKED")
             val messageFilter = IntentFilter("CHAT_BUBBLE_MESSAGE")
 
-            // ✅ CRITICAL FIX: Use RECEIVER_NOT_EXPORTED for internal broadcasts
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 registerReceiver(bubbleClickReceiver, clickFilter, Context.RECEIVER_NOT_EXPORTED)
                 registerReceiver(bubbleMessageReceiver, messageFilter, Context.RECEIVER_NOT_EXPORTED)
@@ -278,34 +268,25 @@ class MainActivity : FlutterActivity() {
             }
 
             receiversRegistered = true
-            android.util.Log.d("MainActivity", "✅ Broadcast receivers registered successfully (API ${Build.VERSION.SDK_INT})")
+            android.util.Log.d("MainActivity", "✅ Receivers registered (API ${Build.VERSION.SDK_INT})")
         } catch (e: Exception) {
             android.util.Log.e("MainActivity", "❌ Error registering receivers: $e")
-            android.util.Log.e("MainActivity", "Stack trace: ${e.stackTraceToString()}")
         }
     }
 
     private fun unsetupBubbleListeners() {
-        if (!receiversRegistered) {
-            return
-        }
+        if (!receiversRegistered) return
 
         bubbleClickReceiver?.let {
             try {
                 unregisterReceiver(it)
-                android.util.Log.d("MainActivity", "✅ Click receiver unregistered")
-            } catch (e: Exception) {
-                android.util.Log.e("MainActivity", "⚠️ Error unregistering click receiver: $e")
-            }
+            } catch (e: Exception) {}
         }
 
         bubbleMessageReceiver?.let {
             try {
                 unregisterReceiver(it)
-                android.util.Log.d("MainActivity", "✅ Message receiver unregistered")
-            } catch (e: Exception) {
-                android.util.Log.e("MainActivity", "⚠️ Error unregistering message receiver: $e")
-            }
+            } catch (e: Exception) {}
         }
 
         bubbleClickReceiver = null
@@ -313,22 +294,18 @@ class MainActivity : FlutterActivity() {
         receiversRegistered = false
     }
 
-    // ✅ FIXED: Use standard Activity lifecycle (no @OnLifecycleEvent)
     override fun onResume() {
         super.onResume()
-        android.util.Log.d("MainActivity", "▶️ Activity resumed")
         BubbleManager.onAppResumed(this)
     }
 
     override fun onPause() {
         super.onPause()
-        android.util.Log.d("MainActivity", "⏸️ Activity paused")
         BubbleManager.onAppPaused()
     }
 
     override fun onDestroy() {
         unsetupBubbleListeners()
-        android.util.Log.d("MainActivity", "🛑 MainActivity destroyed")
         super.onDestroy()
     }
 }

@@ -1,22 +1,32 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="hust.appchat">
 
+    <!-- ============================================ -->
+    <!-- PERMISSIONS - Android 16 (API 36) Compatible -->
+    <!-- ============================================ -->
+
     <!-- Internet & Network -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Notifications -->
-    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Notifications - Android 13+ (API 33+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- ✅ CRITICAL for Android 14+ (API 34+) -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
-    <!-- Media & Storage -->
+    <!-- Media & Storage - Android 13+ -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />
+
+    <!-- Legacy storage for Android 12 and below -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
@@ -30,12 +40,15 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
-    <!-- Overlay for Chat Bubbles -->
+    <!-- ✅ CRITICAL: Overlay Permission for Chat Bubbles -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
-    <!-- Foreground Service -->
+    <!-- ✅ CRITICAL: Foreground Service for Android 14+ -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!-- ✅ NEW: Android 16 specific permissions -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <!-- Hardware Features (optional) -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
@@ -43,8 +56,8 @@
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 
+    <!-- Queries for URL and Maps -->
     <queries>
-        <!-- For opening URLs in browser -->
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
@@ -53,7 +66,6 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="http" />
         </intent>
-        <!-- For Google Maps -->
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="geo" />
@@ -64,13 +76,19 @@
         android:icon="@mipmap/ic_launcher"
         android:label="flutter_chat"
         android:requestLegacyExternalStorage="true"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="true"
+        android:enableOnBackInvokedCallback="true">
 
-        <!-- Bubble Overlay Service -->
+        <!-- ============================================ -->
+        <!-- BUBBLE OVERLAY SERVICE - Android 16 Compatible -->
+        <!-- ============================================ -->
         <service
             android:name=".bubble.BubbleOverlayService"
             android:exported="false"
-            android:foregroundServiceType="specialUse">
+            android:enabled="true"
+            android:foregroundServiceType="specialUse"
+            android:stopWithTask="false">
+            <!-- ✅ CRITICAL: Android 14+ requires description -->
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Chat bubble overlay for quick messaging" />
@@ -84,7 +102,9 @@
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="message_reminders" />
 
-        <!-- Main Activity -->
+        <!-- ============================================ -->
+        <!-- MAIN ACTIVITY - Android 16 Compatible -->
+        <!-- ============================================ -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -92,7 +112,9 @@
             android:hardwareAccelerated="true"
             android:launchMode="singleTop"
             android:theme="@style/LaunchTheme"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true">
 
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
