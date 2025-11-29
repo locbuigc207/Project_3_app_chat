@@ -18,8 +18,13 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class ChatPage extends StatefulWidget {
-  const ChatPage({super.key, required this.arguments});
+  const ChatPage({
+    super.key,
+    required this.arguments,
+    this.isMiniChat = false,
+  });
   final ChatPageArguments arguments;
+  final bool isMiniChat;
 
   @override
   ChatPageState createState() => ChatPageState();

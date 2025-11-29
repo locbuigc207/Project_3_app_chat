@@ -21,6 +21,7 @@ import hust.appchat.bubble.BubbleOverlayService
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "chat_bubble_overlay"
     private val EVENT_CHANNEL = "chat_bubble_events"
+    private val MINI_CHAT_CHANNEL = "mini_chat_overlay"
     private val OVERLAY_PERMISSION_REQUEST = 1001
 
     private var bubbleClickReceiver: BroadcastReceiver? = null
