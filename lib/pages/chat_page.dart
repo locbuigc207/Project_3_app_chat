@@ -35,6 +35,10 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   UserPresenceProvider? _presenceProvider;
   ChatBubbleService? _bubbleService;
 
+  // ✅ ADD: Channel cho giao tiếp Mini Chat
+  static const MethodChannel _miniChatChannel =
+      MethodChannel('mini_chat_channel');
+
   Timer? _typingTimer;
   bool _isTyping = false;
 
@@ -2271,8 +2275,129 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
   }
 
+  // ============================================
+  // ✅ ADD: MINI CHAT IMPLEMENTATION
+  // ============================================
+
+  Widget _buildMiniChatHeader() {
+    return Container(
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: ColorConstants.primaryColor,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+      ),
+      child: Row(
+        children: [
+          // Peer Avatar
+          CircleAvatar(
+            backgroundImage: NetworkImage(widget.arguments.peerAvatar),
+            radius: 18,
+            onBackgroundImageError: (_, __) {
+              // Fallback icon on error
+              print('❌ Avatar loading error in MiniChatHeader');
+            },
+          ),
+          SizedBox(width: 8),
+
+          // Peer Nickname
+          Expanded(
+            child: Text(
+              widget.arguments.peerNickname,
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+
+          // Minimize button
+          IconButton(
+            icon: Icon(Icons.remove, color: Colors.white),
+            onPressed: () {
+              // Call native to minimize
+              _miniChatChannel.invokeMethod('minimize');
+            },
+            padding: EdgeInsets.zero,
+            constraints: BoxConstraints(),
+          ),
+          SizedBox(width: 8),
+
+          // Close button
+          IconButton(
+            icon: Icon(Icons.close, color: Colors.white),
+            onPressed: () {
+              // Call native to close
+              _miniChatChannel.invokeMethod('close');
+            },
+            padding: EdgeInsets.zero,
+            constraints: BoxConstraints(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChatContent() {
+    return Expanded(
+      child: Column(
+        children: [
+          _buildPinnedMessages(),
+          _buildListMessage(),
+          _buildTypingIndicator(),
+          if (_isShowSticker) _buildStickers(),
+          _buildFeaturesMenu(),
+          _buildAdvancedInput(),
+        ],
+      ),
+    );
+  }
+
+  // ============================================
+  // ✅ END OF MINI CHAT IMPLEMENTATION
+  // ============================================
+
   @override
   Widget build(BuildContext context) {
+    if (widget.isMiniChat) {
+      // ✅ MINI CHAT MODE: Custom header
+      return Scaffold(
+        body: PopScope(
+          canPop: false,
+          onPopInvoked: (didPop) {
+            if (didPop) return;
+            // Dùng nút minimize thay cho Back
+            _miniChatChannel.invokeMethod('minimize');
+          },
+          child: SafeArea(
+            // Cần thêm padding/margin để tránh bị cut bởi status bar (dù là overlay)
+            // và để bo tròn góc.
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 10,
+                    offset: Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  _buildMiniChatHeader(), // ✅ Custom mini header
+                  _buildChatContent(), // ✅ Reuse chat logic
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Normal mode
     return Scaffold(
       appBar: AppBar(
         title: InkWell(

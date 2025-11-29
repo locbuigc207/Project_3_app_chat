@@ -320,18 +320,28 @@ class _AppInitializerState extends State<AppInitializer>
     print('✅ Setting up MiniChat MethodChannel');
     _miniChatChannel.setMethodCallHandler((call) async {
       print('📥 MiniChat Channel received: ${call.method}');
+
+      if (call.method == 'initMiniChat') {
+        final userId = call.arguments['userId'];
+        final userName = call.arguments['userName'];
+        final avatarUrl = call.arguments['avatarUrl'];
+
+        print('💬 Init mini chat: $userName (ID: $userId)');
+        // Logic để hiển thị giao diện chat trong ngữ cảnh của Flutter Engine
+        // (Native handles overlay, Flutter shows Chat Page)
+      }
+
       if (call.method == 'sendMessage') {
         final conversationId = call.arguments['conversationId'];
-        final peerId = call.arguments['peerId']; // ✅ CẦN TRUYỀN TỪ NATIVE
+        final userId = call.arguments['userId']; // ID người nhận (peer ID)
         final content = call.arguments['content'];
         final type = call.arguments['type'];
         final messageId = call.arguments['messageId'];
 
         final currentUserId =
             firebase_auth.FirebaseAuth.instance.currentUser?.uid;
-
-        if (currentUserId == null || peerId == null) {
-          print('❌ Cannot send message: User not logged in or Peer ID missing');
+        if (currentUserId == null) {
+          print('❌ Cannot send message: User not logged in.');
           return null;
         }
 
@@ -343,17 +353,16 @@ class _AppInitializerState extends State<AppInitializer>
             .doc(messageId)
             .set({
           'idFrom': currentUserId,
-          'idTo': peerId, // Sử dụng peerId truyền từ Native
+          'idTo': userId, // Sử dụng peer ID từ arguments
           'content': content,
           'type': type,
           'timestamp': messageId,
           'isRead': false,
         });
 
-        print('✉️ Message sent from MiniChat: $content to $peerId');
-
-        // Có thể gọi thêm logic như cập nhật lastMessage cho Conversation
+        print('✉️ Message sent from MiniChat: $content to $userId');
       }
+
       return null;
     });
   }

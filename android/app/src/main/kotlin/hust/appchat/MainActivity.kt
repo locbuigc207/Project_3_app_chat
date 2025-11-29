@@ -1,5 +1,5 @@
 // android/app/src/main/kotlin/hust/appchat/MainActivity.kt
-// ✅ XIAOMI 14T PRO - ANDROID 16 COMPATIBLE
+// ✅ FIXED: Support Mini Chat với Chat Page routing
 
 package hust.appchat
 
@@ -21,7 +21,6 @@ import hust.appchat.bubble.BubbleOverlayService
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "chat_bubble_overlay"
     private val EVENT_CHANNEL = "chat_bubble_events"
-    private val MINI_CHAT_CHANNEL = "mini_chat_overlay"
     private val OVERLAY_PERMISSION_REQUEST = 1001
 
     private var bubbleClickReceiver: BroadcastReceiver? = null
@@ -160,7 +159,6 @@ class MainActivity : FlutterActivity() {
             })
     }
 
-    // ✅ XIAOMI SPECIFIC: Enhanced permission check
     private fun checkOverlayPermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             Settings.canDrawOverlays(this)
@@ -169,16 +167,14 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    // ✅ XIAOMI SPECIFIC: Enhanced permission request with fallback
     private fun requestOverlayPermission(result: MethodChannel.Result) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (!Settings.canDrawOverlays(this)) {
-                android.util.Log.d("MainActivity", "📱 Requesting overlay permission (Xiaomi)")
+                android.util.Log.d("MainActivity", "📱 Requesting overlay permission")
 
                 pendingPermissionResult = result
 
                 try {
-                    // ✅ Standard Android permission request
                     val intent = Intent(
                         Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                         Uri.parse("package:$packageName")
@@ -186,16 +182,7 @@ class MainActivity : FlutterActivity() {
                     startActivityForResult(intent, OVERLAY_PERMISSION_REQUEST)
                 } catch (e: Exception) {
                     android.util.Log.e("MainActivity", "❌ Failed to open permission settings: $e")
-
-                    // ✅ XIAOMI FALLBACK: Try MIUI/HyperOS specific settings
-                    try {
-                        val xiaomiIntent = Intent("miui.intent.action.APP_PERM_EDITOR")
-                        xiaomiIntent.putExtra("extra_pkgname", packageName)
-                        startActivityForResult(xiaomiIntent, OVERLAY_PERMISSION_REQUEST)
-                    } catch (e2: Exception) {
-                        android.util.Log.e("MainActivity", "❌ Xiaomi fallback failed: $e2")
-                        result.success(false)
-                    }
+                    result.success(false)
                 }
             } else {
                 result.success(true)
@@ -269,7 +256,7 @@ class MainActivity : FlutterActivity() {
             }
 
             receiversRegistered = true
-            android.util.Log.d("MainActivity", "✅ Receivers registered (API ${Build.VERSION.SDK_INT})")
+            android.util.Log.d("MainActivity", "✅ Receivers registered")
         } catch (e: Exception) {
             android.util.Log.e("MainActivity", "❌ Error registering receivers: $e")
         }
