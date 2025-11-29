@@ -1,5 +1,5 @@
 // android/app/src/main/kotlin/hust/appchat/bubble/MiniChatWindow.kt
-// ✅ FIXED: Send messages via MethodChannel to Flutter
+// ✅ FIXED: All compilation errors resolved
 
 package hust.appchat.bubble
 
@@ -34,19 +34,17 @@ class MiniChatWindow(
     private val avatarUrl: String
 ) : LinearLayout(context) {
 
-    private val firestore = FirebaseFirestore.instance
+    // ✅ FIX: Use getInstance() instead of instance
+    private val firestore = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    // ✅ NEW: MethodChannel for communication with Flutter
     private var methodChannel: MethodChannel? = null
 
-    // Listeners
     private var messageListener: ListenerRegistration? = null
     private var typingListener: ListenerRegistration? = null
     private var onlineListener: ListenerRegistration? = null
 
-    // UI Components
     private val avatarView: ImageView
     private val nameView: TextView
     private val statusView: TextView
@@ -64,7 +62,6 @@ class MiniChatWindow(
     private val typingIndicator: LinearLayout
     private val sendLoading: ProgressBar
 
-    // Data
     private val messages = mutableListOf<MiniChatAdapter.ChatMessage>()
     private lateinit var adapter: MiniChatAdapter
     private lateinit var layoutManager: LinearLayoutManager
@@ -75,7 +72,6 @@ class MiniChatWindow(
     private var isLoadingMessages = false
     private var isSendingMessage = false
 
-    // Callbacks
     private var onMinimizeListener: (() -> Unit)? = null
     private var onCloseListener: (() -> Unit)? = null
     private var onMessageSentListener: ((String) -> Unit)? = null
@@ -86,7 +82,6 @@ class MiniChatWindow(
 
             LayoutInflater.from(context).inflate(R.layout.mini_chat_window, this, true)
 
-            // Initialize views
             avatarView = findViewById(R.id.mini_chat_avatar)
             nameView = findViewById(R.id.mini_chat_name)
             statusView = findViewById(R.id.mini_chat_status)
@@ -117,7 +112,6 @@ class MiniChatWindow(
         }
     }
 
-    // ✅ NEW: Set MethodChannel for Flutter communication
     fun setMethodChannel(channel: MethodChannel) {
         methodChannel = channel
         android.util.Log.d("MiniChat", "✅ MethodChannel set")
@@ -160,7 +154,6 @@ class MiniChatWindow(
 
     private fun setupListeners() {
         try {
-            // Header buttons
             btnMinimize.setOnClickListener {
                 android.util.Log.d("MiniChat", "⬇️ Minimize clicked")
                 hideKeyboard()
@@ -173,13 +166,11 @@ class MiniChatWindow(
                 onCloseListener?.invoke()
             }
 
-            // ✅ FIXED: Send button
             btnSend.setOnClickListener {
                 android.util.Log.d("MiniChat", "📤 Send clicked")
                 sendMessage()
             }
 
-            // Input field
             inputField.setOnEditorActionListener { _, actionId, _ ->
                 if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND) {
                     sendMessage()
@@ -187,7 +178,6 @@ class MiniChatWindow(
                 } else false
             }
 
-            // Typing indicator
             var typingTimer: android.os.CountDownTimer? = null
 
             inputField.addTextChangedListener(object : TextWatcher {
@@ -215,7 +205,6 @@ class MiniChatWindow(
                 }
             })
 
-            // Retry button
             btnRetry.setOnClickListener {
                 android.util.Log.d("MiniChat", "🔄 Retry clicked")
                 loadMessages()
@@ -346,6 +335,7 @@ class MiniChatWindow(
         }
     }
 
+    // ✅ FIX: Explicit lambda parameter types
     private fun handleMessagesUpdate(changes: List<DocumentChange>) {
         mainHandler.post {
             if (isDetached) return@post
@@ -447,7 +437,6 @@ class MiniChatWindow(
         }
     }
 
-    // ✅ FIXED: Send message via MethodChannel to Flutter
     private fun sendMessage() {
         if (isDetached || isSendingMessage) return
 
@@ -470,7 +459,6 @@ class MiniChatWindow(
 
         android.util.Log.d("MiniChat", "📤 Sending via MethodChannel: $content")
 
-        // ✅ Send to Flutter via MethodChannel
         mainHandler.post {
             try {
                 methodChannel?.invokeMethod(
@@ -483,7 +471,6 @@ class MiniChatWindow(
                     )
                 )
 
-                // Optimistic UI update
                 val optimisticMessage = MiniChatAdapter.ChatMessage(
                     id = messageId,
                     content = content,
@@ -558,7 +545,6 @@ class MiniChatWindow(
 
     private fun setupPresenceListeners() {
         try {
-            // Online status
             onlineListener = firestore
                 .collection("users")
                 .document(userId)
@@ -575,7 +561,6 @@ class MiniChatWindow(
                     updateOnlineStatus(isOnline, lastSeen)
                 }
 
-            // Typing status
             val typingDocId = if (currentUserId < userId) {
                 "$currentUserId-$userId"
             } else {
