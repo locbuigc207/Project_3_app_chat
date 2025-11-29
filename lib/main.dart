@@ -5,6 +5,9 @@ import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+// ✅ IMPORT THÊM CHO METHOD CHANNEL
+import 'package:flutter/services.dart';
+// END OF IMPORT
 import 'package:flutter_chat_demo/constants/constants.dart';
 import 'package:flutter_chat_demo/pages/pages.dart';
 import 'package:flutter_chat_demo/providers/phone_auth_provider.dart'
@@ -269,11 +272,17 @@ class AppInitializer extends StatefulWidget {
 
 class _AppInitializerState extends State<AppInitializer>
     with WidgetsBindingObserver {
+  // ✅ ADD: MethodChannel cho giao tiếp với MiniChatWindow (Native/Android)
+  static const MethodChannel _miniChatChannel =
+      MethodChannel('mini_chat_channel');
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _startNotificationService();
+    // ✅ GỌI HÀM THIẾT LẬP CHANNEL
+    _setupMiniChatChannel();
   }
 
   @override
@@ -305,6 +314,50 @@ class _AppInitializerState extends State<AppInitializer>
       }
     });
   }
+
+  // ✅ ADD: Hàm xử lý các lời gọi từ Native (MiniChatWindow)
+  void _setupMiniChatChannel() {
+    print('✅ Setting up MiniChat MethodChannel');
+    _miniChatChannel.setMethodCallHandler((call) async {
+      print('📥 MiniChat Channel received: ${call.method}');
+      if (call.method == 'sendMessage') {
+        final conversationId = call.arguments['conversationId'];
+        final peerId = call.arguments['peerId']; // ✅ CẦN TRUYỀN TỪ NATIVE
+        final content = call.arguments['content'];
+        final type = call.arguments['type'];
+        final messageId = call.arguments['messageId'];
+
+        final currentUserId =
+            firebase_auth.FirebaseAuth.instance.currentUser?.uid;
+
+        if (currentUserId == null || peerId == null) {
+          print('❌ Cannot send message: User not logged in or Peer ID missing');
+          return null;
+        }
+
+        // Send to Firestore
+        await FirebaseFirestore.instance
+            .collection('messages')
+            .doc(conversationId)
+            .collection(conversationId)
+            .doc(messageId)
+            .set({
+          'idFrom': currentUserId,
+          'idTo': peerId, // Sử dụng peerId truyền từ Native
+          'content': content,
+          'type': type,
+          'timestamp': messageId,
+          'isRead': false,
+        });
+
+        print('✉️ Message sent from MiniChat: $content to $peerId');
+
+        // Có thể gọi thêm logic như cập nhật lastMessage cho Conversation
+      }
+      return null;
+    });
+  }
+  // END OF ADD
 
   @override
   Widget build(BuildContext context) {

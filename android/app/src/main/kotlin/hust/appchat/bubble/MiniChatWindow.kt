@@ -1,5 +1,5 @@
 // android/app/src/main/kotlin/hust/appchat/bubble/MiniChatWindow.kt
-// ✅ COMPLETE: 100% đồng bộ với ChatPage conversation
+// ✅ FIXED: Send messages via MethodChannel to Flutter
 
 package hust.appchat.bubble
 
@@ -25,6 +25,7 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import hust.appchat.R
 import hust.appchat.adapter.MiniChatAdapter
+import io.flutter.plugin.common.MethodChannel
 
 class MiniChatWindow(
     context: Context,
@@ -33,9 +34,12 @@ class MiniChatWindow(
     private val avatarUrl: String
 ) : LinearLayout(context) {
 
-    private val firestore = FirebaseFirestore.getInstance()
+    private val firestore = FirebaseFirestore.instance
     private val auth = FirebaseAuth.getInstance()
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    // ✅ NEW: MethodChannel for communication with Flutter
+    private var methodChannel: MethodChannel? = null
 
     // Listeners
     private var messageListener: ListenerRegistration? = null
@@ -113,6 +117,12 @@ class MiniChatWindow(
         }
     }
 
+    // ✅ NEW: Set MethodChannel for Flutter communication
+    fun setMethodChannel(channel: MethodChannel) {
+        methodChannel = channel
+        android.util.Log.d("MiniChat", "✅ MethodChannel set")
+    }
+
     private fun setupUI() {
         try {
             nameView.text = userName
@@ -163,7 +173,7 @@ class MiniChatWindow(
                 onCloseListener?.invoke()
             }
 
-            // Send button
+            // ✅ FIXED: Send button
             btnSend.setOnClickListener {
                 android.util.Log.d("MiniChat", "📤 Send clicked")
                 sendMessage()
@@ -254,9 +264,6 @@ class MiniChatWindow(
         }
     }
 
-    // ============================================
-    // ✅ INITIALIZE CHAT - Khởi tạo conversation
-    // ============================================
     private fun initializeChat() {
         currentUserId = auth.currentUser?.uid ?: ""
 
@@ -266,7 +273,6 @@ class MiniChatWindow(
             return
         }
 
-        // ✅ CRITICAL: Đúng với ChatPage logic
         conversationId = if (currentUserId.compareTo(userId) > 0) {
             "$currentUserId-$userId"
         } else {
@@ -282,9 +288,6 @@ class MiniChatWindow(
         markMessagesAsRead()
     }
 
-    // ============================================
-    // ✅ LOAD MESSAGES - 100% giống ChatPage
-    // ============================================
     private fun loadMessages() {
         if (isLoadingMessages) {
             android.util.Log.d("MiniChat", "⏳ Already loading messages")
@@ -299,7 +302,6 @@ class MiniChatWindow(
 
             android.util.Log.d("MiniChat", "📥 Starting message listener for: $conversationId")
 
-            // ✅ CRITICAL: Đúng path với ChatPage
             messageListener = firestore
                 .collection("messages")
                 .document(conversationId)
@@ -393,7 +395,6 @@ class MiniChatWindow(
 
                 android.util.Log.d("MiniChat", "✅ Added message: ${message.content.take(20)}...")
 
-                // Mark as read if received
                 if (!message.isFromMe) {
                     mainHandler.postDelayed({
                         markMessagesAsRead()
@@ -446,9 +447,7 @@ class MiniChatWindow(
         }
     }
 
-    // ============================================
-    // ✅ SEND MESSAGE - 100% giống ChatPage
-    // ============================================
+    // ✅ FIXED: Send message via MethodChannel to Flutter
     private fun sendMessage() {
         if (isDetached || isSendingMessage) return
 
@@ -469,107 +468,51 @@ class MiniChatWindow(
 
         val messageId = System.currentTimeMillis().toString()
 
-        // ✅ CRITICAL: Đúng với ChatPage data structure
-        val messageData = hashMapOf(
-            "idFrom" to currentUserId,
-            "idTo" to userId,
-            "timestamp" to messageId,
-            "content" to content,
-            "type" to 0,
-            "isRead" to false
-        )
+        android.util.Log.d("MiniChat", "📤 Sending via MethodChannel: $content")
 
-        android.util.Log.d("MiniChat", "📤 Sending message: $content")
-        android.util.Log.d("MiniChat", "📤 To conversation: $conversationId")
-        android.util.Log.d("MiniChat", "📤 Message ID: $messageId")
-
-        // Optimistic UI update
-        val optimisticMessage = MiniChatAdapter.ChatMessage(
-            id = messageId,
-            content = content,
-            isFromMe = true,
-            timestamp = messageId.toLong(),
-            type = 0
-        )
-
+        // ✅ Send to Flutter via MethodChannel
         mainHandler.post {
-            if (!isDetached) {
-                messages.add(0, optimisticMessage)
-                adapter.notifyItemInserted(0)
-                scrollToLatestMessage()
+            try {
+                methodChannel?.invokeMethod(
+                    "sendMessage",
+                    mapOf(
+                        "conversationId" to conversationId,
+                        "content" to content,
+                        "type" to 0,
+                        "messageId" to messageId
+                    )
+                )
+
+                // Optimistic UI update
+                val optimisticMessage = MiniChatAdapter.ChatMessage(
+                    id = messageId,
+                    content = content,
+                    isFromMe = true,
+                    timestamp = messageId.toLong(),
+                    type = 0
+                )
+
+                if (!isDetached) {
+                    messages.add(0, optimisticMessage)
+                    adapter.notifyItemInserted(0)
+                    scrollToLatestMessage()
+                    inputField.text.clear()
+                    hideKeyboard()
+                    isSendingMessage = false
+                    setSendLoading(false)
+                    onMessageSentListener?.invoke(content)
+                }
+
+                android.util.Log.d("MiniChat", "✅ Message sent via MethodChannel")
+            } catch (e: Exception) {
+                android.util.Log.e("MiniChat", "❌ Send via MethodChannel failed: $e")
+                isSendingMessage = false
+                setSendLoading(false)
+                Toast.makeText(context, "Failed to send", Toast.LENGTH_SHORT).show()
             }
-        }
-
-        // Send to Firestore
-        firestore
-            .collection("messages")
-            .document(conversationId)
-            .collection(conversationId)
-            .document(messageId)
-            .set(messageData)
-            .addOnSuccessListener {
-                android.util.Log.d("MiniChat", "✅ Message sent successfully")
-
-                mainHandler.post {
-                    if (!isDetached) {
-                        inputField.text.clear()
-                        hideKeyboard()
-                        isSendingMessage = false
-                        setSendLoading(false)
-                        updateMyTypingStatus(false)
-                        onMessageSentListener?.invoke(content)
-                        updateConversation(content)
-                    }
-                }
-            }
-            .addOnFailureListener { e ->
-                android.util.Log.e("MiniChat", "❌ Send message failed: $e")
-
-                mainHandler.post {
-                    if (!isDetached) {
-                        val index = messages.indexOfFirst { it.id == messageId }
-                        if (index != -1) {
-                            messages.removeAt(index)
-                            adapter.notifyItemRemoved(index)
-                        }
-
-                        isSendingMessage = false
-                        setSendLoading(false)
-                        Toast.makeText(context, "Failed to send: ${e.message}", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-    }
-
-    // ============================================
-    // ✅ UPDATE CONVERSATION
-    // ============================================
-    private fun updateConversation(lastMessage: String) {
-        try {
-            val conversationData = mapOf(
-                "lastMessage" to lastMessage,
-                "lastMessageTime" to System.currentTimeMillis().toString(),
-                "lastMessageType" to 0
-            )
-
-            firestore
-                .collection("conversations")
-                .document(conversationId)
-                .update(conversationData)
-                .addOnSuccessListener {
-                    android.util.Log.d("MiniChat", "✅ Conversation updated")
-                }
-                .addOnFailureListener { e ->
-                    android.util.Log.e("MiniChat", "❌ Update conversation failed: $e")
-                }
-        } catch (e: Exception) {
-            android.util.Log.e("MiniChat", "❌ updateConversation error: $e")
         }
     }
 
-    // ============================================
-    // ✅ MARK AS READ
-    // ============================================
     private fun markMessagesAsRead() {
         if (isDetached || currentUserId.isEmpty()) return
 
@@ -599,8 +542,6 @@ class MiniChatWindow(
                     batch.commit()
                         .addOnSuccessListener {
                             android.util.Log.d("MiniChat", "✅ ${snapshot.size()} messages marked as read")
-
-                            // Notify BubbleManager
                             BubbleManager.markAsRead(context, userId)
                         }
                         .addOnFailureListener { e ->
@@ -615,9 +556,6 @@ class MiniChatWindow(
         }
     }
 
-    // ============================================
-    // ✅ PRESENCE & TYPING
-    // ============================================
     private fun setupPresenceListeners() {
         try {
             // Online status
@@ -707,9 +645,6 @@ class MiniChatWindow(
             .set(data as Map<String, Any>)
     }
 
-    // ============================================
-    // UI HELPERS
-    // ============================================
     private fun scrollToLatestMessage() {
         if (isDetached) return
         try {
@@ -776,9 +711,6 @@ class MiniChatWindow(
         }
     }
 
-    // ============================================
-    // PUBLIC API
-    // ============================================
     fun setOnMinimizeListener(listener: () -> Unit) {
         onMinimizeListener = listener
     }

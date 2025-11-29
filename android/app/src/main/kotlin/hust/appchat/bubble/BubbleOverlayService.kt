@@ -16,6 +16,10 @@ import android.view.*
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import hust.appchat.R
+// ✅ IMPORT THÊM CHO FLUTTER
+import io.flutter.embedding.engine.FlutterEngineCache
+import io.flutter.plugin.common.MethodChannel
+// END OF IMPORT
 
 class BubbleOverlayService : Service() {
 
@@ -23,7 +27,7 @@ class BubbleOverlayService : Service() {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val bubbleViews = mutableMapOf<String, BubbleView>()
-    private val bubbleParams = mutableMapOf<String, WindowManager.LayoutParams>()
+    private val bubbleParams = mutableMapMapOf<String, WindowManager.LayoutParams>()
 
     private var miniChatWindow: MiniChatWindow? = null
     private var miniChatParams: WindowManager.LayoutParams? = null
@@ -296,6 +300,18 @@ class BubbleOverlayService : Service() {
                     Toast.makeText(this, "Failed to create mini chat", Toast.LENGTH_SHORT).show()
                     return@post
                 }
+
+                // ✅ ADD: Setup MethodChannel
+                val flutterEngine = FlutterEngineCache.getInstance().get("mini_chat_engine")
+                if (flutterEngine != null) {
+                    val channel = MethodChannel(
+                        flutterEngine.dartExecutor.binaryMessenger,
+                        "mini_chat_channel"
+                    )
+                    miniChat.setMethodChannel(channel)
+                    android.util.Log.d("BubbleService", "✅ MethodChannel setup for MiniChat")
+                }
+                // END OF ADD
 
                 currentMiniChatUserId = userId
 
