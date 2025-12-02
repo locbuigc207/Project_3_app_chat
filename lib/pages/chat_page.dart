@@ -23,6 +23,7 @@ class ChatPage extends StatefulWidget {
     required this.arguments,
     this.isMiniChat = false,
   });
+
   final ChatPageArguments arguments;
   final bool isMiniChat;
 
@@ -2275,27 +2276,31 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
   }
 
-  // ============================================
-  // ✅ ADD: MINI CHAT IMPLEMENTATION
-  // ============================================
-
   Widget _buildMiniChatHeader() {
     return Container(
-      padding: EdgeInsets.all(12),
+      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: ColorConstants.primaryColor,
         borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
       ),
       child: Row(
         children: [
+          // Drag handle indicator
+          Container(
+            width: 40,
+            height: 4,
+            margin: EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+
           // Peer Avatar
           CircleAvatar(
             backgroundImage: NetworkImage(widget.arguments.peerAvatar),
             radius: 18,
-            onBackgroundImageError: (_, __) {
-              // Fallback icon on error
-              print('❌ Avatar loading error in MiniChatHeader');
-            },
+            onBackgroundImageError: (_, __) {},
           ),
           SizedBox(width: 8),
 
@@ -2314,25 +2319,23 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
           // Minimize button
           IconButton(
-            icon: Icon(Icons.remove, color: Colors.white),
+            icon: Icon(Icons.remove, color: Colors.white, size: 22),
             onPressed: () {
-              // Call native to minimize
               _miniChatChannel.invokeMethod('minimize');
             },
             padding: EdgeInsets.zero,
-            constraints: BoxConstraints(),
+            constraints: BoxConstraints(minWidth: 36, minHeight: 36),
           ),
-          SizedBox(width: 8),
+          SizedBox(width: 4),
 
           // Close button
           IconButton(
-            icon: Icon(Icons.close, color: Colors.white),
+            icon: Icon(Icons.close, color: Colors.white, size: 22),
             onPressed: () {
-              // Call native to close
               _miniChatChannel.invokeMethod('close');
             },
             padding: EdgeInsets.zero,
-            constraints: BoxConstraints(),
+            constraints: BoxConstraints(minWidth: 36, minHeight: 36),
           ),
         ],
       ),
@@ -2340,39 +2343,36 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Widget _buildChatContent() {
-    return Expanded(
-      child: Column(
-        children: [
-          _buildPinnedMessages(),
-          _buildListMessage(),
-          _buildTypingIndicator(),
-          if (_isShowSticker) _buildStickers(),
-          _buildFeaturesMenu(),
-          _buildAdvancedInput(),
-        ],
-      ),
+    return Stack(
+      children: [
+        Column(
+          children: [
+            _buildPinnedMessages(),
+            _buildListMessage(),
+            _buildTypingIndicator(),
+            if (_isShowSticker) _buildStickers(),
+            _buildFeaturesMenu(),
+            _buildAdvancedInput(),
+          ],
+        ),
+        Positioned(
+          child: _isLoading ? LoadingView() : SizedBox.shrink(),
+        ),
+      ],
     );
   }
-
-  // ============================================
-  // ✅ END OF MINI CHAT IMPLEMENTATION
-  // ============================================
 
   @override
   Widget build(BuildContext context) {
     if (widget.isMiniChat) {
-      // ✅ MINI CHAT MODE: Custom header
       return Scaffold(
         body: PopScope(
           canPop: false,
-          onPopInvoked: (didPop) {
+          onPopInvokedWithResult: (didPop, result) {
             if (didPop) return;
-            // Dùng nút minimize thay cho Back
             _miniChatChannel.invokeMethod('minimize');
           },
           child: SafeArea(
-            // Cần thêm padding/margin để tránh bị cut bởi status bar (dù là overlay)
-            // và để bo tròn góc.
             child: Container(
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -2387,8 +2387,8 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               ),
               child: Column(
                 children: [
-                  _buildMiniChatHeader(), // ✅ Custom mini header
-                  _buildChatContent(), // ✅ Reuse chat logic
+                  _buildMiniChatHeader(),
+                  _buildChatContent(),
                 ],
               ),
             ),
@@ -2397,7 +2397,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       );
     }
 
-    // Normal mode
+    // ✅ NORMAL MODE: Original UI (không đổi)
     return Scaffold(
       appBar: AppBar(
         title: InkWell(
@@ -2460,21 +2460,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             if (didPop) return;
             _onBackPress();
           },
-          child: Stack(
-            children: [
-              Column(
-                children: [
-                  _buildPinnedMessages(),
-                  _buildListMessage(),
-                  _buildTypingIndicator(),
-                  if (_isShowSticker) _buildStickers(),
-                  _buildFeaturesMenu(),
-                  _buildAdvancedInput(),
-                ],
-              ),
-              Positioned(child: _isLoading ? LoadingView() : SizedBox.shrink()),
-            ],
-          ),
+          child: _buildChatContent(), // ✅ Use refactored content
         ),
       ),
     );
@@ -2484,7 +2470,6 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   void dispose() {
     _isDisposed = true;
 
-    // Cancel all scheduled messages
     _scheduledMessages.forEach((key, timer) {
       timer.cancel();
     });
