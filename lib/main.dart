@@ -1,3 +1,6 @@
+// lib/main.dart
+// ✅ FINAL VERSION: Complete Mini Chat Routing
+
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -5,9 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
-// ✅ IMPORT THÊM CHO METHOD CHANNEL
 import 'package:flutter/services.dart';
-// END OF IMPORT
 import 'package:flutter_chat_demo/constants/constants.dart';
 import 'package:flutter_chat_demo/pages/pages.dart';
 import 'package:flutter_chat_demo/providers/phone_auth_provider.dart'
@@ -43,7 +44,6 @@ Future<void> main() async {
   final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
   await _initializeNotifications(flutterLocalNotificationsPlugin);
 
-  // ✅ NEW: Initialize Chat Bubble Service
   final chatBubbleService = ChatBubbleService();
   final notificationService = NotificationService();
 
@@ -81,7 +81,6 @@ Future<void> _initializeNotifications(
     },
   );
 
-  // Request permissions
   if (Platform.isAndroid) {
     final androidPlugin = plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
@@ -89,7 +88,6 @@ Future<void> _initializeNotifications(
     await androidPlugin?.requestNotificationsPermission();
     await androidPlugin?.requestExactAlarmsPermission();
 
-    // Create notification channel
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
         'message_reminders',
@@ -138,7 +136,6 @@ class MyApp extends StatelessWidget {
 
     return MultiProvider(
       providers: [
-        // Auth Providers
         ChangeNotifierProvider<AuthProvider>(
           create: (_) => AuthProvider(
             firebaseAuth: firebaseAuth,
@@ -154,8 +151,6 @@ class MyApp extends StatelessWidget {
             prefs: prefs,
           ),
         ),
-
-        // Core Providers
         Provider<SettingProvider>(
           create: (_) => SettingProvider(
             prefs: prefs,
@@ -173,8 +168,6 @@ class MyApp extends StatelessWidget {
             firebaseStorage: firebaseStorage,
           ),
         ),
-
-        // Feature Providers
         Provider<FriendProvider>(
           create: (_) => FriendProvider(firebaseFirestore: firebaseFirestore),
         ),
@@ -188,13 +181,9 @@ class MyApp extends StatelessWidget {
           create: (_) =>
               ConversationProvider(firebaseFirestore: firebaseFirestore),
         ),
-
-        // Theme
         ChangeNotifierProvider<ThemeProvider>(
           create: (_) => ThemeProvider(prefs: prefs),
         ),
-
-        // Advanced Features
         Provider<ReminderProvider>(
           create: (_) => ReminderProvider(
             firebaseFirestore: firebaseFirestore,
@@ -219,20 +208,15 @@ class MyApp extends StatelessWidget {
           create: (_) =>
               UserPresenceProvider(firebaseFirestore: firebaseFirestore),
         ),
-
-        // ✅ NEW: Chat Bubble Services
         Provider<ChatBubbleService>(
           create: (_) => chatBubbleService,
         ),
         Provider<NotificationService>(
           create: (_) => notificationService,
         ),
-
-        // Location Provider (lazy initialization)
         Provider<LocationProvider>(
           create: (_) => LocationProvider(),
         ),
-
         Provider<TranslationProvider>(
           create: (_) => TranslationProvider(),
         ),
@@ -257,7 +241,6 @@ class MyApp extends StatelessWidget {
   }
 }
 
-/// ✅ NEW: App initializer that starts notification service
 class AppInitializer extends StatefulWidget {
   final NotificationService notificationService;
 
@@ -272,23 +255,23 @@ class AppInitializer extends StatefulWidget {
 
 class _AppInitializerState extends State<AppInitializer>
     with WidgetsBindingObserver {
-  // ✅ ADD: MethodChannel cho giao tiếp với MiniChatWindow (Native/Android)
   static const MethodChannel _miniChatChannel =
       MethodChannel('mini_chat_channel');
+
+  static final GlobalKey<NavigatorState> _overlayNavigatorKey =
+      GlobalKey<NavigatorState>();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _startNotificationService();
-    // ✅ GỌI HÀM THIẾT LẬP CHANNEL
     _setupMiniChatChannel();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-
     print('📱 App lifecycle: $state');
 
     if (state == AppLifecycleState.paused) {
@@ -298,9 +281,7 @@ class _AppInitializerState extends State<AppInitializer>
     }
   }
 
-  /// ✅ Start notification service when user logs in
   Future<void> _startNotificationService() async {
-    // Wait for auth to initialize
     await Future.delayed(Duration(milliseconds: 500));
 
     final auth = firebase_auth.FirebaseAuth.instance;
@@ -315,62 +296,75 @@ class _AppInitializerState extends State<AppInitializer>
     });
   }
 
-  // ✅ ADD: Hàm xử lý các lời gọi từ Native (MiniChatWindow)
   void _setupMiniChatChannel() {
     print('✅ Setting up MiniChat MethodChannel');
+
     _miniChatChannel.setMethodCallHandler((call) async {
       print('📥 MiniChat Channel received: ${call.method}');
 
-      if (call.method == 'initMiniChat') {
-        final userId = call.arguments['userId'];
-        final userName = call.arguments['userName'];
-        final avatarUrl = call.arguments['avatarUrl'];
+      if (call.method == 'navigateToMiniChat') {
+        final peerId = call.arguments['peerId'] as String?;
+        final peerNickname = call.arguments['peerNickname'] as String?;
+        final peerAvatar = call.arguments['peerAvatar'] as String?;
 
-        print('💬 Init mini chat: $userName (ID: $userId)');
-        // Logic để hiển thị giao diện chat trong ngữ cảnh của Flutter Engine
-        // (Native handles overlay, Flutter shows Chat Page)
-      }
-
-      if (call.method == 'sendMessage') {
-        final conversationId = call.arguments['conversationId'];
-        final userId = call.arguments['userId']; // ID người nhận (peer ID)
-        final content = call.arguments['content'];
-        final type = call.arguments['type'];
-        final messageId = call.arguments['messageId'];
-
-        final currentUserId =
-            firebase_auth.FirebaseAuth.instance.currentUser?.uid;
-        if (currentUserId == null) {
-          print('❌ Cannot send message: User not logged in.');
+        if (peerId == null || peerNickname == null) {
+          print('❌ Missing required arguments for navigation');
           return null;
         }
 
-        // Send to Firestore
-        await FirebaseFirestore.instance
-            .collection('messages')
-            .doc(conversationId)
-            .collection(conversationId)
-            .doc(messageId)
-            .set({
-          'idFrom': currentUserId,
-          'idTo': userId, // Sử dụng peer ID từ arguments
-          'content': content,
-          'type': type,
-          'timestamp': messageId,
-          'isRead': false,
-        });
+        print('💬 Navigating to mini chat: $peerNickname (ID: $peerId)');
 
-        print('✉️ Message sent from MiniChat: $content to $userId');
+        final navigatorState = _overlayNavigatorKey.currentState;
+        if (navigatorState != null) {
+          navigatorState.pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => ChatPage(
+                arguments: ChatPageArguments(
+                  peerId: peerId,
+                  peerNickname: peerNickname,
+                  peerAvatar: peerAvatar ?? '',
+                ),
+                isMiniChat: true,
+              ),
+            ),
+          );
+          print('✅ Navigation complete');
+        } else {
+          print('❌ Navigator state is null');
+        }
       }
 
       return null;
     });
+
+    print('✅ MiniChat MethodChannel setup complete');
   }
-  // END OF ADD
 
   @override
   Widget build(BuildContext context) {
-    return SplashPage();
+    return Stack(
+      children: [
+        SplashPage(),
+        Positioned.fill(
+          child: IgnorePointer(
+            ignoring: true,
+            child: Opacity(
+              opacity: 0,
+              child: Navigator(
+                key: _overlayNavigatorKey,
+                onGenerateRoute: (settings) {
+                  return MaterialPageRoute(
+                    builder: (_) => Container(
+                      color: Colors.transparent,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   @override

@@ -1,7 +1,6 @@
 export 'advanced_search_bar.dart';
 export 'auto_delete_settings_dialog.dart';
 export 'bubble_manager.dart';
-export 'bubble_mini_chat.dart';
 export 'conversation_item.dart';
 export 'conversation_options_dialog.dart';
 export 'edit_message_dialog.dart';

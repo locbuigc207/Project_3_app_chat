@@ -1,5 +1,5 @@
 // android/app/src/main/kotlin/hust/appchat/bubble/BubbleOverlayService.kt
-// ✅ FIXED: Mini Chat = Chat Page in Overlay với Flutter Engine
+// ✅ FINAL VERSION: Mini Chat with Flutter Engine
 
 package hust.appchat.bubble
 
@@ -13,7 +13,6 @@ import android.os.IBinder
 import android.os.Looper
 import android.util.DisplayMetrics
 import android.view.*
-import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import hust.appchat.R
 import io.flutter.embedding.android.FlutterView
@@ -30,11 +29,12 @@ class BubbleOverlayService : Service() {
     private val bubbleViews = mutableMapOf<String, BubbleView>()
     private val bubbleParams = mutableMapOf<String, WindowManager.LayoutParams>()
 
-    // ✅ NEW: Flutter Engine for Mini Chat
+    // Mini Chat với Flutter
     private var miniChatFlutterView: FlutterView? = null
     private var miniChatParams: WindowManager.LayoutParams? = null
     private var miniChatEngine: FlutterEngine? = null
     private var miniChatChannel: MethodChannel? = null
+
     private var currentMiniChatUserId: String? = null
     private var currentMiniChatUserName: String? = null
     private var currentMiniChatAvatarUrl: String? = null
@@ -165,7 +165,7 @@ class BubbleOverlayService : Service() {
     }
 
     // ========================================
-    // ✅ NEW: MINI CHAT WITH FLUTTER ENGINE
+    // MINI CHAT WITH FLUTTER ENGINE
     // ========================================
 
     private fun showMiniChat(userId: String, userName: String, avatarUrl: String) {
@@ -173,7 +173,6 @@ class BubbleOverlayService : Service() {
 
         mainHandler.post {
             try {
-                // Hide existing mini chat
                 miniChatFlutterView?.let {
                     try {
                         windowManager?.removeView(it)
@@ -186,7 +185,7 @@ class BubbleOverlayService : Service() {
                 currentMiniChatUserName = userName
                 currentMiniChatAvatarUrl = avatarUrl
 
-                // ✅ Get or create Flutter Engine
+                // Get or create Flutter Engine (REUSE)
                 miniChatEngine = FlutterEngineCache.getInstance().get(MINI_CHAT_ENGINE_ID)
                 if (miniChatEngine == null) {
                     android.util.Log.d("BubbleService", "🔧 Creating new Flutter Engine")
@@ -197,18 +196,14 @@ class BubbleOverlayService : Service() {
                     FlutterEngineCache.getInstance().put(MINI_CHAT_ENGINE_ID, miniChatEngine!!)
                 }
 
-                // ✅ Create FlutterView
+                // Create FlutterView
                 miniChatFlutterView = FlutterView(this)
                 miniChatFlutterView!!.attachToFlutterEngine(miniChatEngine!!)
 
-                // ✅ Setup MethodChannel
+                // Setup MethodChannel
                 setupMiniChatChannel()
 
-                // ✅ Send initial data to Flutter
-                sendMiniChatData(userId, userName, avatarUrl)
-
-                // ✅ Calculate size
-                val density = resources.displayMetrics.density
+                // Calculate size
                 val width = ((screenWidth * 0.85).toInt()).coerceIn(300, 600)
                 val height = ((screenHeight * 0.7).toInt()).coerceIn(400, 900)
 
@@ -228,7 +223,7 @@ class BubbleOverlayService : Service() {
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                             WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
                             WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                            WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM, // ✅ CRITICAL: Keyboard support
+                            WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
                     PixelFormat.TRANSLUCENT
                 ).apply {
                     gravity = Gravity.CENTER
@@ -236,15 +231,17 @@ class BubbleOverlayService : Service() {
                             WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
                 }
 
-                // ✅ Add to window manager
                 windowManager?.addView(miniChatFlutterView, miniChatParams)
 
-                android.util.Log.d("BubbleService", "✅ Mini chat added")
+                android.util.Log.d("BubbleService", "✅ Mini chat view added")
+
+                mainHandler.postDelayed({
+                    sendMiniChatData(userId, userName, avatarUrl)
+                }, 300)
 
             } catch (e: Exception) {
                 android.util.Log.e("BubbleService", "❌ showMiniChat failed: $e")
                 android.util.Log.e("BubbleService", "Stack: ${e.stackTraceToString()}")
-                Toast.makeText(this, "Failed to show mini chat", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -262,9 +259,8 @@ class BubbleOverlayService : Service() {
                 when (call.method) {
                     "minimize" -> {
                         hideMiniChat()
-                        // Show bubble back
                         currentMiniChatUserId?.let { userId ->
-                            bubbleViews[userId]?.visibility = android.view.View.VISIBLE
+                            bubbleViews[userId]?.visibility = View.VISIBLE
                         }
                         result.success(true)
                     }
@@ -274,20 +270,6 @@ class BubbleOverlayService : Service() {
                         currentMiniChatUserId?.let { userId ->
                             BubbleManager.removeBubble(this, userId)
                         }
-                        result.success(true)
-                    }
-
-                    "sendMessage" -> {
-                        val message = call.argument<String>("message") ?: ""
-                        android.util.Log.d("BubbleService", "✉️ Message from mini chat: $message")
-
-                        // Send broadcast to Flutter app
-                        val intent = Intent("CHAT_BUBBLE_MESSAGE").apply {
-                            putExtra("userId", currentMiniChatUserId)
-                            putExtra("message", message)
-                        }
-                        sendBroadcast(intent)
-
                         result.success(true)
                     }
 
@@ -302,21 +284,19 @@ class BubbleOverlayService : Service() {
     }
 
     private fun sendMiniChatData(userId: String, userName: String, avatarUrl: String) {
-        mainHandler.postDelayed({
-            try {
-                miniChatChannel?.invokeMethod(
-                    "initMiniChat",
-                    mapOf(
-                        "userId" to userId,
-                        "userName" to userName,
-                        "avatarUrl" to avatarUrl
-                    )
+        try {
+            miniChatChannel?.invokeMethod(
+                "navigateToMiniChat",
+                mapOf(
+                    "peerId" to userId,
+                    "peerNickname" to userName,
+                    "peerAvatar" to avatarUrl
                 )
-                android.util.Log.d("BubbleService", "✅ Sent data to mini chat")
-            } catch (e: Exception) {
-                android.util.Log.e("BubbleService", "❌ Failed to send data: $e")
-            }
-        }, 500) // Delay to ensure Flutter is ready
+            )
+            android.util.Log.d("BubbleService", "✅ Sent navigation command to Flutter")
+        } catch (e: Exception) {
+            android.util.Log.e("BubbleService", "❌ Failed to send navigation data: $e")
+        }
     }
 
     private fun hideMiniChat() {
@@ -340,7 +320,7 @@ class BubbleOverlayService : Service() {
     }
 
     // ========================================
-    // BUBBLE OPERATIONS (Keep existing code)
+    // BUBBLE OPERATIONS
     // ========================================
 
     private fun showBubble(
@@ -443,7 +423,6 @@ class BubbleOverlayService : Service() {
 
             } catch (e: Exception) {
                 android.util.Log.e("BubbleService", "❌ showBubble failed: $e")
-                Toast.makeText(this, "Failed to create bubble", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -536,7 +515,7 @@ class BubbleOverlayService : Service() {
 
     private fun onBubbleClicked(userId: String, userName: String, avatarUrl: String) {
         try {
-            bubbleViews[userId]?.visibility = android.view.View.GONE
+            bubbleViews[userId]?.visibility = View.GONE
             showMiniChat(userId, userName, avatarUrl)
             BubbleManager.markAsRead(this, userId)
 
@@ -546,7 +525,9 @@ class BubbleOverlayService : Service() {
                 putExtra("avatarUrl", avatarUrl)
             }
             sendBroadcast(intent)
-        } catch (e: Exception) {}
+        } catch (e: Exception) {
+            android.util.Log.e("BubbleService", "❌ Error handling bubble click: $e")
+        }
     }
 
     private fun showDeleteZone() {
@@ -653,9 +634,6 @@ class BubbleOverlayService : Service() {
                 } catch (e: Exception) {}
             }
             miniChatFlutterView = null
-
-            // Keep engine for reuse
-            // miniChatEngine = null
 
             isServiceRunning = false
         } catch (e: Exception) {}
