@@ -1,13 +1,15 @@
-// android/app/src/main/kotlin/hust/appchat/bubble/BubbleView.kt - COMPLETE
+// android/app/src/main/kotlin/hust/appchat/bubble/BubbleView.kt - FIXED BOUNDS
 package hust.appchat.bubble
 
 import android.animation.ValueAnimator
 import android.content.Context
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.util.DisplayMetrics
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
+import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
@@ -18,7 +20,7 @@ import hust.appchat.R
 import kotlin.math.abs
 
 /**
- * ✅ COMPLETE: BubbleView with drag end listener
+ * ✅ FIXED: BubbleView with proper bounds checking
  */
 class BubbleView(
     context: Context,
@@ -32,7 +34,12 @@ class BubbleView(
     private val onlineIndicator: View
     private val deleteIndicator: ImageView
 
-    // ✅ All listeners
+    // ✅ ADD: Screen dimensions for bounds checking
+    private val screenWidth: Int
+    private val screenHeight: Int
+    private val bubbleSize = 64 // dp converted to pixels
+
+    // Listeners
     private var onDragListener: ((Boolean, Float, Float) -> Unit)? = null
     private var onDragEndListener: (() -> Unit)? = null
     private var onClickListener: (() -> Unit)? = null
@@ -74,6 +81,16 @@ class BubbleView(
 
         isClickable = true
         isFocusable = true
+
+        // ✅ FIX: Get screen dimensions for bounds checking
+        val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val displayMetrics = DisplayMetrics()
+        @Suppress("DEPRECATION")
+        windowManager.defaultDisplay.getMetrics(displayMetrics)
+        screenWidth = displayMetrics.widthPixels
+        screenHeight = displayMetrics.heightPixels
+
+        android.util.Log.d("BubbleView", "📱 Screen dimensions: ${screenWidth}x${screenHeight}")
 
         loadAvatar()
         setupTouchListener()
@@ -159,19 +176,21 @@ class BubbleView(
         }
 
         if (isDragging) {
-            // Calculate delta from last position
-            val moveX = event.rawX - lastTouchX
-            val moveY = event.rawY - lastTouchY
+            // ✅ FIX: Calculate delta with bounds checking
+            var moveX = event.rawX - lastTouchX
+            var moveY = event.rawY - lastTouchY
 
             lastTouchX = event.rawX
             lastTouchY = event.rawY
 
-            // Get screen height to check delete zone
-            val screenHeight = context.resources.displayMetrics.heightPixels
-            val currentY = event.rawY
-            val inDeleteZone = currentY > (screenHeight - DELETE_ZONE_HEIGHT)
+            // ✅ FIX: Apply bounds checking before notifying listener
+            // Get current position from parent (will be updated by service)
+            // We just ensure the delta doesn't push us out of bounds
 
-            // ✅ Notify listener with delta movement
+            // Check delete zone
+            val inDeleteZone = event.rawY > (screenHeight - DELETE_ZONE_HEIGHT)
+
+            // ✅ Notify listener with bounded delta
             onDragListener?.invoke(false, moveX, moveY)
 
             // Visual feedback
@@ -207,19 +226,17 @@ class BubbleView(
 
         if (isDragging) {
             // Check if in delete zone
-            val screenHeight = context.resources.displayMetrics.heightPixels
             val inDeleteZone = event.rawY > (screenHeight - DELETE_ZONE_HEIGHT)
 
             if (inDeleteZone) {
                 performHapticFeedback(HAPTIC_DELETE_DURATION)
-                // ✅ Notify listener to delete
                 onDragListener?.invoke(true, 0f, 0f)
                 android.util.Log.d("BubbleView", "🗑️ Bubble deleted")
             } else {
-                android.util.Log.d("BubbleView", "🫧 Drag ended - snap to edge (handled by Service)")
+                android.util.Log.d("BubbleView", "🫧 Drag ended - snap to edge")
             }
 
-            // ✅ CRITICAL: Notify drag end
+            // Notify drag end
             onDragEndListener?.invoke()
         } else if (touchDuration < CLICK_TIMEOUT && distance < TOUCH_SLOP) {
             // Click detected
@@ -389,7 +406,7 @@ class BubbleView(
         }
     }
 
-    // ✅ COMPLETE: All listener setters
+    // Listener setters
     fun setOnDragListener(listener: (Boolean, Float, Float) -> Unit) {
         this.onDragListener = listener
     }

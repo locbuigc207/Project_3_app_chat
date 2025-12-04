@@ -200,13 +200,33 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
   }
 
+  // ✅ ADD: Better keyboard handling for mini chat
+  void _ensureKeyboardVisibility() {
+    if (widget.isMiniChat) {
+      // In mini chat, ensure keyboard is shown when focus is on input
+      Future.delayed(Duration(milliseconds: 100), () {
+        if (mounted && _focusNode.hasFocus) {
+          // Force keyboard to show
+          _focusNode.requestFocus();
+        }
+      });
+    }
+  }
+
+  // ✅ MODIFY: _onFocusChange to handle mini chat
   void _onFocusChange() {
     if (_isDisposed || !mounted) return;
+
     if (_focusNode.hasFocus) {
       setState(() {
         _isShowSticker = false;
         _showFeaturesMenu = false;
       });
+
+      // ✅ In mini chat, ensure keyboard stays visible
+      if (widget.isMiniChat) {
+        _ensureKeyboardVisibility();
+      }
     }
   }
 
@@ -2019,14 +2039,24 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     );
   }
 
+  // ✅ MODIFY: _buildAdvancedInput to auto-focus and restrict features in mini chat
   Widget _buildAdvancedInput() {
+    // ✅ Auto-focus in mini chat mode
+    if (widget.isMiniChat && !_focusNode.hasFocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_isDisposed) {
+          _focusNode.requestFocus();
+        }
+      });
+    }
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Smart Replies - ✅ FIX: Wrap in SingleChildScrollView
+        // Smart Replies
         if (_smartReplies.isNotEmpty)
           Container(
-            constraints: BoxConstraints(maxHeight: 60), // ✅ FIX: Add max height
+            constraints: BoxConstraints(maxHeight: 60),
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: SmartReplyWidget(
@@ -2035,6 +2065,8 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   if (!_isDisposed) {
                     _chatInputController.text = reply;
                     setState(() => _smartReplies = []);
+                    // ✅ Refocus after selecting reply
+                    _focusNode.requestFocus();
                   }
                 },
               ),
@@ -2045,7 +2077,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         if (_replyingTo != null)
           Container(
             width: double.infinity,
-            constraints: BoxConstraints(maxHeight: 50), // ✅ FIX: Add max height
+            constraints: BoxConstraints(maxHeight: 50),
             color: ColorConstants.greyColor2.withOpacity(0.2),
             padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             child: Row(
@@ -2055,7 +2087,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     'Replying: ${_replyingTo!.content}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 13), // ✅ FIX: Smaller font
+                    style: TextStyle(fontSize: 13),
                   ),
                 ),
                 IconButton(
@@ -2063,9 +2095,11 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   onPressed: () {
                     if (mounted && !_isDisposed) {
                       setState(() => _replyingTo = null);
+                      // ✅ Refocus after closing reply
+                      _focusNode.requestFocus();
                     }
                   },
-                  padding: EdgeInsets.zero, // ✅ FIX: Remove padding
+                  padding: EdgeInsets.zero,
                   constraints: BoxConstraints(minWidth: 32, minHeight: 32),
                 ),
               ],
@@ -2087,7 +2121,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   style: TextStyle(
                     color: Colors.red,
                     fontWeight: FontWeight.bold,
-                    fontSize: 13, // ✅ FIX: Smaller font
+                    fontSize: 13,
                   ),
                 ),
                 Spacer(),
@@ -2111,12 +2145,12 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             ),
           ),
 
-        // ✅ FIX: Input area with proper constraints
+        // ✅ KEYBOARD FIX: Input area
         Container(
           width: double.infinity,
           constraints: BoxConstraints(
             minHeight: 50,
-            maxHeight: 120, // ✅ FIX: Prevent overflow when typing long text
+            maxHeight: 120,
           ),
           decoration: BoxDecoration(
             border: Border(
@@ -2125,10 +2159,9 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             color: Colors.white,
           ),
           child: Row(
-            crossAxisAlignment:
-                CrossAxisAlignment.end, // ✅ FIX: Align to bottom
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              // More options button
+              // More options button (Disabled in Mini Chat)
               Material(
                 color: Colors.white,
                 child: Container(
@@ -2136,62 +2169,83 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   child: IconButton(
                     icon: Icon(
                       _showFeaturesMenu ? Icons.close : Icons.more_horiz,
-                      color: ColorConstants.primaryColor,
+                      color: widget.isMiniChat
+                          ? ColorConstants.greyColor // Dim if disabled
+                          : ColorConstants.primaryColor,
                       size: 24,
                     ),
-                    onPressed: _toggleFeaturesMenu,
-                    padding: EdgeInsets.all(8), // ✅ FIX: Proper padding
+                    onPressed: widget.isMiniChat
+                        ? null // ✅ Disable in mini chat to keep it simple
+                        : _toggleFeaturesMenu,
+                    padding: EdgeInsets.all(8),
                     constraints: BoxConstraints(minWidth: 40, minHeight: 40),
                   ),
                 ),
               ),
 
-              // Image picker
+              // Image picker (Disabled in Mini Chat)
               Material(
                 color: Colors.white,
                 child: IconButton(
                   icon: Icon(Icons.image, size: 24),
-                  onPressed: () {
-                    _pickImage().then((isSuccess) {
-                      if (isSuccess) _uploadFile();
-                    });
-                  },
-                  color: ColorConstants.primaryColor,
+                  onPressed: widget.isMiniChat
+                      ? null // ✅ Disable in mini chat
+                      : () {
+                          _pickImage().then((isSuccess) {
+                            if (isSuccess) _uploadFile();
+                          });
+                        },
+                  color: widget.isMiniChat
+                      ? ColorConstants.greyColor
+                      : ColorConstants.primaryColor,
                   padding: EdgeInsets.all(8),
                   constraints: BoxConstraints(minWidth: 40, minHeight: 40),
                 ),
               ),
 
-              // Sticker button
+              // Sticker button (Disabled in Mini Chat)
               Material(
                 color: Colors.white,
                 child: IconButton(
                   icon: Icon(Icons.face, size: 24),
-                  onPressed: _getSticker,
-                  color: ColorConstants.primaryColor,
+                  onPressed: widget.isMiniChat
+                      ? null // ✅ Disable in mini chat
+                      : _getSticker,
+                  color: widget.isMiniChat
+                      ? ColorConstants.greyColor
+                      : ColorConstants.primaryColor,
                   padding: EdgeInsets.all(8),
                   constraints: BoxConstraints(minWidth: 40, minHeight: 40),
                 ),
               ),
 
-              // ✅ FIX: Text input with proper constraints
+              // ✅ KEYBOARD FIX: Text input with better handling
               Expanded(
                 child: Container(
                   constraints: BoxConstraints(
                     minHeight: 40,
-                    maxHeight: 100, // ✅ FIX: Limit input height
+                    maxHeight: 100,
                   ),
                   padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   child: TextField(
-                    onTapOutside: (_) {
-                      Utilities.closeKeyboard();
-                    },
+                    // ✅ CRITICAL: Don't close keyboard on outside tap in mini chat
+                    onTapOutside: widget.isMiniChat
+                        ? null
+                        : (_) {
+                            Utilities.closeKeyboard();
+                          },
                     onSubmitted: (_) {
                       if (!_isDisposed) {
                         _onSendMessageWithAutoDelete(
                           _chatInputController.text,
                           TypeMessage.text,
                         );
+                        // ✅ Refocus after sending in mini chat
+                        if (widget.isMiniChat) {
+                          Future.delayed(Duration(milliseconds: 100), () {
+                            if (mounted) _focusNode.requestFocus();
+                          });
+                        }
                       }
                     },
                     onChanged: (text) {
@@ -2209,19 +2263,23 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     ),
                     controller: _chatInputController,
                     decoration: InputDecoration.collapsed(
-                      hintText: 'Type your message...',
+                      hintText: widget.isMiniChat
+                          ? 'Type...' // ✅ Shorter hint for mini chat
+                          : 'Type your message...',
                       hintStyle: TextStyle(color: ColorConstants.greyColor),
                     ),
                     focusNode: _focusNode,
-                    maxLines: 4, // ✅ FIX: Limit to 4 lines
+                    maxLines: 4,
                     minLines: 1,
                     textInputAction: TextInputAction.newline,
+                    // ✅ CRITICAL: Auto-focus in mini chat (triggers keyboard)
+                    autofocus: widget.isMiniChat,
                   ),
                 ),
               ),
 
-              // Voice button
-              if (!_isRecording && _voiceProvider != null)
+              // Voice button (disabled in mini chat)
+              if (!_isRecording && _voiceProvider != null && !widget.isMiniChat)
                 Material(
                   color: Colors.white,
                   child: IconButton(
@@ -2244,6 +2302,12 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                         _chatInputController.text,
                         TypeMessage.text,
                       );
+                      // ✅ Keep focus in mini chat
+                      if (widget.isMiniChat) {
+                        Future.delayed(Duration(milliseconds: 100), () {
+                          if (mounted) _focusNode.requestFocus();
+                        });
+                      }
                     }
                   },
                   color: ColorConstants.primaryColor,
@@ -2276,12 +2340,14 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
   }
 
+  // ✅ MODIFY: _buildMiniChatHeader to use the correct buttons and close keyboard
   Widget _buildMiniChatHeader() {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: ColorConstants.primaryColor,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+        // Dùng Radius 16 để match với MiniChatOverlayWidget
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       child: Row(
         children: [
@@ -2321,6 +2387,8 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           IconButton(
             icon: Icon(Icons.remove, color: Colors.white, size: 22),
             onPressed: () {
+              // ✅ Close keyboard before minimizing
+              _focusNode.unfocus();
               _miniChatChannel.invokeMethod('minimize');
             },
             padding: EdgeInsets.zero,
@@ -2332,6 +2400,8 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           IconButton(
             icon: Icon(Icons.close, color: Colors.white, size: 22),
             onPressed: () {
+              // ✅ Close keyboard before closing
+              _focusNode.unfocus();
               _miniChatChannel.invokeMethod('close');
             },
             padding: EdgeInsets.zero,
@@ -2350,8 +2420,9 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             _buildPinnedMessages(),
             _buildListMessage(),
             _buildTypingIndicator(),
-            if (_isShowSticker) _buildStickers(),
-            _buildFeaturesMenu(),
+            // Sticker và Feature Menu chỉ nên hiển thị trong main app (đã bị disable trong _buildAdvancedInput)
+            if (_isShowSticker && !widget.isMiniChat) _buildStickers(),
+            if (_showFeaturesMenu && !widget.isMiniChat) _buildFeaturesMenu(),
             _buildAdvancedInput(),
           ],
         ),
@@ -2370,34 +2441,27 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           canPop: false,
           onPopInvokedWithResult: (didPop, result) {
             if (didPop) return;
+            // Xử lý nút back vật lý bằng cách minimize chat
             _miniChatChannel.invokeMethod('minimize');
           },
-          child: SafeArea(
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black26,
-                    blurRadius: 10,
-                    offset: Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  _buildMiniChatHeader(),
-                  _buildChatContent(),
-                ],
-              ),
+          child: Container(
+            // NOTE: Không cần SafeArea hay Container có BoxDecoration ở đây
+            // vì logic đã được bọc trong MiniChatOverlayWidget bên ngoài (lib/main.dart)
+            child: Column(
+              children: [
+                _buildMiniChatHeader(),
+                // Dùng Expanded để _buildChatContent chiếm hết phần còn lại
+                Expanded(
+                  child: _buildChatContent(),
+                ),
+              ],
             ),
           ),
         ),
       );
     }
 
-    // ✅ NORMAL MODE: Original UI (không đổi)
+    // ✅ NORMAL MODE: Original UI
     return Scaffold(
       appBar: AppBar(
         title: InkWell(
