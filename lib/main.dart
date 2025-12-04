@@ -1,6 +1,4 @@
-// lib/main.dart
-// ✅ FINAL VERSION: Complete Mini Chat Routing
-
+// lib/main.dart - COMPLETE FIX: Mini Chat with Overlay Navigator
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -34,16 +32,13 @@ Future<void> main() async {
     print('❌ Firebase initialization error: $e');
   }
 
+  // Khởi tạo các dịch vụ cần thiết
   await ErrorLogger.initialize();
-
   tz.initializeTimeZones();
   tz.setLocalLocation(tz.getLocation('Asia/Ho_Chi_Minh'));
-
   final prefs = await SharedPreferences.getInstance();
-
   final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
   await _initializeNotifications(flutterLocalNotificationsPlugin);
-
   final chatBubbleService = ChatBubbleService();
   final notificationService = NotificationService();
 
@@ -97,7 +92,6 @@ Future<void> _initializeNotifications(
       ),
     );
   }
-
   if (Platform.isIOS) {
     await plugin
         .resolvePlatformSpecificImplementation<
@@ -136,6 +130,7 @@ class MyApp extends StatelessWidget {
 
     return MultiProvider(
       providers: [
+        // ... (Giữ nguyên các Provider)
         ChangeNotifierProvider<AuthProvider>(
           create: (_) => AuthProvider(
             firebaseAuth: firebaseAuth,
@@ -229,9 +224,12 @@ class MyApp extends StatelessWidget {
             themeMode: themeProvider.getFlutterThemeMode(context),
             theme: AppThemes.lightTheme(themeProvider.getPrimaryColor()),
             darkTheme: AppThemes.darkTheme(themeProvider.getPrimaryColor()),
+            // ✅ Bọc MaterialApp bằng BubbleManager và MiniChatOverlayManager
             home: BubbleManager(
-              child: AppInitializer(
-                notificationService: notificationService,
+              child: MiniChatOverlayManager(
+                child: AppInitializer(
+                  notificationService: notificationService,
+                ),
               ),
             ),
           );
@@ -255,18 +253,11 @@ class AppInitializer extends StatefulWidget {
 
 class _AppInitializerState extends State<AppInitializer>
     with WidgetsBindingObserver {
-  static const MethodChannel _miniChatChannel =
-      MethodChannel('mini_chat_channel');
-
-  static final GlobalKey<NavigatorState> _overlayNavigatorKey =
-      GlobalKey<NavigatorState>();
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _startNotificationService();
-    _setupMiniChatChannel();
   }
 
   @override
@@ -282,7 +273,7 @@ class _AppInitializerState extends State<AppInitializer>
   }
 
   Future<void> _startNotificationService() async {
-    await Future.delayed(Duration(milliseconds: 500));
+    await Future.delayed(const Duration(milliseconds: 500));
 
     final auth = firebase_auth.FirebaseAuth.instance;
     auth.authStateChanges().listen((user) {
@@ -294,6 +285,48 @@ class _AppInitializerState extends State<AppInitializer>
         widget.notificationService.stopListening();
       }
     });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Sẽ điều hướng đến MainPage sau khi SplashPage hoàn tất
+    return SplashPage();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+}
+
+// ===========================================
+// ✅ Mini Chat Overlay Implementation
+// ===========================================
+
+/// Quản lý MethodChannel và OverlayEntry cho Mini Chat.
+class MiniChatOverlayManager extends StatefulWidget {
+  final Widget child;
+
+  const MiniChatOverlayManager({super.key, required this.child});
+
+  @override
+  State<MiniChatOverlayManager> createState() => _MiniChatOverlayManagerState();
+}
+
+class _MiniChatOverlayManagerState extends State<MiniChatOverlayManager> {
+  static const MethodChannel _miniChatChannel =
+      MethodChannel('mini_chat_channel');
+
+  OverlayEntry? _miniChatOverlay;
+  String? _currentUserId;
+  String? _currentUserName;
+  String? _currentUserAvatar;
+
+  @override
+  void initState() {
+    super.initState();
+    _setupMiniChatChannel();
   }
 
   void _setupMiniChatChannel() {
@@ -312,26 +345,16 @@ class _AppInitializerState extends State<AppInitializer>
           return null;
         }
 
-        print('💬 Navigating to mini chat: $peerNickname (ID: $peerId)');
-
-        final navigatorState = _overlayNavigatorKey.currentState;
-        if (navigatorState != null) {
-          navigatorState.pushReplacement(
-            MaterialPageRoute(
-              builder: (_) => ChatPage(
-                arguments: ChatPageArguments(
-                  peerId: peerId,
-                  peerNickname: peerNickname,
-                  peerAvatar: peerAvatar ?? '',
-                ),
-                isMiniChat: true,
-              ),
-            ),
-          );
-          print('✅ Navigation complete');
-        } else {
-          print('❌ Navigator state is null');
-        }
+        print('💬 Showing mini chat overlay for: $peerNickname');
+        _showMiniChatOverlay(peerId, peerNickname, peerAvatar ?? '');
+      } else if (call.method == 'minimize') {
+        print('📦 Minimizing mini chat');
+        _hideMiniChatOverlay();
+        // Native sẽ tự hiển thị lại Bubble
+      } else if (call.method == 'close') {
+        print('❌ Closing mini chat');
+        _hideMiniChatOverlay();
+        // Native sẽ tự xóa Bubble
       }
 
       return null;
@@ -340,36 +363,227 @@ class _AppInitializerState extends State<AppInitializer>
     print('✅ MiniChat MethodChannel setup complete');
   }
 
+  void _showMiniChatOverlay(String userId, String userName, String avatarUrl) {
+    // Xóa overlay cũ nếu có
+    _hideMiniChatOverlay();
+
+    _currentUserId = userId;
+    _currentUserName = userName;
+    _currentUserAvatar = avatarUrl;
+
+    // Tạo Overlay Entry
+    _miniChatOverlay = OverlayEntry(
+      builder: (context) => MiniChatOverlayWidget(
+        userId: userId,
+        userName: userName,
+        avatarUrl: avatarUrl,
+        // Gọi lại Native khi Minimize
+        onMinimize: () {
+          _hideMiniChatOverlay();
+          // Thông báo cho Native để hiển thị lại bubble
+          _miniChatChannel.invokeMethod('onMinimized', {
+            'userId': userId,
+          });
+        },
+        // Gọi lại Native khi Close
+        onClose: () {
+          _hideMiniChatOverlay();
+          // Thông báo cho Native để xóa bubble
+          _miniChatChannel.invokeMethod('onClosed', {
+            'userId': userId,
+          });
+        },
+      ),
+    );
+
+    // Chèn vào Overlay
+    Overlay.of(context).insert(_miniChatOverlay!);
+    print('✅ Mini chat overlay shown');
+  }
+
+  void _hideMiniChatOverlay() {
+    if (_miniChatOverlay != null) {
+      _miniChatOverlay!.remove();
+      _miniChatOverlay = null;
+      _currentUserId = null;
+      _currentUserName = null;
+      _currentUserAvatar = null;
+      print('✅ Mini chat overlay hidden');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        SplashPage(),
-        Positioned.fill(
-          child: IgnorePointer(
-            ignoring: true,
-            child: Opacity(
-              opacity: 0,
-              child: Navigator(
-                key: _overlayNavigatorKey,
-                onGenerateRoute: (settings) {
-                  return MaterialPageRoute(
-                    builder: (_) => Container(
-                      color: Colors.transparent,
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
+    // Trả về widget con (AppInitializer)
+    return widget.child;
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
+    _hideMiniChatOverlay();
     super.dispose();
+  }
+}
+
+/// Widget hiển thị Mini Chat (ChatPage) có thể kéo thả, nằm trong Overlay.
+class MiniChatOverlayWidget extends StatefulWidget {
+  final String userId;
+  final String userName;
+  final String avatarUrl;
+  final VoidCallback onMinimize;
+  final VoidCallback onClose;
+
+  const MiniChatOverlayWidget({
+    super.key,
+    required this.userId,
+    required this.userName,
+    required this.avatarUrl,
+    required this.onMinimize,
+    required this.onClose,
+  });
+
+  @override
+  State<MiniChatOverlayWidget> createState() => _MiniChatOverlayWidgetState();
+}
+
+class _MiniChatOverlayWidgetState extends State<MiniChatOverlayWidget> {
+  // Vị trí ban đầu của cửa sổ mini chat
+  Offset _position = const Offset(20, 100);
+  bool _isDragging = false;
+  static const double _width = 320;
+  static const double _height = 480;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final maxX = size.width - _width;
+    final maxY = size.height - _height;
+
+    return Positioned(
+      // Giới hạn vị trí trong màn hình
+      left: _position.dx.clamp(0, maxX),
+      top: _position.dy.clamp(0, maxY),
+      child: GestureDetector(
+        onPanStart: (_) => setState(() => _isDragging = true),
+        onPanUpdate: (details) {
+          setState(() {
+            _position += details.delta;
+          });
+        },
+        onPanEnd: (_) => setState(() => _isDragging = false),
+        child: Material(
+          elevation: _isDragging ? 16 : 8,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            width: _width,
+            height: _height,
+            decoration: BoxDecoration(
+              color: Theme.of(context)
+                  .scaffoldBackgroundColor, // Màu nền của ứng dụng
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.3),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                // ✅ Header với chức năng kéo thả và nút điều khiển
+                _buildHeader(),
+
+                // ✅ Nội dung Chat (ChatPage)
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                      bottom: Radius.circular(16),
+                    ),
+                    // Tái sử dụng ChatPage
+                    child: ChatPage(
+                      arguments: ChatPageArguments(
+                        peerId: widget.userId,
+                        peerNickname: widget.userName,
+                        peerAvatar: widget.avatarUrl,
+                      ),
+                      isMiniChat:
+                          true, // Flag để ChatPage có thể điều chỉnh UI nếu cần
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: theme.primaryColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      child: Row(
+        children: [
+          // Drag handle
+          Container(
+            width: 40,
+            height: 4,
+            margin: const EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+
+          // Avatar
+          CircleAvatar(
+            backgroundImage: widget.avatarUrl.isNotEmpty
+                ? NetworkImage(widget.avatarUrl)
+                : null,
+            radius: 16,
+            child: widget.avatarUrl.isEmpty
+                ? const Icon(Icons.person,
+                    size: 16, color: ColorConstants.greyColor)
+                : null,
+          ),
+          const SizedBox(width: 8),
+
+          // Name
+          Expanded(
+            child: Text(
+              widget.userName,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+
+          // Minimize button
+          IconButton(
+            icon: const Icon(Icons.remove, color: Colors.white, size: 20),
+            onPressed: widget.onMinimize,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          ),
+
+          // Close button
+          IconButton(
+            icon: const Icon(Icons.close, color: Colors.white, size: 20),
+            onPressed: widget.onClose,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          ),
+        ],
+      ),
+    );
   }
 }
