@@ -284,12 +284,10 @@ class MainActivity : FlutterActivity() {
 
     override fun onResume() {
         super.onResume()
-        BubbleManager.onAppResumed(this)
     }
 
     override fun onPause() {
         super.onPause()
-        BubbleManager.onAppPaused()
     }
 
     override fun onDestroy() {

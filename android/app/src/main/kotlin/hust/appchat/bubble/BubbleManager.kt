@@ -1,5 +1,4 @@
 // android/app/src/main/kotlin/hust/appchat/bubble/BubbleManager.kt
-// ✅ COMPLETE FIX: Bubble persistence with SharedPreferences
 package hust.appchat.bubble
 
 import android.content.Context
@@ -14,7 +13,6 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import java.text.SimpleDateFormat
 import java.util.*
 
 object BubbleManager {
@@ -26,19 +24,26 @@ object BubbleManager {
     private var isServiceRunning = false
 
     private val bubblePositions = mutableMapOf<String, BubblePosition>()
-    private var nextYPosition = 200
 
-    private var lastScreenWidth = 0
-    private var lastScreenHeight = 0
+    // Mặc định an toàn cho kích thước màn hình
+    private var lastScreenWidth = 1080
+    private var lastScreenHeight = 2400
     private var lastOrientation = Configuration.ORIENTATION_UNDEFINED
 
-    // ✅ NEW: SharedPreferences for persistence
+    // Persistence with SharedPreferences
     private var prefs: SharedPreferences? = null
     private val gson = Gson()
     private const val PREFS_NAME = "bubble_manager_prefs"
     private const val KEY_ACTIVE_BUBBLES = "active_bubbles"
     private const val KEY_LAST_SAVE_TIME = "last_save_time"
     private const val EXPIRY_HOURS = 24L
+
+    // Kích thước Bubble tiêu chuẩn (dùng cho tính toán vị trí)
+    private const val BUBBLE_SIZE = 100 // Approximation: 100x100 pixels
+    private const val STACK_SPACING = 10
+    private const val TOP_MARGIN = 200
+
+    // --- Data Classes ---
 
     data class BubbleData(
         val userId: String,
@@ -52,11 +57,10 @@ object BubbleManager {
     data class BubblePosition(
         var x: Int,
         var y: Int,
-        val userId: String,
-        var isRelative: Boolean = false
+        val userId: String
     )
 
-    // ✅ NEW: Serializable data for persistence
+    // Serializable data for persistence
     data class BubblePersistData(
         val userId: String,
         val userName: String,
@@ -68,6 +72,8 @@ object BubbleManager {
         val positionY: Int
     )
 
+    // --- Initialization & Lifecycle ---
+
     fun init(context: Context) {
         try {
             firestore = FirebaseFirestore.getInstance()
@@ -76,24 +82,117 @@ object BubbleManager {
 
             updateScreenDimensions(context)
 
-            // ✅ NEW: Restore bubbles from storage
+            // Restore bubbles from storage
             restoreBubbles(context)
 
-            Log.d("BubbleManager", "✅ Initialized")
+            Log.d("BubbleManager", "✅ Initialized. Screen: ${lastScreenWidth}x${lastScreenHeight}")
         } catch (e: Exception) {
             Log.e("BubbleManager", "❌ Failed to init: $e")
         }
     }
 
-    // ========================================
-    // Persistence Logic (Save/Restore/Clear)
-    // ========================================
+    fun onConfigurationChanged(context: Context, newConfig: Configuration) {
+        if (newConfig.orientation != lastOrientation) {
+            Log.d("BubbleManager", "📱 Orientation changed")
 
-    // ✅ NEW: Save bubbles to SharedPreferences
+            val oldWidth = lastScreenWidth
+            val oldHeight = lastScreenHeight
+
+            updateScreenDimensions(context)
+            repositionBubblesForRotation(context, oldWidth, oldHeight)
+
+            lastOrientation = newConfig.orientation
+            saveBubbles()
+        }
+    }
+
+    fun onAppResumed(context: Context) {
+        Log.d("BubbleManager", "▶️ App resumed. Restoring bubble UIs.")
+
+        // Gửi lại Intent SHOW_BUBBLE cho tất cả bubble đang active
+        activeBubbles.keys.toList().forEach { userId ->
+            val bubble = activeBubbles[userId]
+            if (bubble != null) {
+                // Gọi showBubble để lấy lại vị trí và trigger BubbleOverlayService
+                showBubble(context, userId, bubble.userName, bubble.avatarUrl)
+            }
+        }
+    }
+
+    fun cleanup() {
+        Log.d("BubbleManager", "🧹 Cleanup: Removing listeners and data.")
+        messageListeners.values.forEach {
+            try {
+                it.remove()
+            } catch (e: Exception) {}
+        }
+        messageListeners.clear()
+        activeBubbles.clear()
+        bubblePositions.clear()
+        lastOrientation = Configuration.ORIENTATION_UNDEFINED
+        isServiceRunning = false
+    }
+
+    // --- Screen Utils ---
+
+    private fun updateScreenDimensions(context: Context) {
+        try {
+            val displayMetrics = context.resources.displayMetrics
+            val newWidth = displayMetrics.widthPixels
+            val newHeight = displayMetrics.heightPixels
+
+            // Chỉ update nếu giá trị hợp lệ
+            if (newWidth > 0 && newHeight > 0) {
+                lastScreenWidth = newWidth
+                lastScreenHeight = newHeight
+                Log.d("BubbleManager", "📱 Screen Updated: ${lastScreenWidth}x${lastScreenHeight}")
+            }
+        } catch (e: Exception) {
+            Log.e("BubbleManager", "❌ Error updating screen dimensions: $e")
+        }
+    }
+
+    private fun repositionBubblesForRotation(
+        context: Context,
+        oldWidth: Int,
+        oldHeight: Int
+    ) {
+        if (activeBubbles.isEmpty()) return
+
+        bubblePositions.forEach { (userId, position) ->
+            // Use old dimensions for proportional recalculation
+            val xPercent = if (oldWidth > 0) position.x.toFloat() / oldWidth else 0f
+            val yPercent = if (oldHeight > 0) position.y.toFloat() / oldHeight else 0f
+
+            // Apply new dimensions
+            position.x = (xPercent * lastScreenWidth).toInt()
+            position.y = (yPercent * lastScreenHeight).toInt()
+
+            // Keep within bounds
+            position.x = position.x.coerceIn(0, lastScreenWidth - BUBBLE_SIZE)
+            position.y = position.y.coerceIn(0, lastScreenHeight - BUBBLE_SIZE)
+
+            // Notify service to update UI position
+            val intent = Intent(context, BubbleOverlayService::class.java).apply {
+                action = BubbleOverlayService.ACTION_UPDATE_BUBBLE_POSITION
+                putExtra("userId", userId)
+                putExtra("positionX", position.x)
+                putExtra("positionY", position.y)
+            }
+
+            try {
+                context.startService(intent)
+            } catch (e: Exception) {
+                Log.e("BubbleManager", "❌ Failed to reposition bubble $userId on rotation: $e")
+            }
+        }
+    }
+
+    // --- Persistence Logic ---
+
     private fun saveBubbles() {
         try {
             val persistDataList = activeBubbles.mapNotNull { (userId, bubble) ->
-                // Chỉ lưu những bubble có userId và position hợp lệ
                 val position = bubblePositions[userId] ?: return@mapNotNull null
                 BubblePersistData(
                     userId = bubble.userId,
@@ -123,7 +222,6 @@ object BubbleManager {
         }
     }
 
-    // ✅ NEW: Restore bubbles from SharedPreferences
     private fun restoreBubbles(context: Context) {
         try {
             val json = prefs?.getString(KEY_ACTIVE_BUBBLES, null)
@@ -135,7 +233,6 @@ object BubbleManager {
             val lastSaveTime = prefs?.getLong(KEY_LAST_SAVE_TIME, 0) ?: 0
             val hoursSinceLastSave = (System.currentTimeMillis() - lastSaveTime) / (1000 * 60 * 60)
 
-            // ✅ Only restore if saved within expiry time (e.g., 24 hours)
             if (hoursSinceLastSave > EXPIRY_HOURS) {
                 Log.d("BubbleManager", "⏰ Saved bubbles too old ($hoursSinceLastSave h), clearing")
                 clearSavedBubbles()
@@ -165,16 +262,15 @@ object BubbleManager {
                     userId = data.userId
                 )
 
-                // 3. ✅ Show bubble (Service will be started via startForegroundService/startService)
+                // 3. Show bubble (trigger service)
                 showBubble(
                     context = context,
                     userId = data.userId,
                     userName = data.userName,
                     avatarUrl = data.avatarUrl,
-                    message = data.lastMessage // Message is only passed here for display/update
+                    message = null // Don't increment unread count on restore
                 )
             }
-
             Log.d("BubbleManager", "✅ Bubbles restored and services triggered")
         } catch (e: Exception) {
             Log.e("BubbleManager", "❌ Failed to restore bubbles: $e")
@@ -182,7 +278,6 @@ object BubbleManager {
         }
     }
 
-    // ✅ NEW: Clear saved bubbles
     fun clearSavedBubbles() {
         prefs?.edit()?.apply {
             remove(KEY_ACTIVE_BUBBLES)
@@ -192,84 +287,7 @@ object BubbleManager {
         Log.d("BubbleManager", "🗑️ Cleared saved bubbles")
     }
 
-    // ========================================
-    // Lifecycle and Utility Methods
-    // ========================================
-
-    fun formatTimestamp(timestamp: Long): String {
-        return try {
-            val date = Date(timestamp)
-            val formatter = SimpleDateFormat("HH:mm dd/MM/yyyy", Locale.getDefault())
-            formatter.format(date)
-        } catch (e: Exception) {
-            "Unknown"
-        }
-    }
-
-    fun onConfigurationChanged(context: Context, newConfig: Configuration) {
-        if (newConfig.orientation != lastOrientation) {
-            Log.d("BubbleManager", "📱 Orientation changed")
-
-            val oldWidth = lastScreenWidth
-            val oldHeight = lastScreenHeight
-
-            updateScreenDimensions(context)
-            repositionBubblesForRotation(context, oldWidth, oldHeight)
-
-            lastOrientation = newConfig.orientation
-
-            // ✅ Save after rotation
-            saveBubbles()
-        }
-    }
-
-    private fun updateScreenDimensions(context: Context) {
-        val displayMetrics = context.resources.displayMetrics
-        lastScreenWidth = displayMetrics.widthPixels
-        lastScreenHeight = displayMetrics.metrics.heightPixels
-
-        Log.d("BubbleManager", "📱 Screen: ${lastScreenWidth}x${lastScreenHeight}")
-    }
-
-    private fun repositionBubblesForRotation(
-        context: Context,
-        oldWidth: Int,
-        oldHeight: Int
-    ) {
-        if (activeBubbles.isEmpty()) return
-
-        bubblePositions.forEach { (userId, position) ->
-            // Use old dimensions for proportional recalculation
-            val xPercent = position.x.toFloat() / oldWidth
-            val yPercent = position.y.toFloat() / oldHeight
-
-            // Apply new dimensions
-            position.x = (xPercent * lastScreenWidth).toInt()
-            position.y = (yPercent * lastScreenHeight).toInt()
-
-            // Keep within bounds (assuming bubble size is approx 100x100)
-            position.x = position.x.coerceIn(0, lastScreenWidth - 100)
-            position.y = position.y.coerceIn(0, lastScreenHeight - 100)
-
-            // Notify service to update UI position
-            val intent = Intent(context, BubbleOverlayService::class.java).apply {
-                action = BubbleOverlayService.ACTION_UPDATE_BUBBLE_POSITION
-                putExtra("userId", userId)
-                putExtra("positionX", position.x)
-                putExtra("positionY", position.y)
-            }
-
-            try {
-                context.startService(intent)
-            } catch (e: Exception) {
-                Log.e("BubbleManager", "❌ Failed to reposition bubble $userId on rotation: $e")
-            }
-        }
-    }
-
-    // ========================================
-    // Main Bubble Operations
-    // ========================================
+    // --- Bubble Operations ---
 
     fun showBubble(
         context: Context,
@@ -278,24 +296,22 @@ object BubbleManager {
         avatarUrl: String,
         message: String? = null
     ) {
-        Log.d("BubbleManager", "🎈 showBubble: $userName")
+        Log.d("BubbleManager", "🎈 showBubble: $userName, Message: ${message != null}")
 
         val bubbleData = activeBubbles.getOrPut(userId) {
-            // Re-initialize listener if not present (might happen after crash/kill)
             listenToMessages(context, userId)
             BubbleData(userId, userName, avatarUrl)
         }
 
-        // Update unread count and message if a new message is explicitly passed
         message?.let {
             bubbleData.lastMessage = it
             bubbleData.unreadCount++
             bubbleData.timestamp = System.currentTimeMillis()
         }
 
+        // Đảm bảo lấy vị trí, nếu không có sẽ tính toán mới
         val position = calculateBubblePosition(context, userId)
 
-        // Send Intent to BubbleOverlayService to display/update the UI bubble
         val intent = Intent(context, BubbleOverlayService::class.java).apply {
             action = BubbleOverlayService.ACTION_SHOW_BUBBLE
             putExtra("userId", userId)
@@ -315,49 +331,135 @@ object BubbleManager {
             }
 
             isServiceRunning = true
-
-            // ✅ Save after showing bubble
             saveBubbles()
-
-            Log.d("BubbleManager", "✅ Service started/updated")
         } catch (e: Exception) {
             Log.e("BubbleManager", "❌ Failed to start service: $e")
         }
 
-        // Ensure message listening is active
         listenToMessages(context, userId)
     }
 
+    /**
+     * Tính toán vị trí mới cho bubble (dùng khi không có vị trí đã lưu)
+     * Ưu tiên xếp chồng theo chiều dọc ở góc phải.
+     */
     private fun calculateBubblePosition(context: Context, userId: String): BubblePosition {
-        // ✅ 1. Use saved position if exists
+        // 1. Dùng vị trí đã lưu nếu có
         bubblePositions[userId]?.let {
-            Log.d("BubbleManager", "📍 Using saved position for $userId")
             return it
         }
 
-        // 2. Calculate new position if not saved
+        // 2. Tính toán vị trí mới
         updateScreenDimensions(context)
 
-        val x = lastScreenWidth - 100
+        val margin = 20
+        // Đảm bảo x luôn ở góc phải, có margin
+        val x = (lastScreenWidth - BUBBLE_SIZE - margin).coerceAtLeast(margin)
 
-        val bubbleHeight = 80
-        val maxBubblesVisible = (lastScreenHeight - 300) / bubbleHeight
+        // Tính toán vị trí Y cho bubble mới: Xếp chồng
+        val orderedActiveUserIds = activeBubbles.keys.toList()
+        val index = orderedActiveUserIds.indexOf(userId)
 
-        val y = if (activeBubbles.size <= 1) {
-            200
-        } else {
-            // Find an empty spot or stack vertically
-            val index = (activeBubbles.size - 1) % maxBubblesVisible
-            200 + (index * bubbleHeight)
-        }
+        // Tính y dựa trên thứ tự, đảm bảo không vượt quá giới hạn dưới
+        val y = (TOP_MARGIN + (index * (BUBBLE_SIZE + STACK_SPACING)))
+            .coerceIn(TOP_MARGIN, lastScreenHeight - BUBBLE_SIZE - margin)
 
         val position = BubblePosition(x, y, userId)
         bubblePositions[userId] = position
 
-        Log.d("BubbleManager", "📍 New position for $userId: x=$x, y=$y")
+        Log.d("BubbleManager", "📍 New Position for $userId: x=$x, y=$y")
 
         return position
     }
+
+
+    fun removeBubble(context: Context, userId: String) {
+        Log.d("BubbleManager", "🗑️ Removing bubble: $userId")
+
+        activeBubbles.remove(userId)
+        bubblePositions.remove(userId)
+        messageListeners.remove(userId)?.remove()
+
+        val intent = Intent(context, BubbleOverlayService::class.java).apply {
+            action = BubbleOverlayService.ACTION_HIDE_BUBBLE
+            putExtra("userId", userId)
+        }
+
+        try {
+            context.startService(intent)
+            Log.d("BubbleManager", "✅ Bubble removed: $userId")
+        } catch (e: Exception) {
+            Log.e("BubbleManager", "❌ Failed to send hide bubble intent: $e")
+        }
+
+        repositionBubbles(context)
+
+        if (activeBubbles.isEmpty()) {
+            isServiceRunning = false
+            clearSavedBubbles()
+        } else {
+            saveBubbles()
+        }
+    }
+
+    /**
+     * Sắp xếp lại vị trí Y của các bubble sau khi một bubble bị xóa
+     */
+    private fun repositionBubbles(context: Context) {
+        if (activeBubbles.isEmpty()) return
+
+        val orderedActiveUserIds = activeBubbles.keys.toList()
+
+        orderedActiveUserIds.forEachIndexed { index, userId ->
+            val newY = TOP_MARGIN + (index * (BUBBLE_SIZE + STACK_SPACING))
+
+            val position = bubblePositions[userId]
+            if (position != null) {
+                position.y = newY.coerceIn(TOP_MARGIN, lastScreenHeight - BUBBLE_SIZE - 20)
+
+                // Notify service to update position immediately
+                val intent = Intent(context, BubbleOverlayService::class.java).apply {
+                    action = BubbleOverlayService.ACTION_UPDATE_BUBBLE_POSITION
+                    putExtra("userId", userId)
+                    putExtra("positionX", position.x)
+                    putExtra("positionY", position.y)
+                }
+                try {
+                    context.startService(intent)
+                } catch (e: Exception) {
+                    Log.e("BubbleManager", "❌ Failed to reposition bubble $userId: $e")
+                }
+            }
+        }
+    }
+
+    fun updateBubblePosition(userId: String, x: Int, y: Int) {
+        bubblePositions[userId]?.apply {
+            this.x = x
+            this.y = y
+        }
+        saveBubbles()
+        Log.d("BubbleManager", "📍 Updated position for $userId: ($x, $y)")
+    }
+
+    fun markAsRead(context: Context, userId: String) {
+        activeBubbles[userId]?.unreadCount = 0
+
+        val intent = Intent(context, BubbleOverlayService::class.java).apply {
+            action = BubbleOverlayService.ACTION_UPDATE_BUBBLE
+            putExtra("userId", userId)
+            putExtra("unreadCount", 0)
+            putExtra("lastMessage", activeBubbles[userId]?.lastMessage ?: "")
+        }
+        try {
+            context.startService(intent)
+            saveBubbles()
+        } catch (e: Exception) {
+            Log.e("BubbleManager", "❌ Failed to send markAsRead intent: $e")
+        }
+    }
+
+    // --- Firebase Logic ---
 
     private fun listenToMessages(context: Context, userId: String) {
         if (messageListeners.containsKey(userId)) {
@@ -389,13 +491,12 @@ object BubbleManager {
                             val type = change.document.getLong("type")?.toInt() ?: 0
 
                             activeBubbles[userId]?.let { bubble ->
+                                // Chỉ update khi có tin nhắn mới thực sự được thêm
                                 bubble.lastMessage = if (type == 0) message else "📷 Image"
                                 bubble.unreadCount++
                                 bubble.timestamp = System.currentTimeMillis()
 
                                 notifyBubbleUpdate(context, userId, bubble)
-
-                                // ✅ Save after new message update
                                 saveBubbles()
                             }
                         }
@@ -424,88 +525,7 @@ object BubbleManager {
         }
     }
 
-    fun removeBubble(context: Context, userId: String) {
-        Log.d("BubbleManager", "🗑️ Removing bubble: $userId")
-
-        activeBubbles.remove(userId)
-        bubblePositions.remove(userId)
-        messageListeners.remove(userId)?.remove()
-
-        val intent = Intent(context, BubbleOverlayService::class.java).apply {
-            action = BubbleOverlayService.ACTION_HIDE_BUBBLE
-            putExtra("userId", userId)
-        }
-
-        try {
-            context.startService(intent)
-            Log.d("BubbleManager", "✅ Bubble removed: $userId")
-        } catch (e: Exception) {
-            Log.e("BubbleManager", "❌ Failed to send hide bubble intent: $e")
-        }
-
-        // Reposition and then save
-        repositionBubbles(context)
-
-        if (activeBubbles.isEmpty()) {
-            isServiceRunning = false
-            clearSavedBubbles()
-        } else {
-            // ✅ Save after removal/reposition
-            saveBubbles()
-        }
-    }
-
-    private fun repositionBubbles(context: Context) {
-        if (activeBubbles.isEmpty()) {
-            nextYPosition = 200
-            return
-        }
-
-        var yPos = 200
-        activeBubbles.keys.forEach { userId ->
-            bubblePositions[userId]?.y = yPos
-
-            // Optionally notify service to update position immediately if needed,
-            // but for simplicity, we rely on the next showBubble call or snapToEdge.
-            // ... (optional service notification logic here)
-
-            yPos += 80
-        }
-
-        nextYPosition = yPos
-    }
-
-    // ✅ NEW: Update bubble position (called when user drags in BubbleOverlayService)
-    fun updateBubblePosition(userId: String, x: Int, y: Int) {
-        bubblePositions[userId]?.apply {
-            this.x = x
-            this.y = y
-        }
-
-        // ✅ Save after position update
-        saveBubbles()
-
-        Log.d("BubbleManager", "📍 Updated position for $userId: ($x, $y)")
-    }
-
-    fun markAsRead(context: Context, userId: String) {
-        activeBubbles[userId]?.unreadCount = 0
-
-        val intent = Intent(context, BubbleOverlayService::class.java).apply {
-            action = BubbleOverlayService.ACTION_UPDATE_BUBBLE
-            putExtra("userId", userId)
-            putExtra("unreadCount", 0)
-            putExtra("lastMessage", activeBubbles[userId]?.lastMessage ?: "")
-        }
-        try {
-            context.startService(intent)
-
-            // ✅ Save after mark as read
-            saveBubbles()
-        } catch (e: Exception) {
-            Log.e("BubbleManager", "❌ Failed to send markAsRead intent: $e")
-        }
-    }
+    // --- Getters ---
 
     fun getCurrentUserId(): String? {
         return try {
@@ -515,11 +535,6 @@ object BubbleManager {
         }
     }
 
-    // ... (Getter functions remain the same) ...
-    fun getBubbleData(userId: String): BubbleData? {
-        return activeBubbles[userId]
-    }
-
     fun isBubbleActive(userId: String): Boolean {
         return activeBubbles.containsKey(userId)
     }
@@ -527,36 +542,4 @@ object BubbleManager {
     fun getActiveBubbles(): Map<String, BubbleData> {
         return activeBubbles.toMap()
     }
-
-    // ========================================
-    // Service/App Lifecycle Hooks
-    // ========================================
-
-    fun onAppPaused() {
-        Log.d("BubbleManager", "⏸️ App paused (or service kill detected)")
-        // ✅ Save when app goes to background or before service is killed
-        saveBubbles()
-    }
-
-    fun cleanup() {
-        Log.d("BubbleManager", "🧹 Cleanup: Removing listeners and data.")
-
-        // Don't call saveBubbles() here unless explicitly clearing.
-        // We want the data to persist for potential restore.
-        // saveBubbles()
-
-        messageListeners.values.forEach {
-            try {
-                it.remove()
-            } catch (e: Exception) {}
-        }
-
-        messageListeners.clear()
-        activeBubbles.clear()
-        bubblePositions.clear()
-        nextYPosition = 200
-        lastOrientation = Configuration.ORIENTATION_UNDEFINED
-        isServiceRunning = false
-    }
-
 }
