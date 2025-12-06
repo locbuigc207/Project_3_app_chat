@@ -1,4 +1,4 @@
-// lib/main.dart - COMPLETE FIX: Mini Chat with Overlay Navigator
+// lib/main.dart - COMPLETE
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -22,6 +22,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
+// ✅ FIX: Global notification plugin instance để khắc phục lỗi Null Context
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+    FlutterLocalNotificationsPlugin();
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -37,8 +41,10 @@ Future<void> main() async {
   tz.initializeTimeZones();
   tz.setLocalLocation(tz.getLocation('Asia/Ho_Chi_Minh'));
   final prefs = await SharedPreferences.getInstance();
-  final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
+  // ✅ FIX: Initialize notifications VỚI INSTANCE TOÀN CỤC
   await _initializeNotifications(flutterLocalNotificationsPlugin);
+
   final chatBubbleService = ChatBubbleService();
   final notificationService = NotificationService();
 
@@ -46,6 +52,7 @@ Future<void> main() async {
 
   runApp(MyApp(
     prefs: prefs,
+    // Truyền instance toàn cục
     notificationsPlugin: flutterLocalNotificationsPlugin,
     chatBubbleService: chatBubbleService,
     notificationService: notificationService,
@@ -55,52 +62,61 @@ Future<void> main() async {
 Future<void> _initializeNotifications(
   FlutterLocalNotificationsPlugin plugin,
 ) async {
-  const initializationSettingsAndroid =
-      AndroidInitializationSettings('app_icon');
+  try {
+    const initializationSettingsAndroid =
+        AndroidInitializationSettings('app_icon');
 
-  const initializationSettingsIOS = DarwinInitializationSettings(
-    requestAlertPermission: true,
-    requestBadgePermission: true,
-    requestSoundPermission: true,
-  );
-
-  const initializationSettings = InitializationSettings(
-    android: initializationSettingsAndroid,
-    iOS: initializationSettingsIOS,
-  );
-
-  await plugin.initialize(
-    initializationSettings,
-    onDidReceiveNotificationResponse: (NotificationResponse response) {
-      print('📱 Notification clicked: ${response.payload}');
-    },
-  );
-
-  if (Platform.isAndroid) {
-    final androidPlugin = plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-
-    await androidPlugin?.requestNotificationsPermission();
-    await androidPlugin?.requestExactAlarmsPermission();
-
-    await androidPlugin?.createNotificationChannel(
-      const AndroidNotificationChannel(
-        'message_reminders',
-        'Message Reminders',
-        description: 'Reminders for messages',
-        importance: Importance.high,
-      ),
+    const initializationSettingsIOS = DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
     );
-  }
-  if (Platform.isIOS) {
-    await plugin
-        .resolvePlatformSpecificImplementation<
-            IOSFlutterLocalNotificationsPlugin>()
-        ?.requestPermissions(
-          alert: true,
-          badge: true,
-          sound: true,
+
+    const initializationSettings = InitializationSettings(
+      android: initializationSettingsAndroid,
+      iOS: initializationSettingsIOS,
+    );
+
+    // ✅ FIX: Initialize with error handling
+    await plugin.initialize(
+      initializationSettings,
+      onDidReceiveNotificationResponse: (NotificationResponse response) {
+        print('📱 Notification clicked: ${response.payload}');
+      },
+    );
+
+    if (Platform.isAndroid) {
+      final androidPlugin = plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+
+      if (androidPlugin != null) {
+        await androidPlugin.requestNotificationsPermission();
+        await androidPlugin.requestExactAlarmsPermission();
+
+        await androidPlugin.createNotificationChannel(
+          const AndroidNotificationChannel(
+            'message_reminders',
+            'Message Reminders',
+            description: 'Reminders for messages',
+            importance: Importance.high,
+          ),
         );
+      }
+    }
+    if (Platform.isIOS) {
+      await plugin
+          .resolvePlatformSpecificImplementation<
+              IOSFlutterLocalNotificationsPlugin>()
+          ?.requestPermissions(
+            alert: true,
+            badge: true,
+            sound: true,
+          );
+    }
+    print('✅ Notifications initialized successfully');
+  } catch (e) {
+    print('❌ Notification initialization error: $e');
+    // ✅ Don't crash the app, just log the error
   }
 }
 
@@ -130,7 +146,6 @@ class MyApp extends StatelessWidget {
 
     return MultiProvider(
       providers: [
-        // ... (Giữ nguyên các Provider)
         ChangeNotifierProvider<AuthProvider>(
           create: (_) => AuthProvider(
             firebaseAuth: firebaseAuth,
@@ -179,6 +194,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider<ThemeProvider>(
           create: (_) => ThemeProvider(prefs: prefs),
         ),
+        // ✅ FIX: Sử dụng instance notificationsPlugin được truyền vào
         Provider<ReminderProvider>(
           create: (_) => ReminderProvider(
             firebaseFirestore: firebaseFirestore,
@@ -315,6 +331,7 @@ class MiniChatOverlayManager extends StatefulWidget {
 }
 
 class _MiniChatOverlayManagerState extends State<MiniChatOverlayManager> {
+  // Channel này nhận lệnh từ Native (MiniChatChannel trên Native)
   static const MethodChannel _miniChatChannel =
       MethodChannel('mini_chat_channel');
 
@@ -350,11 +367,11 @@ class _MiniChatOverlayManagerState extends State<MiniChatOverlayManager> {
       } else if (call.method == 'minimize') {
         print('📦 Minimizing mini chat');
         _hideMiniChatOverlay();
-        // Native sẽ tự hiển thị lại Bubble
+        // Native sẽ tự hiển thị lại Bubble sau khi nhận lệnh minimize
       } else if (call.method == 'close') {
         print('❌ Closing mini chat');
         _hideMiniChatOverlay();
-        // Native sẽ tự xóa Bubble
+        // Native sẽ tự xóa Bubble sau khi nhận lệnh close
       }
 
       return null;

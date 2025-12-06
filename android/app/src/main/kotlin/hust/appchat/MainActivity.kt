@@ -1,5 +1,4 @@
 // android/app/src/main/kotlin/hust/appchat/MainActivity.kt
-// ✅ FIXED: Support Mini Chat với Chat Page routing
 
 package hust.appchat
 
@@ -35,6 +34,7 @@ class MainActivity : FlutterActivity() {
 
         BubbleManager.init(this)
 
+        // ✅ Setup both MethodChannel and EventChannel
         setupMethodChannel(flutterEngine)
         setupEventChannel(flutterEngine)
     }
@@ -45,14 +45,14 @@ class MainActivity : FlutterActivity() {
                 android.util.Log.d("MainActivity", "📞 Method called: ${call.method}")
 
                 when (call.method) {
-                    "requestPermission" -> {
-                        requestOverlayPermission(result)
-                    }
-
                     "hasPermission" -> {
                         val hasPermission = checkOverlayPermission()
                         android.util.Log.d("MainActivity", "✅ Has permission: $hasPermission")
                         result.success(hasPermission)
+                    }
+
+                    "requestPermission" -> {
+                        requestOverlayPermission(result)
                     }
 
                     "showBubble" -> {
@@ -138,25 +138,30 @@ class MainActivity : FlutterActivity() {
                     }
 
                     else -> {
+                        android.util.Log.w("MainActivity", "⚠️ Unknown method: ${call.method}")
                         result.notImplemented()
                     }
                 }
             }
+        android.util.Log.d("MainActivity", "✅ MethodChannel registered")
     }
 
     private fun setupEventChannel(flutterEngine: FlutterEngine) {
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    android.util.Log.d("MainActivity", "✅ EventChannel listener attached")
                     eventSink = events
                     setupBubbleListeners()
                 }
 
                 override fun onCancel(arguments: Any?) {
+                    android.util.Log.d("MainActivity", "🛑 EventChannel listener cancelled")
                     eventSink = null
                     unsetupBubbleListeners()
                 }
             })
+        android.util.Log.d("MainActivity", "✅ EventChannel registered")
     }
 
     private fun checkOverlayPermission(): Boolean {
@@ -214,6 +219,8 @@ class MainActivity : FlutterActivity() {
                     val userName = intent.getStringExtra("userName") ?: ""
                     val avatarUrl = intent.getStringExtra("avatarUrl") ?: ""
 
+                    android.util.Log.d("MainActivity", "🫧 Bubble clicked: $userName")
+
                     eventSink?.success(
                         mapOf(
                             "type" to "click",
@@ -248,10 +255,13 @@ class MainActivity : FlutterActivity() {
             val messageFilter = IntentFilter("CHAT_BUBBLE_MESSAGE")
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                // Sử dụng Context.RECEIVER_NOT_EXPORTED cho Android 13+
                 registerReceiver(bubbleClickReceiver, clickFilter, Context.RECEIVER_NOT_EXPORTED)
                 registerReceiver(bubbleMessageReceiver, messageFilter, Context.RECEIVER_NOT_EXPORTED)
             } else {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
                 registerReceiver(bubbleClickReceiver, clickFilter)
+                @Suppress("UnspecifiedRegisterReceiverFlag")
                 registerReceiver(bubbleMessageReceiver, messageFilter)
             }
 
@@ -284,10 +294,14 @@ class MainActivity : FlutterActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Gọi BubbleManager để xử lý logic khi ứng dụng trở lại foreground
+        BubbleManager.onAppResumed(this)
     }
 
     override fun onPause() {
         super.onPause()
+        // Gọi BubbleManager để xử lý logic khi ứng dụng đi vào background
+        BubbleManager.onAppPaused()
     }
 
     override fun onDestroy() {
