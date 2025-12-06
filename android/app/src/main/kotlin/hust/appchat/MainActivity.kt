@@ -34,10 +34,14 @@ class MainActivity : FlutterActivity() {
 
         BubbleManager.init(this)
 
-        // ✅ Setup both MethodChannel and EventChannel
+        // Setup both MethodChannel and EventChannel
         setupMethodChannel(flutterEngine)
         setupEventChannel(flutterEngine)
     }
+
+    // ========================================
+    // METHOD CHANNEL SETUP
+    // ========================================
 
     private fun setupMethodChannel(flutterEngine: FlutterEngine) {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
@@ -146,6 +150,10 @@ class MainActivity : FlutterActivity() {
         android.util.Log.d("MainActivity", "✅ MethodChannel registered")
     }
 
+    // ========================================
+    // EVENT CHANNEL SETUP
+    // ========================================
+
     private fun setupEventChannel(flutterEngine: FlutterEngine) {
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
             .setStreamHandler(object : EventChannel.StreamHandler {
@@ -163,6 +171,10 @@ class MainActivity : FlutterActivity() {
             })
         android.util.Log.d("MainActivity", "✅ EventChannel registered")
     }
+
+    // ========================================
+    // PERMISSION HANDLING
+    // ========================================
 
     private fun checkOverlayPermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -208,6 +220,10 @@ class MainActivity : FlutterActivity() {
             pendingPermissionResult = null
         }
     }
+
+    // ========================================
+    // BROADCAST RECEIVERS
+    // ========================================
 
     private fun setupBubbleListeners() {
         if (receiversRegistered) return

@@ -1,4 +1,5 @@
 // android/app/src/main/kotlin/hust/appchat/bubble/BubbleManager.kt
+
 package hust.appchat.bubble
 
 import android.content.Context
@@ -21,6 +22,7 @@ object BubbleManager {
     private var auth: FirebaseAuth? = null
     private val messageListeners = mutableMapOf<String, ListenerRegistration>()
 
+    // ✅ CRITICAL: Track if service is running
     private var isServiceRunning = false
 
     private val bubblePositions = mutableMapOf<String, BubblePosition>()
@@ -102,7 +104,7 @@ object BubbleManager {
             repositionBubblesForRotation(context, oldWidth, oldHeight)
 
             lastOrientation = newConfig.orientation
-            saveBubbles()
+            saveBubbles() // Save new positions after rotation
         }
     }
 
@@ -119,6 +121,11 @@ object BubbleManager {
         }
     }
 
+    // ✅ Dòng 320 FIX: onAppPaused chỉ đơn giản log và không gọi hàm phức tạp nào
+    fun onAppPaused() {
+        Log.d("BubbleManager", "⏸️ App paused")
+    }
+
     fun cleanup() {
         Log.d("BubbleManager", "🧹 Cleanup: Removing listeners and data.")
         messageListeners.values.forEach {
@@ -131,6 +138,7 @@ object BubbleManager {
         bubblePositions.clear()
         lastOrientation = Configuration.ORIENTATION_UNDEFINED
         isServiceRunning = false
+        clearSavedBubbles() // Clear persistence on clean shutdown
     }
 
     // --- Screen Utils ---
@@ -239,6 +247,7 @@ object BubbleManager {
                 return
             }
 
+            // Dùng TypeToken từ Gson
             val type = object : TypeToken<List<BubblePersistData>>() {}.type
             val persistDataList: List<BubblePersistData> = gson.fromJson(json, type)
 
@@ -415,6 +424,7 @@ object BubbleManager {
 
             val position = bubblePositions[userId]
             if (position != null) {
+                // Sử dụng lastScreenHeight và TOP_MARGIN để đảm bảo giới hạn
                 position.y = newY.coerceIn(TOP_MARGIN, lastScreenHeight - BUBBLE_SIZE - 20)
 
                 // Notify service to update position immediately
