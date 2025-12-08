@@ -1,4 +1,4 @@
-// android/app/src/main/kotlin/hust/appchat/bubble/BubbleView.kt - FIXED BOUNDS
+// android/app/src/main/kotlin/hust/appchat/bubble/BubbleView.kt - COMPLETE TOUCH FIX
 package hust.appchat.bubble
 
 import android.animation.ValueAnimator
@@ -18,10 +18,8 @@ import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.request.RequestOptions
 import hust.appchat.R
 import kotlin.math.abs
+import kotlin.math.sqrt
 
-/**
- * ✅ FIXED: BubbleView with proper bounds checking
- */
 class BubbleView(
     context: Context,
     private val userId: String,
@@ -34,10 +32,9 @@ class BubbleView(
     private val onlineIndicator: View
     private val deleteIndicator: ImageView
 
-    // ✅ ADD: Screen dimensions for bounds checking
     private val screenWidth: Int
     private val screenHeight: Int
-    private val bubbleSize = 64 // dp converted to pixels
+    private val bubbleSize = 64
 
     // Listeners
     private var onDragListener: ((Boolean, Float, Float) -> Unit)? = null
@@ -48,12 +45,13 @@ class BubbleView(
     private var isDetached = false
     private var isInDeleteZone = false
 
-    // Touch tracking
+    // ✅ CRITICAL: Proper touch tracking
     private var initialTouchX = 0f
     private var initialTouchY = 0f
-    private var lastTouchX = 0f
-    private var lastTouchY = 0f
+    private var lastRawX = 0f
+    private var lastRawY = 0f
     private var touchStartTime = 0L
+    private var hasMoved = false
 
     private var lastMessage: String = ""
     private var currentUnreadCount = 0
@@ -79,10 +77,11 @@ class BubbleView(
         onlineIndicator = findViewById(R.id.bubble_online_indicator)
         deleteIndicator = findViewById(R.id.delete_indicator)
 
+        // ✅ CRITICAL: Enable interaction
         isClickable = true
         isFocusable = true
+        isFocusableInTouchMode = true
 
-        // ✅ FIX: Get screen dimensions for bounds checking
         val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val displayMetrics = DisplayMetrics()
         @Suppress("DEPRECATION")
@@ -90,12 +89,12 @@ class BubbleView(
         screenWidth = displayMetrics.widthPixels
         screenHeight = displayMetrics.heightPixels
 
-        android.util.Log.d("BubbleView", "📱 Screen dimensions: ${screenWidth}x${screenHeight}")
+        android.util.Log.d("BubbleView", "📱 Screen: ${screenWidth}x${screenHeight}")
 
         loadAvatar()
         setupTouchListener()
 
-        android.util.Log.d("BubbleView", "✅ Bubble created for: $userName")
+        android.util.Log.d("BubbleView", "✅ Bubble created: $userName")
     }
 
     private fun loadAvatar() {
@@ -118,27 +117,33 @@ class BubbleView(
                 avatarImageView.setImageResource(R.drawable.bubble_background)
             }
         } catch (e: Exception) {
-            android.util.Log.e("BubbleView", "❌ Failed to load avatar: $e")
+            android.util.Log.e("BubbleView", "❌ Avatar load error: $e")
             avatarImageView.setImageResource(R.drawable.bubble_background)
         }
     }
 
+    // ✅ CRITICAL: COMPLETE TOUCH FIX
     private fun setupTouchListener() {
         setOnTouchListener { view, event ->
             if (isDetached) return@setOnTouchListener false
 
+            // ✅ Always consume touch events
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     handleTouchDown(event)
-                    true
+                    true // Consume
                 }
                 MotionEvent.ACTION_MOVE -> {
                     handleTouchMove(event)
-                    true
+                    true // Consume
                 }
                 MotionEvent.ACTION_UP -> {
                     handleTouchUp(event)
-                    true
+                    true // Consume
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    resetVisuals()
+                    true // Consume
                 }
                 else -> false
             }
@@ -146,12 +151,13 @@ class BubbleView(
     }
 
     private fun handleTouchDown(event: MotionEvent) {
-        initialTouchX = event.rawX
-        initialTouchY = event.rawY
-        lastTouchX = event.rawX
-        lastTouchY = event.rawY
+        initialTouchX = event.x
+        initialTouchY = event.y
+        lastRawX = event.rawX
+        lastRawY = event.rawY
         touchStartTime = System.currentTimeMillis()
         isDragging = false
+        hasMoved = false
 
         // Visual feedback
         animate()
@@ -160,40 +166,38 @@ class BubbleView(
             .setDuration(150)
             .start()
 
-        android.util.Log.d("BubbleView", "👆 Touch down at: (${event.rawX}, ${event.rawY})")
+        android.util.Log.d("BubbleView", "👆 Touch down: (${event.rawX}, ${event.rawY})")
     }
 
     private fun handleTouchMove(event: MotionEvent) {
-        val deltaX = event.rawX - initialTouchX
-        val deltaY = event.rawY - initialTouchY
-        val distance = Math.sqrt((deltaX * deltaX + deltaY * deltaY).toDouble())
+        val deltaX = event.x - initialTouchX
+        val deltaY = event.y - initialTouchY
+        val distance = sqrt((deltaX * deltaX + deltaY * deltaY).toDouble())
 
-        // Start dragging if moved beyond slop
-        if (!isDragging && distance > TOUCH_SLOP) {
-            isDragging = true
-            performHapticFeedback(HAPTIC_SNAP_DURATION)
-            android.util.Log.d("BubbleView", "🖐️ Drag started")
+        // Check if moved beyond threshold
+        if (distance > TOUCH_SLOP) {
+            hasMoved = true
+
+            if (!isDragging) {
+                isDragging = true
+                performHapticFeedback(HAPTIC_SNAP_DURATION)
+                android.util.Log.d("BubbleView", "🖐️ Drag started")
+            }
         }
 
         if (isDragging) {
-            // ✅ FIX: Calculate delta with bounds checking
-            var moveX = event.rawX - lastTouchX
-            var moveY = event.rawY - lastTouchY
+            // Calculate delta from last position
+            val moveX = event.rawX - lastRawX
+            val moveY = event.rawY - lastRawY
 
-            lastTouchX = event.rawX
-            lastTouchY = event.rawY
+            lastRawX = event.rawX
+            lastRawY = event.rawY
 
-            // ✅ FIX: Apply bounds checking before notifying listener
-            // Get current position from parent (will be updated by service)
-            // We just ensure the delta doesn't push us out of bounds
+            // ✅ Notify listener with delta
+            onDragListener?.invoke(false, moveX, moveY)
 
             // Check delete zone
             val inDeleteZone = event.rawY > (screenHeight - DELETE_ZONE_HEIGHT)
-
-            // ✅ Notify listener with bounded delta
-            onDragListener?.invoke(false, moveX, moveY)
-
-            // Visual feedback
             updateDeleteIndicator(inDeleteZone)
 
             val targetScale = if (inDeleteZone) BUBBLE_SCALE_DELETE else BUBBLE_SCALE_DOWN
@@ -210,9 +214,6 @@ class BubbleView(
 
     private fun handleTouchUp(event: MotionEvent) {
         val touchDuration = System.currentTimeMillis() - touchStartTime
-        val deltaX = event.rawX - initialTouchX
-        val deltaY = event.rawY - initialTouchY
-        val distance = Math.sqrt((deltaX * deltaX + deltaY * deltaY).toDouble())
 
         // Reset visuals
         animate()
@@ -225,7 +226,7 @@ class BubbleView(
         hideDeleteIndicator()
 
         if (isDragging) {
-            // Check if in delete zone
+            // Check delete zone
             val inDeleteZone = event.rawY > (screenHeight - DELETE_ZONE_HEIGHT)
 
             if (inDeleteZone) {
@@ -233,20 +234,33 @@ class BubbleView(
                 onDragListener?.invoke(true, 0f, 0f)
                 android.util.Log.d("BubbleView", "🗑️ Bubble deleted")
             } else {
-                android.util.Log.d("BubbleView", "🫧 Drag ended - snap to edge")
+                android.util.Log.d("BubbleView", "🫧 Drag ended")
             }
 
             // Notify drag end
             onDragEndListener?.invoke()
-        } else if (touchDuration < CLICK_TIMEOUT && distance < TOUCH_SLOP) {
-            // Click detected
-            android.util.Log.d("BubbleView", "👆 Click detected")
+        } else if (!hasMoved && touchDuration < CLICK_TIMEOUT) {
+            // ✅ CLICK DETECTED
+            android.util.Log.d("BubbleView", "👆 CLICK detected for: $userName")
             performHapticFeedback(HAPTIC_SNAP_DURATION)
             performClick()
             onClickListener?.invoke()
         }
 
         isDragging = false
+        hasMoved = false
+    }
+
+    private fun resetVisuals() {
+        animate()
+            .scaleX(1f)
+            .scaleY(1f)
+            .alpha(1f)
+            .setDuration(150)
+            .start()
+        hideDeleteIndicator()
+        isDragging = false
+        hasMoved = false
     }
 
     private fun performHapticFeedback(duration: Long) {
@@ -260,12 +274,12 @@ class BubbleView(
                 vibrator?.vibrate(duration)
             }
         } catch (e: Exception) {
-            android.util.Log.e("BubbleView", "⚠️ Haptic feedback error: $e")
+            android.util.Log.e("BubbleView", "⚠️ Haptic error: $e")
         }
     }
 
     override fun performClick(): Boolean {
-        android.util.Log.d("BubbleView", "🫧 performClick() called")
+        android.util.Log.d("BubbleView", "🫧 performClick() called for: $userName")
         super.performClick()
         return true
     }
@@ -439,7 +453,7 @@ class BubbleView(
         try {
             Glide.with(context).clear(avatarImageView)
         } catch (e: Exception) {
-            android.util.Log.e("BubbleView", "❌ Error clearing Glide: $e")
+            android.util.Log.e("BubbleView", "❌ Glide clear error: $e")
         }
     }
 
