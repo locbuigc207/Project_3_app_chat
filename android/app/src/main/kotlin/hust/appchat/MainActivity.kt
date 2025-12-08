@@ -27,19 +27,42 @@ class MainActivity : FlutterActivity() {
     private var pendingPermissionResult: MethodChannel.Result? = null
 
     private var receiversRegistered = false
+    private var isFlutterReady = false
 
+    // ✅ FIX 1: Initialize BubbleManager EARLY
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        // ✅ CRITICAL: Initialize BubbleManager BEFORE Flutter engine
+        try {
+            BubbleManager.init(this)
+            android.util.Log.d("MainActivity", "✅ BubbleManager initialized in onCreate")
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "❌ BubbleManager init failed: $e")
+        }
+    }
+
+    // ✅ FIX 4: Flutter Engine Warmup
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        BubbleManager.init(this)
+        android.util.Log.d("MainActivity", "🔧 Configuring Flutter Engine...")
 
-        // ✅ Setup both channels
+        // ✅ Wait for Flutter engine to be ready
+        flutterEngine.dartExecutor.executeDartEntrypoint(
+            io.flutter.embedding.engine.dart.DartExecutor.DartEntrypoint.createDefault()
+        )
+
+        // ✅ Setup channels AFTER engine is ready
         setupMethodChannel(flutterEngine)
         setupEventChannel(flutterEngine)
+
+        isFlutterReady = true
+        android.util.Log.d("MainActivity", "✅ Flutter Engine ready")
     }
 
     // ========================================
-    // ✅ METHOD CHANNEL SETUP (COMPLETE FIX)
+    // METHOD CHANNEL SETUP
     // ========================================
     private fun setupMethodChannel(flutterEngine: FlutterEngine) {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
@@ -151,7 +174,7 @@ class MainActivity : FlutterActivity() {
     }
 
     // ========================================
-    // ✅ EVENT CHANNEL SETUP (COMPLETE FIX)
+    // ✅ FIX 7: EVENT CHANNEL SETUP (Fixed Broadcasts)
     // ========================================
     private fun setupEventChannel(flutterEngine: FlutterEngine) {
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
@@ -159,6 +182,8 @@ class MainActivity : FlutterActivity() {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                     android.util.Log.d("MainActivity", "✅ EventChannel listener attached")
                     eventSink = events
+
+                    // ✅ Setup receivers AFTER eventSink is ready
                     setupBubbleListeners()
                 }
 
@@ -219,11 +244,16 @@ class MainActivity : FlutterActivity() {
     }
 
     // ========================================
-    // BROADCAST RECEIVERS (COMPLETE FIX)
+    // ✅ FIX 7: BROADCAST RECEIVERS (Fixed)
     // ========================================
     private fun setupBubbleListeners() {
         if (receiversRegistered) {
             android.util.Log.d("MainActivity", "ℹ️ Receivers already registered")
+            return
+        }
+
+        if (eventSink == null) {
+            android.util.Log.w("MainActivity", "⚠️ Cannot setup receivers: eventSink is null")
             return
         }
 
@@ -236,14 +266,22 @@ class MainActivity : FlutterActivity() {
 
                     android.util.Log.d("MainActivity", "🫧 Bubble clicked: $userName")
 
-                    eventSink?.success(
-                        mapOf(
-                            "type" to "click",
-                            "userId" to userId,
-                            "userName" to userName,
-                            "avatarUrl" to avatarUrl
-                        )
-                    )
+                    // ✅ FIX: Check if eventSink is still valid before sending
+                    eventSink?.let { sink ->
+                        try {
+                            sink.success(
+                                mapOf(
+                                    "type" to "click",
+                                    "userId" to userId,
+                                    "userName" to userName,
+                                    "avatarUrl" to avatarUrl
+                                )
+                            )
+                            android.util.Log.d("MainActivity", "✅ Event sent to Flutter")
+                        } catch (e: Exception) {
+                            android.util.Log.e("MainActivity", "❌ Failed to send event: $e")
+                        }
+                    } ?: android.util.Log.w("MainActivity", "⚠️ EventSink is null")
                 }
             }
         }
@@ -254,13 +292,20 @@ class MainActivity : FlutterActivity() {
                     val userId = intent.getStringExtra("userId") ?: ""
                     val message = intent.getStringExtra("message") ?: ""
 
-                    eventSink?.success(
-                        mapOf(
-                            "type" to "message",
-                            "userId" to userId,
-                            "message" to message
-                        )
-                    )
+                    // ✅ FIX: Check if eventSink is still valid
+                    eventSink?.let { sink ->
+                        try {
+                            sink.success(
+                                mapOf(
+                                    "type" to "message",
+                                    "userId" to userId,
+                                    "message" to message
+                                )
+                            )
+                        } catch (e: Exception) {
+                            android.util.Log.e("MainActivity", "❌ Failed to send message event: $e")
+                        }
+                    }
                 }
             }
         }
@@ -292,18 +337,23 @@ class MainActivity : FlutterActivity() {
         bubbleClickReceiver?.let {
             try {
                 unregisterReceiver(it)
-            } catch (e: Exception) {}
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "⚠️ Error unregistering click receiver: $e")
+            }
         }
 
         bubbleMessageReceiver?.let {
             try {
                 unregisterReceiver(it)
-            } catch (e: Exception) {}
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "⚠️ Error unregistering message receiver: $e")
+            }
         }
 
         bubbleClickReceiver = null
         bubbleMessageReceiver = null
         receiversRegistered = false
+        android.util.Log.d("MainActivity", "✅ Receivers unregistered")
     }
 
     // ========================================
@@ -311,18 +361,23 @@ class MainActivity : FlutterActivity() {
     // ========================================
     override fun onResume() {
         super.onResume()
-        // ✅ FIX: Simple onResume without calling BubbleManager
         android.util.Log.d("MainActivity", "▶️ App resumed")
+
+        // ✅ Notify BubbleManager only if Flutter is ready
+        if (isFlutterReady) {
+            BubbleManager.onAppResumed(this)
+        }
     }
 
     override fun onPause() {
         super.onPause()
-        // ✅ FIX: Simple onPause
         android.util.Log.d("MainActivity", "⏸️ App paused")
+        BubbleManager.onAppPaused()
     }
 
     override fun onDestroy() {
         unsetupBubbleListeners()
+        eventSink = null
         super.onDestroy()
     }
 }
