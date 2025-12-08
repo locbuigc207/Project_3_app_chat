@@ -414,7 +414,6 @@ class BubbleOverlayService : Service() {
             }
         }
     }
-
     private fun showBubble(
         userId: String,
         userName: String,
@@ -555,7 +554,6 @@ class BubbleOverlayService : Service() {
             }
         }
     }
-
     private fun snapBubbleToEdge(userId: String) {
         val bubbleView = bubbleViews[userId] ?: return
         val params = bubbleParams[userId] ?: return
