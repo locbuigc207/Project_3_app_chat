@@ -414,11 +414,6 @@ class BubbleOverlayService : Service() {
             }
         }
     }
-
-    // ========================================
-    // ✅ BUBBLE OPERATIONS (FIXED)
-    // ========================================
-
     private fun showBubble(
         userId: String,
         userName: String,
@@ -430,12 +425,11 @@ class BubbleOverlayService : Service() {
     ) {
         mainHandler.post {
             try {
-                // ✅ Ensure screen dimensions are valid (Fix for UnsupportedOperationException)
                 if (screenWidth <= 0 || screenHeight <= 0) {
                     getScreenDimensions()
                 }
 
-                // Remove existing bubble if any
+                // Remove existing bubble
                 bubbleViews[userId]?.let {
                     try {
                         windowManager?.removeView(it)
@@ -448,30 +442,29 @@ class BubbleOverlayService : Service() {
                 bubbleView.updateUnreadCount(unreadCount)
                 bubbleView.updateLastMessage(lastMessage)
 
-                // The logic for size clamping relies on the view being measured, but we must clamp
-                // the initial position before adding the view to prevent IllegalArgumentException.
-                val bubbleSize = 64 // Assume default bubble size for initial clamping
+                val bubbleSize = 64
                 val maxBoundX = maxOf(0, screenWidth - bubbleSize - BUBBLE_PADDING)
                 val maxBoundY = maxOf(0, screenHeight - bubbleSize - BUBBLE_PADDING)
 
-                // ✅ Validate and clamp position (Fix for IllegalArgumentException: maximum < minimum)
                 val boundedX = positionX.coerceIn(BUBBLE_PADDING, maxBoundX)
                 val boundedY = positionY.coerceIn(BUBBLE_PADDING, maxBoundY)
 
                 android.util.Log.d("BubbleService", "🎈 showBubble: $userName at ($boundedX, $boundedY)")
 
-                // Check for invalid dimensions after clamping
                 if (maxBoundX < BUBBLE_PADDING || maxBoundY < BUBBLE_PADDING) {
-                    android.util.Log.e("BubbleService", "❌ Invalid screen dimensions for bubble placement: $screenWidth x $screenHeight")
+                    android.util.Log.e("BubbleService", "❌ Invalid screen dimensions")
                     return@post
                 }
 
+                // ✅ CRITICAL: Setup listeners BEFORE adding to window
                 bubbleView.setOnClickListener {
-                    android.util.Log.d("BubbleService", "🫧 Bubble clicked: $userName")
+                    android.util.Log.d("BubbleService", "🫧 Bubble CLICKED: $userName")
                     onBubbleClicked(userId, userName, avatarUrl)
                 }
 
                 bubbleView.setOnDragListener { isInDeleteZone: Boolean, deltaX: Float, deltaY: Float ->
+                    android.util.Log.d("BubbleService", "🖐️ Drag callback: deleteZone=$isInDeleteZone, delta=($deltaX, $deltaY)")
+
                     if (!isDraggingAnyBubble && (deltaX != 0f || deltaY != 0f)) {
                         isDraggingAnyBubble = true
                         showDeleteZone()
@@ -488,7 +481,6 @@ class BubbleOverlayService : Service() {
                             params.x += deltaX.toInt()
                             params.y += deltaY.toInt()
 
-                            // ✅ Validate bounds during drag
                             val currentBubbleWidth = bubbleView.width
                             val currentBubbleHeight = bubbleView.height
 
@@ -503,6 +495,7 @@ class BubbleOverlayService : Service() {
 
                             try {
                                 windowManager?.updateViewLayout(bubbleView, params)
+                                android.util.Log.d("BubbleService", "📍 Updated position: ($newX, $newY)")
                             } catch (e: Exception) {
                                 android.util.Log.e("BubbleService", "❌ Update layout failed: $e")
                             }
@@ -511,6 +504,7 @@ class BubbleOverlayService : Service() {
                 }
 
                 bubbleView.setOnDragEndListener {
+                    android.util.Log.d("BubbleService", "🫧 Drag END callback")
                     hideDeleteZone()
                     isDraggingAnyBubble = false
                     mainHandler.postDelayed({
@@ -546,7 +540,7 @@ class BubbleOverlayService : Service() {
                 bubbleViews[userId] = bubbleView
                 bubbleParams[userId] = params
 
-                android.util.Log.d("BubbleService", "✅ Bubble added at: ($boundedX, $boundedY)")
+                android.util.Log.d("BubbleService", "✅ Bubble added successfully at: ($boundedX, $boundedY)")
 
                 mainHandler.postDelayed({
                     if (bubbleViews.containsKey(userId)) {
@@ -560,7 +554,6 @@ class BubbleOverlayService : Service() {
             }
         }
     }
-
     private fun snapBubbleToEdge(userId: String) {
         val bubbleView = bubbleViews[userId] ?: return
         val params = bubbleParams[userId] ?: return
