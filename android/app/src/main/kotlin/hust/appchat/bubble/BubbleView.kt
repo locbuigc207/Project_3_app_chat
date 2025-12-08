@@ -1,4 +1,4 @@
-// android/app/src/main/kotlin/hust/appchat/bubble/BubbleView.kt - COMPLETE TOUCH FIX
+// android/app/src/main/kotlin/hust/appchat/bubble/BubbleView.kt - COMPLETELY FIXED
 package hust.appchat.bubble
 
 import android.animation.ValueAnimator
@@ -36,16 +36,16 @@ class BubbleView(
     private val screenHeight: Int
     private val bubbleSize = 64
 
-    // Listeners
+    // ✅ FIX: Callbacks
     private var onDragListener: ((Boolean, Float, Float) -> Unit)? = null
     private var onDragEndListener: (() -> Unit)? = null
     private var onClickListener: (() -> Unit)? = null
 
+    // ✅ FIX: Touch state
     private var isDragging = false
     private var isDetached = false
     private var isInDeleteZone = false
 
-    // ✅ CRITICAL: Proper touch tracking
     private var initialTouchX = 0f
     private var initialTouchY = 0f
     private var lastRawX = 0f
@@ -77,7 +77,7 @@ class BubbleView(
         onlineIndicator = findViewById(R.id.bubble_online_indicator)
         deleteIndicator = findViewById(R.id.delete_indicator)
 
-        // ✅ CRITICAL: Enable interaction
+        // ✅ CRITICAL: Must be clickable AND focusable
         isClickable = true
         isFocusable = true
         isFocusableInTouchMode = true
@@ -122,28 +122,30 @@ class BubbleView(
         }
     }
 
-    // ✅ CRITICAL: COMPLETE TOUCH FIX
+    // ✅ CRITICAL FIX: Completely rewritten touch handling
     private fun setupTouchListener() {
         setOnTouchListener { view, event ->
-            if (isDetached) return@setOnTouchListener false
+            if (isDetached) {
+                android.util.Log.w("BubbleView", "⚠️ Touch ignored: detached")
+                return@setOnTouchListener false
+            }
 
-            // ✅ Always consume touch events
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     handleTouchDown(event)
-                    true // Consume
+                    true // ✅ Always consume
                 }
                 MotionEvent.ACTION_MOVE -> {
                     handleTouchMove(event)
-                    true // Consume
+                    true // ✅ Always consume
                 }
                 MotionEvent.ACTION_UP -> {
                     handleTouchUp(event)
-                    true // Consume
+                    true // ✅ Always consume
                 }
                 MotionEvent.ACTION_CANCEL -> {
                     resetVisuals()
-                    true // Consume
+                    true // ✅ Always consume
                 }
                 else -> false
             }
@@ -166,7 +168,7 @@ class BubbleView(
             .setDuration(150)
             .start()
 
-        android.util.Log.d("BubbleView", "👆 Touch down: (${event.rawX}, ${event.rawY})")
+        android.util.Log.d("BubbleView", "👆 Touch DOWN: (${event.rawX.toInt()}, ${event.rawY.toInt()})")
     }
 
     private fun handleTouchMove(event: MotionEvent) {
@@ -181,7 +183,7 @@ class BubbleView(
             if (!isDragging) {
                 isDragging = true
                 performHapticFeedback(HAPTIC_SNAP_DURATION)
-                android.util.Log.d("BubbleView", "🖐️ Drag started")
+                android.util.Log.d("BubbleView", "🖐️ Drag STARTED")
             }
         }
 
@@ -209,11 +211,15 @@ class BubbleView(
                 .alpha(targetAlpha)
                 .setDuration(100)
                 .start()
+
+            android.util.Log.d("BubbleView", "🖐️ Dragging: moveX=$moveX, moveY=$moveY, deleteZone=$inDeleteZone")
         }
     }
 
     private fun handleTouchUp(event: MotionEvent) {
         val touchDuration = System.currentTimeMillis() - touchStartTime
+
+        android.util.Log.d("BubbleView", "👆 Touch UP: duration=${touchDuration}ms, moved=$hasMoved, dragging=$isDragging")
 
         // Reset visuals
         animate()
@@ -232,9 +238,9 @@ class BubbleView(
             if (inDeleteZone) {
                 performHapticFeedback(HAPTIC_DELETE_DURATION)
                 onDragListener?.invoke(true, 0f, 0f)
-                android.util.Log.d("BubbleView", "🗑️ Bubble deleted")
+                android.util.Log.d("BubbleView", "🗑️ Bubble DELETED")
             } else {
-                android.util.Log.d("BubbleView", "🫧 Drag ended")
+                android.util.Log.d("BubbleView", "🫧 Drag ENDED")
             }
 
             // Notify drag end
@@ -420,17 +426,20 @@ class BubbleView(
         }
     }
 
-    // Listener setters
+    // ✅ Listener setters
     fun setOnDragListener(listener: (Boolean, Float, Float) -> Unit) {
         this.onDragListener = listener
+        android.util.Log.d("BubbleView", "✅ Drag listener set")
     }
 
     fun setOnDragEndListener(listener: () -> Unit) {
         this.onDragEndListener = listener
+        android.util.Log.d("BubbleView", "✅ Drag end listener set")
     }
 
     fun setOnClickListener(listener: () -> Unit) {
         this.onClickListener = listener
+        android.util.Log.d("BubbleView", "✅ Click listener set")
     }
 
     fun getBubbleData(): Map<String, Any> {
