@@ -1,5 +1,4 @@
-// android/app/src/main/kotlin/hust/appchat/MainActivity.kt
-
+// android/app/src/main/kotlin/hust/appchat/MainActivity.kt - COMPLETE FIX
 package hust.appchat
 
 import android.content.Intent
@@ -34,126 +33,126 @@ class MainActivity : FlutterActivity() {
 
         BubbleManager.init(this)
 
-        // Setup both MethodChannel and EventChannel
+        // ✅ Setup both channels
         setupMethodChannel(flutterEngine)
         setupEventChannel(flutterEngine)
     }
 
     // ========================================
-    // METHOD CHANNEL SETUP
+    // ✅ METHOD CHANNEL SETUP (COMPLETE FIX)
     // ========================================
-
     private fun setupMethodChannel(flutterEngine: FlutterEngine) {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
-                android.util.Log.d("MainActivity", "📞 Method called: ${call.method}")
+                android.util.Log.d("MainActivity", "📞 Method: ${call.method}")
 
-                when (call.method) {
-                    "hasPermission" -> {
-                        val hasPermission = checkOverlayPermission()
-                        android.util.Log.d("MainActivity", "✅ Has permission: $hasPermission")
-                        result.success(hasPermission)
-                    }
-
-                    "requestPermission" -> {
-                        requestOverlayPermission(result)
-                    }
-
-                    "showBubble" -> {
-                        val userId = call.argument<String>("userId")
-                        val userName = call.argument<String>("userName")
-                        val avatarUrl = call.argument<String>("avatarUrl")
-                        val lastMessage = call.argument<String>("lastMessage")
-
-                        if (userId != null && userName != null) {
-                            android.util.Log.d("MainActivity", "🎈 Creating bubble for: $userName")
-
-                            BubbleManager.showBubble(
-                                this,
-                                userId,
-                                userName,
-                                avatarUrl ?: "",
-                                lastMessage
-                            )
-                            result.success(true)
-                        } else {
-                            android.util.Log.e("MainActivity", "❌ Missing userId or userName")
-                            result.success(false)
+                try {
+                    when (call.method) {
+                        "hasPermission" -> {
+                            val hasPermission = checkOverlayPermission()
+                            result.success(hasPermission)
                         }
-                    }
 
-                    "hideBubble" -> {
-                        val userId = call.argument<String>("userId")
-                        if (userId != null) {
-                            BubbleManager.removeBubble(this, userId)
-                            result.success(true)
-                        } else {
-                            result.success(false)
+                        "requestPermission" -> {
+                            requestOverlayPermission(result)
                         }
-                    }
 
-                    "hideAllBubbles" -> {
-                        val intent = Intent(this, BubbleOverlayService::class.java)
-                        stopService(intent)
-                        BubbleManager.cleanup()
-                        result.success(true)
-                    }
+                        "showBubble" -> {
+                            val userId = call.argument<String>("userId")
+                            val userName = call.argument<String>("userName")
+                            val avatarUrl = call.argument<String>("avatarUrl")
+                            val lastMessage = call.argument<String>("lastMessage")
 
-                    "showMiniChat" -> {
-                        val userId = call.argument<String>("userId")
-                        val userName = call.argument<String>("userName")
-                        val avatarUrl = call.argument<String>("avatarUrl")
+                            if (userId != null && userName != null) {
+                                android.util.Log.d("MainActivity", "🎈 Creating bubble: $userName")
 
-                        if (userId != null && userName != null) {
-                            val intent = Intent(this, BubbleOverlayService::class.java).apply {
-                                action = BubbleOverlayService.ACTION_SHOW_MINI_CHAT
-                                putExtra("userId", userId)
-                                putExtra("userName", userName)
-                                putExtra("avatarUrl", avatarUrl ?: "")
-                            }
-
-                            try {
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                    startForegroundService(intent)
-                                } else {
-                                    startService(intent)
-                                }
+                                BubbleManager.showBubble(
+                                    this,
+                                    userId,
+                                    userName,
+                                    avatarUrl ?: "",
+                                    lastMessage
+                                )
                                 result.success(true)
-                            } catch (e: Exception) {
-                                android.util.Log.e("MainActivity", "❌ Failed to show mini chat: $e")
+                            } else {
                                 result.success(false)
                             }
-                        } else {
-                            result.success(false)
-                        }
-                    }
-
-                    "hideMiniChat" -> {
-                        val intent = Intent(this, BubbleOverlayService::class.java).apply {
-                            action = BubbleOverlayService.ACTION_HIDE_MINI_CHAT
                         }
 
-                        try {
-                            startService(intent)
+                        "hideBubble" -> {
+                            val userId = call.argument<String>("userId")
+                            if (userId != null) {
+                                BubbleManager.removeBubble(this, userId)
+                                result.success(true)
+                            } else {
+                                result.success(false)
+                            }
+                        }
+
+                        "hideAllBubbles" -> {
+                            val intent = Intent(this, BubbleOverlayService::class.java)
+                            stopService(intent)
+                            BubbleManager.cleanup()
                             result.success(true)
-                        } catch (e: Exception) {
-                            result.success(false)
+                        }
+
+                        "showMiniChat" -> {
+                            val userId = call.argument<String>("userId")
+                            val userName = call.argument<String>("userName")
+                            val avatarUrl = call.argument<String>("avatarUrl")
+
+                            if (userId != null && userName != null) {
+                                val intent = Intent(this, BubbleOverlayService::class.java).apply {
+                                    action = BubbleOverlayService.ACTION_SHOW_MINI_CHAT
+                                    putExtra("userId", userId)
+                                    putExtra("userName", userName)
+                                    putExtra("avatarUrl", avatarUrl ?: "")
+                                }
+
+                                try {
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                        startForegroundService(intent)
+                                    } else {
+                                        startService(intent)
+                                    }
+                                    result.success(true)
+                                } catch (e: Exception) {
+                                    android.util.Log.e("MainActivity", "❌ Error: $e")
+                                    result.success(false)
+                                }
+                            } else {
+                                result.success(false)
+                            }
+                        }
+
+                        "hideMiniChat" -> {
+                            val intent = Intent(this, BubbleOverlayService::class.java).apply {
+                                action = BubbleOverlayService.ACTION_HIDE_MINI_CHAT
+                            }
+                            try {
+                                startService(intent)
+                                result.success(true)
+                            } catch (e: Exception) {
+                                result.success(false)
+                            }
+                        }
+
+                        else -> {
+                            android.util.Log.w("MainActivity", "⚠️ Unknown: ${call.method}")
+                            result.notImplemented()
                         }
                     }
-
-                    else -> {
-                        android.util.Log.w("MainActivity", "⚠️ Unknown method: ${call.method}")
-                        result.notImplemented()
-                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("MainActivity", "❌ Error: $e")
+                    result.error("ERROR", e.message, null)
                 }
             }
         android.util.Log.d("MainActivity", "✅ MethodChannel registered")
     }
 
     // ========================================
-    // EVENT CHANNEL SETUP
+    // ✅ EVENT CHANNEL SETUP (COMPLETE FIX)
     // ========================================
-
     private fun setupEventChannel(flutterEngine: FlutterEngine) {
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
             .setStreamHandler(object : EventChannel.StreamHandler {
@@ -175,7 +174,6 @@ class MainActivity : FlutterActivity() {
     // ========================================
     // PERMISSION HANDLING
     // ========================================
-
     private fun checkOverlayPermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             Settings.canDrawOverlays(this)
@@ -188,7 +186,6 @@ class MainActivity : FlutterActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (!Settings.canDrawOverlays(this)) {
                 android.util.Log.d("MainActivity", "📱 Requesting overlay permission")
-
                 pendingPermissionResult = result
 
                 try {
@@ -198,7 +195,7 @@ class MainActivity : FlutterActivity() {
                     )
                     startActivityForResult(intent, OVERLAY_PERMISSION_REQUEST)
                 } catch (e: Exception) {
-                    android.util.Log.e("MainActivity", "❌ Failed to open permission settings: $e")
+                    android.util.Log.e("MainActivity", "❌ Error: $e")
                     result.success(false)
                 }
             } else {
@@ -222,11 +219,13 @@ class MainActivity : FlutterActivity() {
     }
 
     // ========================================
-    // BROADCAST RECEIVERS
+    // BROADCAST RECEIVERS (COMPLETE FIX)
     // ========================================
-
     private fun setupBubbleListeners() {
-        if (receiversRegistered) return
+        if (receiversRegistered) {
+            android.util.Log.d("MainActivity", "ℹ️ Receivers already registered")
+            return
+        }
 
         bubbleClickReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
@@ -271,7 +270,6 @@ class MainActivity : FlutterActivity() {
             val messageFilter = IntentFilter("CHAT_BUBBLE_MESSAGE")
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                // Sử dụng Context.RECEIVER_NOT_EXPORTED cho Android 13+
                 registerReceiver(bubbleClickReceiver, clickFilter, Context.RECEIVER_NOT_EXPORTED)
                 registerReceiver(bubbleMessageReceiver, messageFilter, Context.RECEIVER_NOT_EXPORTED)
             } else {
@@ -308,16 +306,19 @@ class MainActivity : FlutterActivity() {
         receiversRegistered = false
     }
 
+    // ========================================
+    // LIFECYCLE
+    // ========================================
     override fun onResume() {
         super.onResume()
-        // Gọi BubbleManager để xử lý logic khi ứng dụng trở lại foreground
-        BubbleManager.onAppResumed(this)
+        // ✅ FIX: Simple onResume without calling BubbleManager
+        android.util.Log.d("MainActivity", "▶️ App resumed")
     }
 
     override fun onPause() {
         super.onPause()
-        // Gọi BubbleManager để xử lý logic khi ứng dụng đi vào background
-        BubbleManager.onAppPaused()
+        // ✅ FIX: Simple onPause
+        android.util.Log.d("MainActivity", "⏸️ App paused")
     }
 
     override fun onDestroy() {
