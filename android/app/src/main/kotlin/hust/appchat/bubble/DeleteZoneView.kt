@@ -1,4 +1,3 @@
-// android/app/src/main/kotlin/hust/appchat/bubble/DeleteZoneView.kt
 package hust.appchat.bubble
 
 import android.animation.ValueAnimator
@@ -16,7 +15,8 @@ class DeleteZoneView(context: Context) : View(context) {
     private val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     private var currentAlpha = 0f
-    private var isActive = false
+    private var isActiveState = false // Đổi tên biến để tránh nhầm lẫn với tên hàm
+
     private var pulseAnimator: ValueAnimator? = null
 
     companion object {
@@ -49,6 +49,11 @@ class DeleteZoneView(context: Context) : View(context) {
     fun hide() {
         stopPulseAnimation()
 
+        // Đặt lại trạng thái Active khi ẩn
+        isActiveState = false
+        scaleX = 1f
+        scaleY = 1f
+
         animate()
             .alpha(0f)
             .translationY(100f)
@@ -59,9 +64,12 @@ class DeleteZoneView(context: Context) : View(context) {
             .start()
     }
 
-    fun setActive(active: Boolean) {
-        if (isActive == active) return
-        isActive = active
+    /**
+     * ✅ FIX: Đổi tên từ setActive thành animateToActive để khớp với BubbleOverlayService.kt
+     */
+    fun animateToActive(active: Boolean) {
+        if (isActiveState == active) return
+        isActiveState = active
 
         animate()
             .scaleX(if (active) 1.2f else 1f)
@@ -70,6 +78,7 @@ class DeleteZoneView(context: Context) : View(context) {
             .setInterpolator(OvershootInterpolator())
             .start()
 
+        // Yêu cầu vẽ lại để cập nhật màu sắc/icon của thùng rác
         invalidate()
     }
 
@@ -107,6 +116,7 @@ class DeleteZoneView(context: Context) : View(context) {
             0f, height,
             intArrayOf(
                 Color.TRANSPARENT,
+                // Điều chỉnh độ trong suốt của màu đỏ dựa trên currentAlpha (cho hiệu ứng pulse)
                 Color.argb((255 * currentAlpha * 0.3f).toInt(), 255, 107, 107)
             ),
             null,
@@ -119,9 +129,10 @@ class DeleteZoneView(context: Context) : View(context) {
         val centerX = width / 2
         val centerY = height - ZONE_HEIGHT / 2
 
-        iconPaint.color = if (isActive) {
-            Color.WHITE
+        iconPaint.color = if (isActiveState) {
+            Color.WHITE // Trắng khi Active
         } else {
+            // Màu đỏ nhạt hơn, pulse theo currentAlpha
             Color.argb((255 * currentAlpha).toInt(), 255, 107, 107)
         }
 
@@ -155,8 +166,8 @@ class DeleteZoneView(context: Context) : View(context) {
             iconPaint
         )
 
-        // X marks inside
-        if (isActive) {
+        // X marks inside (Active state visual)
+        if (isActiveState) {
             val crossSize = 16f
             canvas.drawLine(
                 centerX - crossSize / 2, centerY - crossSize / 2,
