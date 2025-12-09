@@ -58,6 +58,9 @@ class BubbleView(
 
     private val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
 
+    // ✅ FIX: Add flag to track if view is attached to window
+    private var isAttachedToWindow = false
+
     companion object {
         private const val DELETE_ZONE_HEIGHT = 150
         private const val TOUCH_SLOP = 15
@@ -92,9 +95,28 @@ class BubbleView(
         android.util.Log.d("BubbleView", "📱 Screen: ${screenWidth}x${screenHeight}")
 
         loadAvatar()
-        setupTouchListener()
+        // ✅ FIX: DON'T setup touch listener here
+        // Will be setup AFTER view is attached to window
 
         android.util.Log.d("BubbleView", "✅ Bubble created: $userName")
+    }
+
+    // ✅ NEW: Setup touch listener AFTER view is attached
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        isAttachedToWindow = true
+
+        // ✅ FIX: Setup touch listener AFTER view is attached
+        post {
+            setupTouchListener()
+            android.util.Log.d("BubbleView", "✅ Touch listener setup for: $userName")
+        }
+    }
+
+    override fun onDetachedFromWindow() {
+        isAttachedToWindow = false
+        cleanup()
+        super.onDetachedFromWindow()
     }
 
     private fun loadAvatar() {
@@ -125,8 +147,8 @@ class BubbleView(
     // ✅ CRITICAL FIX: Completely rewritten touch handling
     private fun setupTouchListener() {
         setOnTouchListener { view, event ->
-            if (isDetached) {
-                android.util.Log.w("BubbleView", "⚠️ Touch ignored: detached")
+            if (isDetached || !isAttachedToWindow) {
+                android.util.Log.w("BubbleView", "⚠️ Touch ignored: detached or not attached")
                 return@setOnTouchListener false
             }
 
@@ -150,6 +172,8 @@ class BubbleView(
                 else -> false
             }
         }
+
+        android.util.Log.d("BubbleView", "✅ Touch listener setup complete")
     }
 
     private fun handleTouchDown(event: MotionEvent) {
@@ -250,7 +274,11 @@ class BubbleView(
             android.util.Log.d("BubbleView", "👆 CLICK detected for: $userName")
             performHapticFeedback(HAPTIC_SNAP_DURATION)
             performClick()
-            onClickListener?.invoke()
+
+            // ✅ FIX: Call click listener
+            post {
+                onClickListener?.invoke()
+            }
         }
 
         isDragging = false
@@ -464,10 +492,5 @@ class BubbleView(
         } catch (e: Exception) {
             android.util.Log.e("BubbleView", "❌ Glide clear error: $e")
         }
-    }
-
-    override fun onDetachedFromWindow() {
-        cleanup()
-        super.onDetachedFromWindow()
     }
 }
