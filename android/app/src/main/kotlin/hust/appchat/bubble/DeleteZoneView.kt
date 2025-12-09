@@ -15,7 +15,7 @@ class DeleteZoneView(context: Context) : View(context) {
     private val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     private var currentAlpha = 0f
-    private var isActiveState = false // Đổi tên biến để tránh nhầm lẫn với tên hàm
+    private var isActiveState = false
 
     private var pulseAnimator: ValueAnimator? = null
 
@@ -37,6 +37,9 @@ class DeleteZoneView(context: Context) : View(context) {
         if (visibility == VISIBLE) return
 
         visibility = VISIBLE
+        // Bắt đầu từ dưới màn hình
+        translationY = 100f
+
         animate()
             .alpha(1f)
             .translationY(0f)
@@ -56,7 +59,7 @@ class DeleteZoneView(context: Context) : View(context) {
 
         animate()
             .alpha(0f)
-            .translationY(100f)
+            .translationY(100f) // Trượt xuống để ẩn
             .setDuration(200)
             .withEndAction {
                 visibility = GONE
@@ -142,19 +145,20 @@ class DeleteZoneView(context: Context) : View(context) {
         val iconRight = centerX + ICON_SIZE / 2
         val iconBottom = centerY + ICON_SIZE / 2
 
+        // Vẽ thùng rác (body)
         canvas.drawRoundRect(
             iconLeft, iconTop, iconRight, iconBottom,
             8f, 8f, iconPaint
         )
 
-        // Trash can lid
+        // Trash can lid (nắp thùng rác)
         canvas.drawLine(
             iconLeft - 8, iconTop - 8,
             iconRight + 8, iconTop - 8,
             iconPaint
         )
 
-        // Handle
+        // Handle (tay cầm)
         canvas.drawLine(
             centerX - 8, iconTop - 8,
             centerX - 8, iconTop - 16,
