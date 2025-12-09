@@ -1,4 +1,3 @@
-// lib/main.dart - COMPLETE
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -45,6 +44,7 @@ Future<void> main() async {
   // ✅ FIX: Initialize notifications VỚI INSTANCE TOÀN CỤC
   await _initializeNotifications(flutterLocalNotificationsPlugin);
 
+  // Khởi tạo các Service
   final chatBubbleService = ChatBubbleService();
   final notificationService = NotificationService();
 
@@ -317,7 +317,7 @@ class _AppInitializerState extends State<AppInitializer>
 }
 
 // ===========================================
-// ✅ Mini Chat Overlay Implementation
+// ✅ Mini Chat Overlay Implementation (Gộp và Cập nhật)
 // ===========================================
 
 /// Quản lý MethodChannel và OverlayEntry cho Mini Chat.
@@ -351,6 +351,7 @@ class _MiniChatOverlayManagerState extends State<MiniChatOverlayManager> {
 
     _miniChatChannel.setMethodCallHandler((call) async {
       print('📥 MiniChat Channel received: ${call.method}');
+      print('📥 Arguments: ${call.arguments}');
 
       if (call.method == 'navigateToMiniChat') {
         final peerId = call.arguments['peerId'] as String?;
@@ -388,7 +389,7 @@ class _MiniChatOverlayManagerState extends State<MiniChatOverlayManager> {
     _currentUserName = userName;
     _currentUserAvatar = avatarUrl;
 
-    // Tạo Overlay Entry
+    // Tạo Overlay Entry (Sử dụng kích thước và kiểu dáng từ bản FIX)
     _miniChatOverlay = OverlayEntry(
       builder: (context) => MiniChatOverlayWidget(
         userId: userId,
@@ -396,6 +397,7 @@ class _MiniChatOverlayManagerState extends State<MiniChatOverlayManager> {
         avatarUrl: avatarUrl,
         // Gọi lại Native khi Minimize
         onMinimize: () {
+          print('📦 Minimize button pressed');
           _hideMiniChatOverlay();
           // Thông báo cho Native để hiển thị lại bubble
           _miniChatChannel.invokeMethod('onMinimized', {
@@ -404,6 +406,7 @@ class _MiniChatOverlayManagerState extends State<MiniChatOverlayManager> {
         },
         // Gọi lại Native khi Close
         onClose: () {
+          print('❌ Close button pressed');
           _hideMiniChatOverlay();
           // Thông báo cho Native để xóa bubble
           _miniChatChannel.invokeMethod('onClosed', {
@@ -467,8 +470,9 @@ class _MiniChatOverlayWidgetState extends State<MiniChatOverlayWidget> {
   // Vị trí ban đầu của cửa sổ mini chat
   Offset _position = const Offset(20, 100);
   bool _isDragging = false;
-  static const double _width = 320;
-  static const double _height = 480;
+  // Sử dụng kích thước từ bản FIX thứ hai (340x500)
+  static const double _width = 340;
+  static const double _height = 500;
 
   @override
   Widget build(BuildContext context) {
@@ -495,9 +499,13 @@ class _MiniChatOverlayWidgetState extends State<MiniChatOverlayWidget> {
             width: _width,
             height: _height,
             decoration: BoxDecoration(
-              color: Theme.of(context)
-                  .scaffoldBackgroundColor, // Màu nền của ứng dụng
+              // Sử dụng màu cố định để dễ nhận biết (từ bản FIX thứ hai)
+              color: Colors.white,
               borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: const Color(0xff2196f3), // Primary Color
+                width: 2,
+              ),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(0.3),
@@ -509,13 +517,13 @@ class _MiniChatOverlayWidgetState extends State<MiniChatOverlayWidget> {
             child: Column(
               children: [
                 // ✅ Header với chức năng kéo thả và nút điều khiển
-                _buildHeader(),
+                _buildHeader(context),
 
                 // ✅ Nội dung Chat (ChatPage)
                 Expanded(
                   child: ClipRRect(
                     borderRadius: const BorderRadius.vertical(
-                      bottom: Radius.circular(16),
+                      bottom: Radius.circular(14),
                     ),
                     // Tái sử dụng ChatPage
                     child: ChatPage(
@@ -537,17 +545,19 @@ class _MiniChatOverlayWidgetState extends State<MiniChatOverlayWidget> {
     );
   }
 
-  Widget _buildHeader() {
-    final theme = Theme.of(context);
+  Widget _buildHeader(BuildContext context) {
+    // Sử dụng màu cố định để dễ nhận biết (từ bản FIX thứ hai)
+    final primaryColor = const Color(0xff2196f3);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: theme.primaryColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        color: primaryColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
       ),
       child: Row(
         children: [
-          // Drag handle
+          // Drag handle indicator
           Container(
             width: 40,
             height: 4,
@@ -565,8 +575,7 @@ class _MiniChatOverlayWidgetState extends State<MiniChatOverlayWidget> {
                 : null,
             radius: 16,
             child: widget.avatarUrl.isEmpty
-                ? const Icon(Icons.person,
-                    size: 16, color: ColorConstants.greyColor)
+                ? const Icon(Icons.person, size: 16, color: Colors.grey)
                 : null,
           ),
           const SizedBox(width: 8),
