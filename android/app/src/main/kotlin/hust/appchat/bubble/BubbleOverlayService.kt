@@ -36,7 +36,9 @@ class BubbleOverlayService : Service() {
     private var currentMiniChatUserName: String? = null
     private var currentMiniChatAvatarUrl: String? = null
 
+    // ✅ FIX 1: Delete Zone chỉ hiển thị khi đang drag
     private var deleteZoneView: DeleteZoneView? = null
+    private var deleteZoneParams: WindowManager.LayoutParams? = null // Thêm params cho delete zone
     private var isDraggingAnyBubble = false
 
     // Screen dimension variables with retry logic
@@ -53,7 +55,7 @@ class BubbleOverlayService : Service() {
         const val ACTION_UPDATE_BUBBLE_POSITION = "UPDATE_BUBBLE_POSITION"
         const val ACTION_SHOW_MINI_CHAT = "SHOW_MINI_CHAT"
         const val ACTION_HIDE_MINI_CHAT = "HIDE_MINI_CHAT"
-        const val ACTION_HIDE_ALL_BUBBLES = "HIDE_ALL_BUBBLES" // Giữ lại action này
+        const val ACTION_HIDE_ALL_BUBBLES = "HIDE_ALL_BUBBLES"
 
         private const val NOTIFICATION_ID = 12345
         private const val CHANNEL_ID = "chat_bubbles"
@@ -86,7 +88,7 @@ class BubbleOverlayService : Service() {
     }
 
     // ========================================
-    // SCREEN DIMENSIONS LOGIC (FIX 2)
+    // SCREEN DIMENSIONS LOGIC
     // ========================================
     private fun getScreenDimensionsWithRetry() {
         dimensionRetryCount = 0
@@ -233,14 +235,14 @@ class BubbleOverlayService : Service() {
                 hideMiniChat()
             }
 
-            ACTION_HIDE_ALL_BUBBLES -> { // Xử lý action ẩn tất cả
+            ACTION_HIDE_ALL_BUBBLES -> {
                 hideAllBubbles()
             }
         }
     }
 
     // ========================================
-    // MINI CHAT IMPLEMENTATION (FIX 5 & Keyboard)
+    // ✅ FIX 2: MINI CHAT with proper Flutter Engine initialization
     // ========================================
 
     private fun showMiniChat(userId: String, userName: String, avatarUrl: String) {
@@ -248,9 +250,10 @@ class BubbleOverlayService : Service() {
 
         mainHandler.post {
             try {
+                // Remove old mini chat if exists
                 miniChatFlutterView?.let {
                     try {
-                        hideKeyboard(it) // Ẩn bàn phím trước khi xóa view cũ
+                        hideKeyboard(it)
                         windowManager?.removeView(it)
                     } catch (e: Exception) {
                         android.util.Log.e("BubbleService", "⚠️ Error removing old mini chat: $e")
@@ -258,32 +261,41 @@ class BubbleOverlayService : Service() {
                 }
 
                 currentMiniChatUserId = userId
-                currentMiniChatUserName = userName
-                currentMiniChatAvatarUrl = avatarUrl
 
-                // Get or create Flutter Engine with proper timing
-                miniChatEngine = FlutterEngineCache.getInstance().get(MINI_CHAT_ENGINE_ID)
-                if (miniChatEngine == null) {
-                    android.util.Log.d("BubbleService", "🔧 Creating new Flutter Engine")
-                    miniChatEngine = FlutterEngine(this)
-
-                    // Wait for engine to be ready before executing
-                    miniChatEngine!!.dartExecutor.executeDartEntrypoint(
-                        DartExecutor.DartEntrypoint.createDefault()
-                    )
-
-                    FlutterEngineCache.getInstance().put(MINI_CHAT_ENGINE_ID, miniChatEngine!!)
-
-                    // Wait 500ms for engine warmup
-                    mainHandler.postDelayed({
-                        continueShowingMiniChat(userId, userName, avatarUrl)
-                    }, 500)
-                } else {
+                // ✅ FIX: Properly initialize Flutter Engine
+                initializeMiniChatEngine {
                     continueShowingMiniChat(userId, userName, avatarUrl)
                 }
+
             } catch (e: Exception) {
                 android.util.Log.e("BubbleService", "❌ showMiniChat failed: $e")
             }
+        }
+    }
+
+    // ✅ FIX: Separate engine initialization with callback
+    private fun initializeMiniChatEngine(onReady: () -> Unit) {
+        miniChatEngine = FlutterEngineCache.getInstance().get(MINI_CHAT_ENGINE_ID)
+
+        if (miniChatEngine == null) {
+            android.util.Log.d("BubbleService", "🔧 Creating new Flutter Engine")
+            miniChatEngine = FlutterEngine(this)
+
+            // Execute dart entrypoint
+            miniChatEngine!!.dartExecutor.executeDartEntrypoint(
+                DartExecutor.DartEntrypoint.createDefault()
+            )
+
+            FlutterEngineCache.getInstance().put(MINI_CHAT_ENGINE_ID, miniChatEngine!!)
+
+            // ✅ FIX: Wait 800ms for engine to fully initialize
+            mainHandler.postDelayed({
+                android.util.Log.d("BubbleService", "✅ Engine ready after warmup")
+                onReady()
+            }, 800)
+        } else {
+            android.util.Log.d("BubbleService", "♻️ Reusing existing engine")
+            onReady()
         }
     }
 
@@ -292,10 +304,8 @@ class BubbleOverlayService : Service() {
             miniChatFlutterView = FlutterView(this)
             miniChatFlutterView!!.attachToFlutterEngine(miniChatEngine!!)
 
-            // Setup MethodChannel AFTER FlutterView is attached
-            mainHandler.postDelayed({
-                setupMiniChatChannel()
-            }, 200)
+            // ✅ FIX: Setup channel AFTER view is attached
+            setupMiniChatChannel()
 
             val width = ((screenWidth * 0.85).toInt()).coerceIn(300, 600)
             val height = ((screenHeight * 0.7).toInt()).coerceIn(400, 900)
@@ -313,7 +323,7 @@ class BubbleOverlayService : Service() {
                 width,
                 height,
                 layoutFlag,
-                // FLAG_NOT_FOCUSABLE.inv() để cho phép nhận input/focus
+                // ✅ FIX: Remove FLAG_NOT_FOCUSABLE to allow input
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                         WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
                         WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
@@ -322,6 +332,7 @@ class BubbleOverlayService : Service() {
                 gravity = Gravity.CENTER
                 // SOFT_INPUT_ADJUST_RESIZE để bàn phím không che view Flutter
                 softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+                // ✅ CRITICAL: Allow focus for keyboard input
                 flags = flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
             }
 
@@ -329,18 +340,17 @@ class BubbleOverlayService : Service() {
 
             android.util.Log.d("BubbleService", "✅ Mini chat view added")
 
-            // Gửi dữ liệu và yêu cầu focus/show keyboard sau khi view đã được thêm
+            // Gửi dữ liệu và yêu cầu focus sau khi view đã được thêm
             mainHandler.postDelayed({
                 miniChatFlutterView?.let { view ->
                     view.requestFocus()
                     view.isFocusableInTouchMode = true
-
-                    mainHandler.postDelayed({
-                        showKeyboard(view)
-                    }, 300)
                 }
 
-                sendMiniChatData(userId, userName, avatarUrl)
+                // ✅ FIX: Send navigation command with longer delay (400ms after view added/focused)
+                mainHandler.postDelayed({
+                    sendMiniChatData(userId, userName, avatarUrl)
+                }, 400)
             }, 200)
 
         } catch (e: Exception) {
@@ -368,7 +378,7 @@ class BubbleOverlayService : Service() {
         }
     }
 
-    // MethodChannel setup with proper timing (FIX 5)
+    // MethodChannel setup with proper timing (FIX 5 -> now part of FIX 2)
     private fun setupMiniChatChannel() {
         try {
             if (miniChatEngine == null) {
@@ -414,22 +424,21 @@ class BubbleOverlayService : Service() {
     }
 
     private fun sendMiniChatData(userId: String, userName: String, avatarUrl: String) {
-        // Add delay to ensure channel is ready
-        mainHandler.postDelayed({
-            try {
-                miniChatChannel?.invokeMethod(
-                    "navigateToMiniChat",
-                    mapOf(
-                        "peerId" to userId,
-                        "peerNickname" to userName,
-                        "peerAvatar" to avatarUrl
-                    )
+        try {
+            android.util.Log.d("BubbleService", "📤 Sending navigation command to Flutter")
+
+            miniChatChannel?.invokeMethod(
+                "navigateToMiniChat",
+                mapOf(
+                    "peerId" to userId,
+                    "peerNickname" to userName,
+                    "peerAvatar" to avatarUrl
                 )
-                android.util.Log.d("BubbleService", "✅ Sent navigation command to Flutter")
-            } catch (e: Exception) {
-                android.util.Log.e("BubbleService", "❌ Failed to send navigation data: $e")
-            }
-        }, 300)
+            )
+            android.util.Log.d("BubbleService", "✅ Navigation command sent")
+        } catch (e: Exception) {
+            android.util.Log.e("BubbleService", "❌ Failed to send navigation data: $e")
+        }
     }
 
     private fun hideMiniChat() {
@@ -451,8 +460,8 @@ class BubbleOverlayService : Service() {
                 }
 
                 currentMiniChatUserId = null
-                currentMiniChatUserName = null
-                currentMiniChatAvatarUrl = null
+                // currentMiniChatUserName = null
+                // currentMiniChatAvatarUrl = null
 
                 android.util.Log.d("BubbleService", "✅ Mini chat hidden")
 
@@ -465,7 +474,7 @@ class BubbleOverlayService : Service() {
     }
 
     // ========================================
-    // BUBBLE IMPLEMENTATION (FIX 3)
+    // ✅ FIX 3: BUBBLE IMPLEMENTATION with proper touch handling
     // ========================================
     private fun showBubble(
         userId: String,
@@ -521,6 +530,7 @@ class BubbleOverlayService : Service() {
                     WindowManager.LayoutParams.WRAP_CONTENT,
                     WindowManager.LayoutParams.WRAP_CONTENT,
                     layoutFlag,
+                    // ✅ FIX: CRITICAL - Flags that allow touch interaction
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                             WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
                             WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
@@ -729,7 +739,7 @@ class BubbleOverlayService : Service() {
         }
     }
 
-    // Send broadcast with proper checks (FIX 7)
+    // Send broadcast with proper checks
     private fun onBubbleClicked(userId: String, userName: String, avatarUrl: String) {
         try {
             bubbleViews[userId]?.visibility = View.GONE
@@ -753,40 +763,38 @@ class BubbleOverlayService : Service() {
     // DELETE ZONE
     // ========================================
     private fun showDeleteZone() {
-        if (deleteZoneView != null) {
-            deleteZoneView?.show()
-            return
-        }
+        if (deleteZoneView == null) {
+            try {
+                val deleteZone = DeleteZoneView(this)
 
-        try {
-            val deleteZone = DeleteZoneView(this)
+                val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WindowManager.LayoutParams.TYPE_PHONE
+                }
 
-            val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            } else {
-                @Suppress("DEPRECATION")
-                WindowManager.LayoutParams.TYPE_PHONE
+                val params = WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    150, // Chiều cao của Delete Zone
+                    layoutFlag,
+                    // Phải là NOT_TOUCHABLE để không chặn sự kiện chạm (touch event) của bubble
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                    PixelFormat.TRANSLUCENT
+                ).apply {
+                    gravity = Gravity.BOTTOM
+                }
+
+                windowManager?.addView(deleteZone, params)
+                deleteZoneView = deleteZone
+                deleteZoneParams = params
+            } catch (e: Exception) {
+                android.util.Log.e("BubbleService", "❌ showDeleteZone error: $e")
+                return
             }
-
-            val params = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                150, // Chiều cao của Delete Zone
-                layoutFlag,
-                // Phải là NOT_TOUCHABLE để không chặn sự kiện chạm (touch event) của bubble
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
-                PixelFormat.TRANSLUCENT
-            ).apply {
-                gravity = Gravity.BOTTOM
-            }
-
-            windowManager?.addView(deleteZone, params)
-            deleteZoneView = deleteZone
-
-            deleteZone.show()
-        } catch (e: Exception) {
-            android.util.Log.e("BubbleService", "❌ showDeleteZone error: $e")
         }
+        deleteZoneView?.show()
     }
 
     private fun hideDeleteZone() {
@@ -862,6 +870,7 @@ class BubbleOverlayService : Service() {
                 } catch (e: Exception) { android.util.Log.e("BubbleService", "❌ Destroy error: $e") }
             }
             deleteZoneView = null
+            deleteZoneParams = null
 
             // Xóa tất cả Bubbles
             bubbleViews.values.forEach { view ->
