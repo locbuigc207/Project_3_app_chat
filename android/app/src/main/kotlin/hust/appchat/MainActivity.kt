@@ -16,6 +16,7 @@ import io.flutter.plugin.common.EventChannel
 import hust.appchat.bubble.BubbleManager
 import hust.appchat.bubble.BubbleOverlayService
 import hust.appchat.notifications.BubbleNotificationService
+import hust.appchat.shortcuts.ShortcutHelper // ✅ CHANGE 1: Add import
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "chat_bubble_overlay"
@@ -31,7 +32,7 @@ class MainActivity : FlutterActivity() {
     private var isFlutterReady = false
 
     // ========================================
-    // ✅ GIAI ĐOẠN 2: INITIALIZATION
+    // ✅ GIAI ĐOẠN 3: INITIALIZATION
     // ========================================
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
@@ -44,6 +45,14 @@ class MainActivity : FlutterActivity() {
             // ✅ STEP 2: Initialize NotificationService (GIAI ĐOẠN 2)
             BubbleNotificationService.init(this)
             android.util.Log.d("MainActivity", "✅ BubbleNotificationService initialized")
+
+            // ✅ GIAI ĐOẠN 3: ADD THIS - Log shortcut support
+            if (ShortcutHelper.isShortcutsSupported()) {
+                android.util.Log.d("MainActivity", "✅ Shortcuts supported")
+                android.util.Log.d("MainActivity", "📊 Shortcut count: ${ShortcutHelper.getShortcutCount(this)}")
+            } else {
+                android.util.Log.w("MainActivity", "⚠️ Shortcuts not supported on this device")
+            }
 
         } catch (e: Exception) {
             android.util.Log.e("MainActivity", "❌ Initialization failed: $e")
@@ -412,6 +421,10 @@ class MainActivity : FlutterActivity() {
     override fun onDestroy() {
         unsetupBubbleListeners()
         eventSink = null
+
+        // ✅ GIAI ĐOẠN 3: ADD THIS - Cleanup shortcuts (optional, uncomment if needed)
+        // ShortcutHelper.clearCache()
+
         super.onDestroy()
     }
 }

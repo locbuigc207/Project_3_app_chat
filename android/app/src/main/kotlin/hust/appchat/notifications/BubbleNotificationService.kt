@@ -5,13 +5,20 @@ import android.content.Context
 import android.os.Build
 import android.util.Log
 import hust.appchat.bubble.BubbleManager
+import hust.appchat.shortcuts.ShortcutHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
- * ✅ GIAI ĐOẠN 2: Service kết nối BubbleManager với NotificationHelper
+ * ✅ GIAI ĐOẠN 3: Service với Shortcut Integration
+ *
+ * Integration points:
+ * 1. showBubbleNotification → Create shortcut + notification
+ * 2. updateBubbleNotification → Ensure shortcut exists
+ * 3. dismissBubble → Remove notification + shortcut
+ * 4. onAppResumed → Sync shortcuts with active bubbles
  */
 object BubbleNotificationService {
     private const val TAG = "BubbleNotifService"
@@ -34,6 +41,13 @@ object BubbleNotificationService {
         try {
             NotificationHelper.createNotificationChannel(context)
 
+            // ✅ GIAI ĐOẠN 3: Check shortcut support
+            if (ShortcutHelper.isShortcutsSupported()) {
+                Log.d(TAG, "✅ Shortcuts supported")
+            } else {
+                Log.w(TAG, "⚠️ Shortcuts not supported on this device")
+            }
+
             isInitialized = true
             Log.d(TAG, "✅ BubbleNotificationService initialized")
         } catch (e: Exception) {
@@ -42,7 +56,7 @@ object BubbleNotificationService {
     }
 
     // ========================================
-    // BUBBLE NOTIFICATION
+    // BUBBLE NOTIFICATION WITH SHORTCUT
     // ========================================
 
     fun showBubbleNotification(
@@ -62,6 +76,16 @@ object BubbleNotificationService {
                 Log.d(TAG, "🎈 Creating bubble notification: $userName")
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    // ✅ GIAI ĐOẠN 3: Create shortcut FIRST
+                    Log.d(TAG, "🔗 Creating shortcut for: $userName")
+                    ShortcutHelper.createShortcut(
+                        context = context,
+                        userId = userId,
+                        userName = userName,
+                        avatarUrl = avatarUrl
+                    )
+
+                    // ✅ Then create notification
                     NotificationHelper.showBubbleNotification(
                         context = context,
                         userId = userId,
@@ -71,9 +95,10 @@ object BubbleNotificationService {
                     )
 
                     activeBubbleNotifications.add(userId)
-                    Log.d(TAG, "✅ Bubble notification created (Bubble API)")
+                    Log.d(TAG, "✅ Bubble notification created (Bubble API + Shortcut)")
 
                 } else {
+                    // Fallback for Android < 11
                     Log.d(TAG, "⚠️ Android < 11, using WindowManager fallback")
                     BubbleManager.showBubble(
                         context = context,
@@ -87,6 +112,7 @@ object BubbleNotificationService {
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Failed to create bubble notification: $e")
 
+                // Fallback to WindowManager
                 try {
                     BubbleManager.showBubble(
                         context = context,
@@ -115,6 +141,14 @@ object BubbleNotificationService {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
                     activeBubbleNotifications.contains(userId)) {
 
+                    // ✅ GIAI ĐOẠN 3: Ensure shortcut exists
+                    ShortcutHelper.ensureShortcutForNotification(
+                        context = context,
+                        userId = userId,
+                        userName = userName,
+                        avatarUrl = avatarUrl
+                    )
+
                     NotificationHelper.showBubbleNotification(
                         context = context,
                         userId = userId,
@@ -140,18 +174,21 @@ object BubbleNotificationService {
     }
 
     // ========================================
-    // DISMISSAL
+    // DISMISSAL WITH SHORTCUT CLEANUP
     // ========================================
 
     fun dismissBubble(context: Context, userId: String) {
         scope.launch {
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    // ✅ GIAI ĐOẠN 3: Remove shortcut
+                    Log.d(TAG, "🗑️ Removing shortcut for: $userId")
+                    ShortcutHelper.removeShortcut(context, userId)
+
                     NotificationHelper.cancelNotification(context, userId)
-                    NotificationHelper.removeShortcut(context, userId)
 
                     activeBubbleNotifications.remove(userId)
-                    Log.d(TAG, "✅ Bubble notification dismissed: $userId")
+                    Log.d(TAG, "✅ Bubble dismissed (notification + shortcut)")
                 }
 
                 BubbleManager.removeBubble(context, userId)
@@ -166,11 +203,11 @@ object BubbleNotificationService {
         scope.launch {
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    NotificationHelper.cancelAllNotifications(context)
+                    // ✅ GIAI ĐOẠN 3: Remove all shortcuts
+                    Log.d(TAG, "🗑️ Removing all shortcuts")
+                    ShortcutHelper.removeAllShortcuts(context)
 
-                    activeBubbleNotifications.forEach { userId ->
-                        NotificationHelper.removeShortcut(context, userId)
-                    }
+                    NotificationHelper.cancelAllNotifications(context)
 
                     activeBubbleNotifications.clear()
                 }
@@ -214,6 +251,50 @@ object BubbleNotificationService {
     }
 
     // ========================================
+    // ✅ GIAI ĐOẠN 3: SHORTCUT UTILITIES
+    // ========================================
+
+    fun getShortcutCount(context: Context): Int {
+        return ShortcutHelper.getShortcutCount(context)
+    }
+
+    fun canCreateMoreShortcuts(context: Context): Boolean {
+        return ShortcutHelper.canCreateMoreShortcuts(context)
+    }
+
+    fun isShortcutsSupported(): Boolean {
+        return ShortcutHelper.isShortcutsSupported()
+    }
+
+    /**
+     * ✅ Sync shortcuts với active bubbles
+     */
+    fun syncShortcuts(context: Context) {
+        scope.launch {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    Log.d(TAG, "🔄 Syncing shortcuts with active bubbles")
+
+                    val activeBubbles = BubbleManager.getActiveBubbles()
+
+                    activeBubbles.forEach { (userId, bubble) ->
+                        ShortcutHelper.ensureShortcutForNotification(
+                            context = context,
+                            userId = userId,
+                            userName = bubble.userName,
+                            avatarUrl = bubble.avatarUrl
+                        )
+                    }
+
+                    Log.d(TAG, "✅ Shortcuts synced: ${activeBubbles.size} shortcuts")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Sync shortcuts failed: $e")
+            }
+        }
+    }
+
+    // ========================================
     // UTILITIES
     // ========================================
 
@@ -223,7 +304,7 @@ object BubbleNotificationService {
 
     fun getImplementationType(): String {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            "Bubble API"
+            "Bubble API + Shortcuts"
         } else {
             "WindowManager"
         }
@@ -242,6 +323,7 @@ object BubbleNotificationService {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             syncBubbleState(context)
+            syncShortcuts(context)
         } else {
             BubbleManager.onAppResumed(context)
         }
@@ -271,6 +353,7 @@ object BubbleNotificationService {
         try {
             dismissAllBubbles(context)
             NotificationHelper.cleanup()
+            ShortcutHelper.cleanup()
 
             activeBubbleNotifications.clear()
             isInitialized = false

@@ -23,9 +23,10 @@ import hust.appchat.BubbleActivity
 import hust.appchat.MainActivity
 import hust.appchat.R
 import kotlinx.coroutines.*
+import hust.appchat.shortcuts.ShortcutHelper // ✅ CHANGE 1: Add import
 
 /**
- * ✅ GIAI ĐOẠN 2: Notification Helper with Bubble API Support
+ * ✅ GIAI ĐOẠN 2 & 3: Notification Helper with Bubble API Support and ShortcutHelper integration
  */
 object NotificationHelper {
     private const val TAG = "NotificationHelper"
@@ -88,7 +89,13 @@ object NotificationHelper {
         try {
             Log.d(TAG, "🎈 Creating bubble notification: $userName")
 
-            createShortcut(context, userId, userName, avatarUrl)
+            // ✅ GIAI ĐOẠN 3: ADD THIS LINE - Ensure shortcut exists BEFORE creating notification
+            ShortcutHelper.ensureShortcutForNotification(
+                context = context,
+                userId = userId,
+                userName = userName,
+                avatarUrl = avatarUrl
+            )
 
             val avatarIcon = loadAvatarIcon(context, avatarUrl, userName)
 
@@ -204,56 +211,29 @@ object NotificationHelper {
     }
 
     // ========================================
-    // SHORTCUTS
+    // SHORTCUTS (DELEGATED TO SHORTCUTHELPER)
     // ========================================
 
-    private suspend fun createShortcut(
+    /**
+     * ✅ GIAI ĐOẠN 3: Deprecated - Use ShortcutHelper.createShortcut() instead
+     *
+     * This method is kept for backward compatibility but delegates to ShortcutHelper
+     */
+    private suspend fun createShortcut( // ✅ CHANGE 2: Replace createShortcut() method
         context: Context,
         userId: String,
         userName: String,
         avatarUrl: String
     ) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        // ✅ Delegate to ShortcutHelper
+        ShortcutHelper.createShortcut(
+            context = context,
+            userId = userId,
+            userName = userName,
+            avatarUrl = avatarUrl
+        )
 
-        try {
-            val avatarIcon = loadAvatarIconCompat(context, avatarUrl, userName)
-
-            val intent = Intent(context, MainActivity::class.java).apply {
-                action = Intent.ACTION_VIEW
-                putExtra("userId", userId)
-                putExtra("userName", userName)
-            }
-
-            val shortcut = ShortcutInfoCompat.Builder(context, userId)
-                .setShortLabel(userName)
-                .setLongLabel("Chat with $userName")
-                .setIcon(avatarIcon)
-                .setIntent(intent)
-                .setLongLived(true)
-                .setPerson(
-                    androidx.core.app.Person.Builder()
-                        .setName(userName)
-                        .setKey(userId)
-                        .build()
-                )
-                .build()
-
-            ShortcutManagerCompat.pushDynamicShortcut(context, shortcut)
-
-            Log.d(TAG, "✅ Shortcut created: $userName")
-
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Shortcut creation failed: $e")
-        }
-    }
-
-    fun removeShortcut(context: Context, userId: String) {
-        try {
-            ShortcutManagerCompat.removeDynamicShortcuts(context, listOf(userId))
-            Log.d(TAG, "✅ Shortcut removed: $userId")
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Failed to remove shortcut: $e")
-        }
+        Log.d(TAG, "✅ Shortcut created via ShortcutHelper")
     }
 
     // ========================================
@@ -427,27 +407,61 @@ object NotificationHelper {
     }
 
     // ========================================
-    // NOTIFICATION MANAGEMENT
+    // NOTIFICATION & SHORTCUT MANAGEMENT
     // ========================================
 
-    fun cancelNotification(context: Context, userId: String) {
+    fun removeShortcut(context: Context, userId: String) { // ✅ CHANGE 3: Replace removeShortcut() method
+        try {
+            // ✅ Use ShortcutHelper
+            ShortcutHelper.removeShortcut(context, userId)
+
+            Log.d(TAG, "✅ Shortcut removed via ShortcutHelper")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to remove shortcut: $e")
+        }
+    }
+
+    /**
+     * ✅ Kiểm tra xem notification có khớp với shortcut không
+     */
+    fun verifyShortcutExists(context: Context, userId: String): Boolean { // ✅ CHANGE 5: ADD new utility method
+        return ShortcutHelper.shortcutExists(context, userId)
+    }
+
+    /**
+     * ✅ Sync tất cả shortcuts với active notifications
+     */
+    suspend fun syncShortcutsWithNotifications( // ✅ CHANGE 5: ADD new utility method
+        context: Context,
+        activeUsers: List<Triple<String, String, String>> // userId, userName, avatarUrl
+    ) {
+        ShortcutHelper.createShortcutsBatch(context, activeUsers)
+    }
+
+    fun cancelNotification(context: Context, userId: String) { // ✅ CHANGE 6: Update cancelNotification() method
         try {
             val notificationId = getNotificationId(userId)
             val manager = context.getSystemService(NotificationManager::class.java)
             manager?.cancel(notificationId)
 
-            Log.d(TAG, "✅ Notification cancelled: $userId")
+            // ✅ GIAI ĐOẠN 3: ADD THIS LINE - Also remove shortcut
+            ShortcutHelper.removeShortcut(context, userId)
+
+            Log.d(TAG, "✅ Notification + shortcut cancelled: $userId")
         } catch (e: Exception) {
             Log.e(TAG, "❌ Cancel notification failed: $e")
         }
     }
 
-    fun cancelAllNotifications(context: Context) {
+    fun cancelAllNotifications(context: Context) { // ✅ CHANGE 7: Update cancelAllNotifications() method
         try {
             val manager = context.getSystemService(NotificationManager::class.java)
             manager?.cancelAll()
 
-            Log.d(TAG, "✅ All notifications cancelled")
+            // ✅ GIAI ĐOẠN 3: ADD THIS LINE - Also remove all shortcuts
+            ShortcutHelper.removeAllShortcuts(context)
+
+            Log.d(TAG, "✅ All notifications + shortcuts cancelled")
         } catch (e: Exception) {
             Log.e(TAG, "❌ Cancel all notifications failed: $e")
         }
@@ -466,9 +480,10 @@ object NotificationHelper {
         Log.d(TAG, "✅ Avatar cache cleared")
     }
 
-    fun cleanup() {
+    fun cleanup() { // ✅ CHANGE 8: Update cleanup() method
         scope.cancel()
         clearCache()
+        ShortcutHelper.cleanup() // ✅ ADD THIS LINE - Also cleanup shortcuts
         Log.d(TAG, "✅ NotificationHelper cleanup complete")
     }
 }
