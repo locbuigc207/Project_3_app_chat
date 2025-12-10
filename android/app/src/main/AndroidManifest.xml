@@ -2,10 +2,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="hust.appchat">
 
+    <!-- ========================================= -->
+    <!-- EXISTING PERMISSIONS -->
+    <!-- ========================================= -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- ✅ GIAI ĐOẠN 1: Thêm permission cho Bubble API -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -30,10 +35,10 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <!-- ⚠️ GIỮ LẠI SYSTEM_ALERT_WINDOW để backward compatibility -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
@@ -77,6 +82,9 @@
             android:name="io.flutter.embedding.android.RenderingBackend"
             android:value="software" />
 
+        <!-- ========================================= -->
+        <!-- EXISTING SERVICE (sẽ được migrate dần) -->
+        <!-- ========================================= -->
         <service
             android:name=".bubble.BubbleOverlayService"
             android:exported="false"
@@ -95,6 +103,9 @@
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="message_reminders" />
 
+        <!-- ========================================= -->
+        <!-- MAIN ACTIVITY (giữ nguyên) -->
+        <!-- ========================================= -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -121,6 +132,29 @@
             </intent-filter>
         </activity>
 
+        <!-- ========================================= -->
+        <!-- ✅ GIAI ĐOẠN 1: BubbleActivity MỚI -->
+        <!-- ========================================= -->
+        <activity
+            android:name=".BubbleActivity"
+            android:theme="@style/LaunchTheme"
+            android:allowEmbedded="true"
+            android:resizeableActivity="true"
+            android:documentLaunchMode="always"
+            android:exported="false"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize"
+            android:launchMode="singleInstance">
+
+            <meta-data
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme" />
+        </activity>
+
+        <!-- ========================================= -->
+        <!-- EXISTING ACTIVITY (giữ nguyên để backward compat) -->
+        <!-- ========================================= -->
         <activity
             android:name=".FlutterMiniChatActivity"
             android:exported="false"
@@ -129,6 +163,10 @@
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize"
             android:launchMode="singleInstance" />
+
+        <!-- ========================================= -->
+        <!-- NOTIFICATION RECEIVERS (giữ nguyên) -->
+        <!-- ========================================= -->
         <receiver
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver"
             android:exported="true">
