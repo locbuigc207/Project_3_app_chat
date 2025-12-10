@@ -34,7 +34,9 @@ class ChatPage extends StatefulWidget {
 class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   late final String _currentUserId;
   UserPresenceProvider? _presenceProvider;
-  ChatBubbleService? _bubbleService;
+
+  // ✅ GIAI ĐOẠN 4: Use UnifiedBubbleService instead of ChatBubbleService
+  UnifiedBubbleService? _unifiedBubbleService;
 
   // ✅ ADD: Channel cho giao tiếp Mini Chat
   static const MethodChannel _miniChatChannel =
@@ -137,8 +139,31 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _viewOnceProvider = context.read<ViewOnceProvider>();
     _smartReplyProvider = context.read<SmartReplyProvider>();
     _presenceProvider = context.read<UserPresenceProvider>();
-    _bubbleService = context.read<ChatBubbleService>();
 
+    // ✅ GIAI ĐOẠN 4: Use UnifiedBubbleService
+    _unifiedBubbleService = context.read<UnifiedBubbleService>();
+
+    // Setup mini chat message listener (Gộp từ cả 2 phần, dùng bubbleClickStream)
+    _miniChatSubscription = _unifiedBubbleService?.bubbleClickStream.listen(
+      (event) {
+        if (event.userId == widget.arguments.peerId) {
+          print('💬 Bubble clicked for: ${event.userName}');
+
+          // Show notification (Logic từ phần 1)
+          Fluttertoast.showToast(
+            msg: '📨 ${widget.arguments.peerNickname}: ${event.message}',
+            backgroundColor: Colors.green,
+            toastLength: Toast.LENGTH_SHORT,
+          );
+        }
+      },
+      onError: (error) {
+        print('❌ Mini chat stream error: $error');
+      },
+    );
+
+    // Logic từ phần 1 (cũ)
+    /*
     _miniChatSubscription = _bubbleService?.miniChatMessageStream.listen(
       (message) {
         if (message.userId == widget.arguments.peerId) {
@@ -156,6 +181,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         print('❌ Mini chat stream error: $error');
       },
     );
+    */
 
     try {
       _voiceProvider = VoiceMessageProvider(
@@ -410,11 +436,12 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
   }
 
+  // ✅ GIAI ĐOẠN 4: Update _showChatBubbleIfNeeded
   Future<void> _showChatBubbleIfNeeded() async {
     final lifecycleState = WidgetsBinding.instance.lifecycleState;
 
     if (lifecycleState != AppLifecycleState.resumed) {
-      await _bubbleService?.showChatBubble(
+      await _unifiedBubbleService?.showChatBubble(
         userId: widget.arguments.peerId,
         userName: widget.arguments.peerNickname,
         avatarUrl: widget.arguments.peerAvatar,
@@ -980,35 +1007,61 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     );
   }
 
+  // ✅ GIAI ĐOẠN 4: Update _createChatBubble to use UnifiedBubbleService
   Future<void> _createChatBubble() async {
-    if (_bubbleService == null || _isDisposed) {
+    if (_unifiedBubbleService == null || _isDisposed) {
       Fluttertoast.showToast(msg: 'Bubble service not available');
       return;
     }
 
-    final hasPermission = await _bubbleService!.hasOverlayPermission();
+    // Check if bubbles are supported
+    if (!_unifiedBubbleService!.isSupported) {
+      Fluttertoast.showToast(msg: 'Chat bubbles not supported on this device');
+      return;
+    }
+
+    // Check permissions (only needed for WindowManager on Android < 11)
+    final hasPermission = await _unifiedBubbleService!.hasOverlayPermission();
     if (!hasPermission) {
-      final granted = await _bubbleService!.requestOverlayPermission();
+      final granted = await _unifiedBubbleService!.requestOverlayPermission();
       if (!granted) {
         Fluttertoast.showToast(msg: 'Overlay permission required');
         return;
       }
     }
 
+    // Show implementation info
+    final impl = _unifiedBubbleService!.getImplementationInfo();
+    print('🎈 Creating bubble using: $impl');
+
     final choice = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Create Chat Bubble'),
-        content: Text('Choose how to open this conversation:'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Choose how to open this conversation:'),
+            SizedBox(height: 8),
+            Text(
+              'Using: $impl',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, 'bubble'),
             child: Text('Bubble Only'),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, 'minichat'),
-            child: Text('Mini Chat'),
-          ),
+          // ✅ Only show mini chat for WindowManager
+          if (_unifiedBubbleService!.currentImplementation ==
+              BubbleImplementation.windowManager)
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'minichat'),
+              child: Text('Mini Chat'),
+            ),
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text('Cancel'),
@@ -1020,8 +1073,8 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     if (choice == null) return;
 
     if (choice == 'bubble') {
-      // Create bubble only
-      final success = await _bubbleService!.showChatBubble(
+      // Create bubble
+      final success = await _unifiedBubbleService!.showChatBubble(
         userId: widget.arguments.peerId,
         userName: widget.arguments.peerNickname,
         avatarUrl: widget.arguments.peerAvatar,
@@ -1032,10 +1085,15 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           msg: '💬 Chat bubble created',
           backgroundColor: Colors.green,
         );
+      } else {
+        Fluttertoast.showToast(
+          msg: '❌ Failed to create bubble',
+          backgroundColor: Colors.red,
+        );
       }
     } else if (choice == 'minichat') {
-      // Show mini chat directly
-      final success = await _bubbleService!.showMiniChat(
+      // Show mini chat (only works with WindowManager)
+      final success = await _unifiedBubbleService!.showMiniChat(
         userId: widget.arguments.peerId,
         userName: widget.arguments.peerNickname,
         avatarUrl: widget.arguments.peerAvatar,
@@ -1045,6 +1103,11 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         Fluttertoast.showToast(
           msg: '💬 Mini chat opened',
           backgroundColor: Colors.green,
+        );
+      } else {
+        Fluttertoast.showToast(
+          msg: '⚠️ Mini chat not supported with Bubble API',
+          backgroundColor: Colors.orange,
         );
       }
     }
@@ -1132,8 +1195,76 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 _showReminders();
               },
             ),
+
+            // ✅ GIAI ĐOẠN 4: Show current bubble implementation
+            if (_unifiedBubbleService != null)
+              ListTile(
+                leading: Icon(Icons.info_outline, color: Colors.blue),
+                title: Text('Bubble Implementation'),
+                subtitle: Text(_unifiedBubbleService!.getImplementationInfo()),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showBubbleInfo();
+                },
+              ),
           ],
         ),
+      ),
+    );
+  }
+
+  // ✅ GIAI ĐOẠN 4: Show bubble implementation info
+  void _showBubbleInfo() {
+    if (_unifiedBubbleService == null) return;
+
+    final impl = _unifiedBubbleService!.getImplementationInfo();
+    final canMigrate = _unifiedBubbleService!.currentImplementation ==
+        BubbleImplementation.windowManager;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Bubble Implementation'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Current: $impl'),
+            SizedBox(height: 16),
+            if (canMigrate)
+              Text(
+                'Your device supports the new Bubble API! Migrate for better performance and battery life.',
+                style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+              ),
+          ],
+        ),
+        actions: [
+          if (canMigrate)
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                final success =
+                    await _unifiedBubbleService!.migrateToModernApi();
+
+                if (success) {
+                  Fluttertoast.showToast(
+                    msg: '✅ Migrated to Bubble API',
+                    backgroundColor: Colors.green,
+                  );
+                } else {
+                  Fluttertoast.showToast(
+                    msg: '❌ Migration failed',
+                    backgroundColor: Colors.red,
+                  );
+                }
+              },
+              child: Text('Migrate Now'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Close'),
+          ),
+        ],
       ),
     );
   }
@@ -1657,7 +1788,6 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       );
     }
 
-    // Text Message
     // Text Message
     if (messageChat.type == TypeMessage.text) {
       final location =

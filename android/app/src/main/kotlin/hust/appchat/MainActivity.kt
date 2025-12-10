@@ -1,4 +1,6 @@
-// android/app/src/main/kotlin/hust/appchat/MainActivity.kt - COMPLETE WITH NOTIFICATION SERVICE
+// android/app/src/main/kotlin/hust/appchat/MainActivity.kt
+// ✅ GIAI ĐOẠN 4: ADD BUBBLE API V2 CHANNEL
+
 package hust.appchat
 
 import android.content.Intent
@@ -16,44 +18,50 @@ import io.flutter.plugin.common.EventChannel
 import hust.appchat.bubble.BubbleManager
 import hust.appchat.bubble.BubbleOverlayService
 import hust.appchat.notifications.BubbleNotificationService
-import hust.appchat.shortcuts.ShortcutHelper // ✅ CHANGE 1: Add import
+import hust.appchat.shortcuts.ShortcutHelper
 
 class MainActivity : FlutterActivity() {
+    // ========================================
+    // ✅ GIAI ĐOẠN 4: CHANNELS
+    // ========================================
+    // Legacy channel (WindowManager) - Keep for backward compatibility
     private val CHANNEL = "chat_bubble_overlay"
     private val EVENT_CHANNEL = "chat_bubble_events"
+
+    // ✅ NEW: Bubble API V2 channel
+    private val CHANNEL_V2 = "chat_bubbles_v2"
+    private val EVENT_CHANNEL_V2 = "chat_bubble_events_v2"
+
     private val OVERLAY_PERMISSION_REQUEST = 1001
 
     private var bubbleClickReceiver: BroadcastReceiver? = null
     private var bubbleMessageReceiver: BroadcastReceiver? = null
     private var eventSink: EventChannel.EventSink? = null
+    private var eventSinkV2: EventChannel.EventSink? = null // ✅ NEW
     private var pendingPermissionResult: MethodChannel.Result? = null
 
     private var receiversRegistered = false
     private var isFlutterReady = false
 
     // ========================================
-    // ✅ GIAI ĐOẠN 3: INITIALIZATION
+    // INITIALIZATION
     // ========================================
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
 
         try {
-            // ✅ STEP 1: Initialize BubbleManager
             BubbleManager.init(this)
             android.util.Log.d("MainActivity", "✅ BubbleManager initialized")
 
-            // ✅ STEP 2: Initialize NotificationService (GIAI ĐOẠN 2)
             BubbleNotificationService.init(this)
             android.util.Log.d("MainActivity", "✅ BubbleNotificationService initialized")
 
-            // ✅ GIAI ĐOẠN 3: ADD THIS - Log shortcut support
             if (ShortcutHelper.isShortcutsSupported()) {
                 android.util.Log.d("MainActivity", "✅ Shortcuts supported")
                 android.util.Log.d("MainActivity", "📊 Shortcut count: ${ShortcutHelper.getShortcutCount(this)}")
             } else {
-                android.util.Log.w("MainActivity", "⚠️ Shortcuts not supported on this device")
+                android.util.Log.w("MainActivity", "⚠️ Shortcuts not supported")
             }
-
         } catch (e: Exception) {
             android.util.Log.e("MainActivity", "❌ Initialization failed: $e")
         }
@@ -68,20 +76,173 @@ class MainActivity : FlutterActivity() {
             io.flutter.embedding.engine.dart.DartExecutor.DartEntrypoint.createDefault()
         )
 
+        // Setup legacy channel
         setupMethodChannel(flutterEngine)
         setupEventChannel(flutterEngine)
+
+        // ✅ GIAI ĐOẠN 4: Setup V2 channels
+        setupMethodChannelV2(flutterEngine)
+        setupEventChannelV2(flutterEngine)
 
         isFlutterReady = true
         android.util.Log.d("MainActivity", "✅ Flutter Engine ready")
     }
 
     // ========================================
-    // METHOD CHANNEL SETUP
+    // ✅ GIAI ĐOẠN 4: V2 METHOD CHANNEL
+    // ========================================
+    private fun setupMethodChannelV2(flutterEngine: FlutterEngine) {
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_V2)
+            .setMethodCallHandler { call, result ->
+                android.util.Log.d("MainActivity", "📞 V2 Method: ${call.method}")
+
+                try {
+                    when (call.method) {
+                        // ✅ Check if Bubble API is supported
+                        "checkBubbleApiSupport" -> {
+                            val isSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                            result.success(isSupported)
+                        }
+
+                        // ✅ Show bubble using Bubble API
+                        "showBubble" -> {
+                            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                                result.error("UNSUPPORTED", "Bubble API requires Android 11+", null)
+                                return@setMethodCallHandler
+                            }
+
+                            val userId = call.argument<String>("userId")
+                            val userName = call.argument<String>("userName")
+                            val message = call.argument<String>("message")
+                            val avatarUrl = call.argument<String>("avatarUrl")
+
+                            if (userId != null && userName != null && message != null) {
+                                android.util.Log.d("MainActivity", "🎈 Creating Bubble API notification: $userName")
+
+                                // Show bubble notification
+                                BubbleNotificationService.showBubbleNotification(
+                                    context = this,
+                                    userId = userId,
+                                    userName = userName,
+                                    message = message,
+                                    avatarUrl = avatarUrl ?: ""
+                                )
+
+                                result.success(true)
+                            } else {
+                                result.error("INVALID_ARGS", "Missing required arguments", null)
+                            }
+                        }
+
+                        // ✅ Update bubble message
+                        "updateBubble" -> {
+                            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                                result.success(false)
+                                return@setMethodCallHandler
+                            }
+
+                            val userId = call.argument<String>("userId")
+                            val message = call.argument<String>("message")
+
+                            if (userId != null && message != null) {
+                                BubbleNotificationService.updateBubbleNotification(
+                                    context = this,
+                                    userId = userId,
+                                    userName = "", // Will fetch from existing
+                                    message = message,
+                                    avatarUrl = ""
+                                )
+                                result.success(true)
+                            } else {
+                                result.success(false)
+                            }
+                        }
+
+                        // ✅ Hide bubble
+                        "hideBubble" -> {
+                            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                                result.success(false)
+                                return@setMethodCallHandler
+                            }
+
+                            val userId = call.argument<String>("userId")
+                            if (userId != null) {
+                                BubbleNotificationService.dismissBubble(this, userId)
+                                result.success(true)
+                            } else {
+                                result.success(false)
+                            }
+                        }
+
+                        // ✅ Hide all bubbles
+                        "hideAllBubbles" -> {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                BubbleNotificationService.dismissAllBubbles(this)
+                            }
+                            result.success(true)
+                        }
+
+                        // ✅ Get shortcut count
+                        "getShortcutCount" -> {
+                            val count = ShortcutHelper.getShortcutCount(this)
+                            result.success(count)
+                        }
+
+                        // ✅ Verify shortcut exists
+                        "verifyShortcut" -> {
+                            val userId = call.argument<String>("userId")
+                            if (userId != null) {
+                                val exists = ShortcutHelper.shortcutExists(this, userId)
+                                result.success(exists)
+                            } else {
+                                result.success(false)
+                            }
+                        }
+
+                        else -> {
+                            android.util.Log.w("MainActivity", "⚠️ Unknown V2 method: ${call.method}")
+                            result.notImplemented()
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("MainActivity", "❌ V2 Method error: $e")
+                    result.error("ERROR", e.message, null)
+                }
+            }
+
+        android.util.Log.d("MainActivity", "✅ V2 MethodChannel registered")
+    }
+
+    // ========================================
+    // ✅ GIAI ĐOẠN 4: V2 EVENT CHANNEL
+    // ========================================
+    private fun setupEventChannelV2(flutterEngine: FlutterEngine) {
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL_V2)
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    android.util.Log.d("MainActivity", "✅ V2 EventChannel listener attached")
+                    eventSinkV2 = events
+
+                    // Reuse existing broadcast receivers
+                    // They will forward events to both eventSink and eventSinkV2
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    android.util.Log.d("MainActivity", "🛑 V2 EventChannel listener cancelled")
+                    eventSinkV2 = null
+                }
+            })
+
+        android.util.Log.d("MainActivity", "✅ V2 EventChannel registered")
+    }
+
+    // ========================================
+    // LEGACY METHOD CHANNEL (Keep for backward compatibility)
     // ========================================
     private fun setupMethodChannel(flutterEngine: FlutterEngine) {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
-                android.util.Log.d("MainActivity", "📞 Method: ${call.method}")
+                android.util.Log.d("MainActivity", "📞 Legacy Method: ${call.method}")
 
                 try {
                     when (call.method) {
@@ -101,10 +262,10 @@ class MainActivity : FlutterActivity() {
                             val lastMessage = call.argument<String>("lastMessage")
 
                             if (userId != null && userName != null) {
-                                android.util.Log.d("MainActivity", "🎈 Creating bubble: $userName")
+                                android.util.Log.d("MainActivity", "🎈 Legacy showBubble: $userName")
 
-                                // ✅ GIAI ĐOẠN 2: Use NotificationService for Android 11+
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                    // Use Bubble API
                                     BubbleNotificationService.showBubbleNotification(
                                         context = this,
                                         userId = userId,
@@ -113,7 +274,7 @@ class MainActivity : FlutterActivity() {
                                         avatarUrl = avatarUrl ?: ""
                                     )
                                 } else {
-                                    // Fallback to WindowManager for Android < 11
+                                    // Fallback to WindowManager
                                     BubbleManager.showBubble(
                                         this,
                                         userId,
@@ -131,7 +292,6 @@ class MainActivity : FlutterActivity() {
                         "hideBubble" -> {
                             val userId = call.argument<String>("userId")
                             if (userId != null) {
-                                // ✅ GIAI ĐOẠN 2: Use NotificationService
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                                     BubbleNotificationService.dismissBubble(this, userId)
                                 } else {
@@ -144,7 +304,6 @@ class MainActivity : FlutterActivity() {
                         }
 
                         "hideAllBubbles" -> {
-                            // ✅ GIAI ĐOẠN 2: Use NotificationService
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                                 BubbleNotificationService.dismissAllBubbles(this)
                             } else {
@@ -161,7 +320,6 @@ class MainActivity : FlutterActivity() {
                             val avatarUrl = call.argument<String>("avatarUrl")
 
                             if (userId != null && userName != null) {
-                                // Mini chat still uses WindowManager service
                                 val intent = Intent(this, BubbleOverlayService::class.java).apply {
                                     action = BubbleOverlayService.ACTION_SHOW_MINI_CHAT
                                     putExtra("userId", userId)
@@ -198,41 +356,43 @@ class MainActivity : FlutterActivity() {
                         }
 
                         else -> {
-                            android.util.Log.w("MainActivity", "⚠️ Unknown: ${call.method}")
+                            android.util.Log.w("MainActivity", "⚠️ Unknown legacy method: ${call.method}")
                             result.notImplemented()
                         }
                     }
                 } catch (e: Exception) {
-                    android.util.Log.e("MainActivity", "❌ Error: $e")
+                    android.util.Log.e("MainActivity", "❌ Legacy method error: $e")
                     result.error("ERROR", e.message, null)
                 }
             }
-        android.util.Log.d("MainActivity", "✅ MethodChannel registered")
+
+        android.util.Log.d("MainActivity", "✅ Legacy MethodChannel registered")
     }
 
     // ========================================
-    // EVENT CHANNEL SETUP
+    // EVENT CHANNEL SETUP (Forward to both sinks)
     // ========================================
     private fun setupEventChannel(flutterEngine: FlutterEngine) {
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
-                    android.util.Log.d("MainActivity", "✅ EventChannel listener attached")
+                    android.util.Log.d("MainActivity", "✅ Legacy EventChannel listener attached")
                     eventSink = events
                     setupBubbleListeners()
                 }
 
                 override fun onCancel(arguments: Any?) {
-                    android.util.Log.d("MainActivity", "🛑 EventChannel listener cancelled")
+                    android.util.Log.d("MainActivity", "🛑 Legacy EventChannel listener cancelled")
                     eventSink = null
                     unsetupBubbleListeners()
                 }
             })
-        android.util.Log.d("MainActivity", "✅ EventChannel registered")
+
+        android.util.Log.d("MainActivity", "✅ Legacy EventChannel registered")
     }
 
     // ========================================
-    // PERMISSION HANDLING
+    // PERMISSION HANDLING (Legacy)
     // ========================================
     private fun checkOverlayPermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -279,7 +439,7 @@ class MainActivity : FlutterActivity() {
     }
 
     // ========================================
-    // BROADCAST RECEIVERS
+    // BROADCAST RECEIVERS (Forward to both sinks)
     // ========================================
     private fun setupBubbleListeners() {
         if (receiversRegistered) {
@@ -287,8 +447,8 @@ class MainActivity : FlutterActivity() {
             return
         }
 
-        if (eventSink == null) {
-            android.util.Log.w("MainActivity", "⚠️ Cannot setup receivers: eventSink is null")
+        if (eventSink == null && eventSinkV2 == null) {
+            android.util.Log.w("MainActivity", "⚠️ Cannot setup receivers: both sinks are null")
             return
         }
 
@@ -301,21 +461,21 @@ class MainActivity : FlutterActivity() {
 
                     android.util.Log.d("MainActivity", "🫧 Bubble clicked: $userName")
 
-                    eventSink?.let { sink ->
-                        try {
-                            sink.success(
-                                mapOf(
-                                    "type" to "click",
-                                    "userId" to userId,
-                                    "userName" to userName,
-                                    "avatarUrl" to avatarUrl
-                                )
-                            )
-                            android.util.Log.d("MainActivity", "✅ Event sent to Flutter")
-                        } catch (e: Exception) {
-                            android.util.Log.e("MainActivity", "❌ Failed to send event: $e")
-                        }
-                    } ?: android.util.Log.w("MainActivity", "⚠️ EventSink is null")
+                    val eventData = mapOf(
+                        "type" to "click",
+                        "userId" to userId,
+                        "userName" to userName,
+                        "avatarUrl" to avatarUrl
+                    )
+
+                    // ✅ Forward to both sinks
+                    try {
+                        eventSink?.success(eventData)
+                        eventSinkV2?.success(eventData)
+                        android.util.Log.d("MainActivity", "✅ Event sent to both channels")
+                    } catch (e: Exception) {
+                        android.util.Log.e("MainActivity", "❌ Failed to send event: $e")
+                    }
                 }
             }
         }
@@ -326,18 +486,17 @@ class MainActivity : FlutterActivity() {
                     val userId = intent.getStringExtra("userId") ?: ""
                     val message = intent.getStringExtra("message") ?: ""
 
-                    eventSink?.let { sink ->
-                        try {
-                            sink.success(
-                                mapOf(
-                                    "type" to "message",
-                                    "userId" to userId,
-                                    "message" to message
-                                )
-                            )
-                        } catch (e: Exception) {
-                            android.util.Log.e("MainActivity", "❌ Failed to send message event: $e")
-                        }
+                    val eventData = mapOf(
+                        "type" to "message",
+                        "userId" to userId,
+                        "message" to message
+                    )
+
+                    try {
+                        eventSink?.success(eventData)
+                        eventSinkV2?.success(eventData)
+                    } catch (e: Exception) {
+                        android.util.Log.e("MainActivity", "❌ Failed to send message event: $e")
                     }
                 }
             }
@@ -397,7 +556,6 @@ class MainActivity : FlutterActivity() {
         android.util.Log.d("MainActivity", "▶️ App resumed")
 
         if (isFlutterReady) {
-            // ✅ GIAI ĐOẠN 2: Use NotificationService
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 BubbleNotificationService.onAppResumed(this)
             } else {
@@ -410,7 +568,6 @@ class MainActivity : FlutterActivity() {
         super.onPause()
         android.util.Log.d("MainActivity", "⏸️ App paused")
 
-        // ✅ GIAI ĐOẠN 2: Use NotificationService
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             BubbleNotificationService.onAppPaused()
         } else {
@@ -421,10 +578,7 @@ class MainActivity : FlutterActivity() {
     override fun onDestroy() {
         unsetupBubbleListeners()
         eventSink = null
-
-        // ✅ GIAI ĐOẠN 3: ADD THIS - Cleanup shortcuts (optional, uncomment if needed)
-        // ShortcutHelper.clearCache()
-
+        eventSinkV2 = null // ✅ NEW
         super.onDestroy()
     }
 }

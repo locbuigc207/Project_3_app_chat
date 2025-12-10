@@ -21,7 +21,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
-// ✅ FIX: Global notification plugin instance để khắc phục lỗi Null Context
+// ✅ Global notification plugin instance để khắc phục lỗi Null Context
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
@@ -41,10 +41,13 @@ Future<void> main() async {
   tz.setLocalLocation(tz.getLocation('Asia/Ho_Chi_Minh'));
   final prefs = await SharedPreferences.getInstance();
 
-  // ✅ FIX: Initialize notifications VỚI INSTANCE TOÀN CỤC
+  // Khởi tạo notifications
   await _initializeNotifications(flutterLocalNotificationsPlugin);
 
-  // Khởi tạo các Service
+  // ✅ Initialize UnifiedBubbleService (Mới)
+  final unifiedBubbleService = UnifiedBubbleService();
+
+  // Legacy services (Cũ)
   final chatBubbleService = ChatBubbleService();
   final notificationService = NotificationService();
 
@@ -52,10 +55,10 @@ Future<void> main() async {
 
   runApp(MyApp(
     prefs: prefs,
-    // Truyền instance toàn cục
     notificationsPlugin: flutterLocalNotificationsPlugin,
-    chatBubbleService: chatBubbleService,
+    chatBubbleService: chatBubbleService, // Legacy
     notificationService: notificationService,
+    unifiedBubbleService: unifiedBubbleService, // NEW
   ));
 }
 
@@ -77,7 +80,7 @@ Future<void> _initializeNotifications(
       iOS: initializationSettingsIOS,
     );
 
-    // ✅ FIX: Initialize with error handling
+    // Initialize with error handling
     await plugin.initialize(
       initializationSettings,
       onDidReceiveNotificationResponse: (NotificationResponse response) {
@@ -117,22 +120,24 @@ Future<void> _initializeNotifications(
     print('✅ Notifications initialized successfully');
   } catch (e) {
     print('❌ Notification initialization error: $e');
-    // ✅ Don't crash the app, just log the error
+    // Don't crash the app, just log the error
   }
 }
 
 class MyApp extends StatelessWidget {
   final SharedPreferences prefs;
   final FlutterLocalNotificationsPlugin notificationsPlugin;
-  final ChatBubbleService chatBubbleService;
+  final ChatBubbleService chatBubbleService; // Legacy
   final NotificationService notificationService;
+  final UnifiedBubbleService unifiedBubbleService; // NEW
 
   const MyApp({
     super.key,
     required this.prefs,
     required this.notificationsPlugin,
-    required this.chatBubbleService,
+    required this.chatBubbleService, // Legacy
     required this.notificationService,
+    required this.unifiedBubbleService, // NEW
   });
 
   @override
@@ -147,6 +152,7 @@ class MyApp extends StatelessWidget {
 
     return MultiProvider(
       providers: [
+        // Auth providers
         ChangeNotifierProvider<AuthProvider>(
           create: (_) => AuthProvider(
             firebaseAuth: firebaseAuth,
@@ -162,6 +168,8 @@ class MyApp extends StatelessWidget {
             prefs: prefs,
           ),
         ),
+
+        // Data providers
         Provider<SettingProvider>(
           create: (_) => SettingProvider(
             prefs: prefs,
@@ -192,10 +200,13 @@ class MyApp extends StatelessWidget {
           create: (_) =>
               ConversationProvider(firebaseFirestore: firebaseFirestore),
         ),
+
+        // Theme provider
         ChangeNotifierProvider<ThemeProvider>(
           create: (_) => ThemeProvider(prefs: prefs),
         ),
-        // ✅ FIX: Sử dụng instance notificationsPlugin được truyền vào
+
+        // Feature providers
         Provider<ReminderProvider>(
           create: (_) => ReminderProvider(
             firebaseFirestore: firebaseFirestore,
@@ -220,17 +231,22 @@ class MyApp extends StatelessWidget {
           create: (_) =>
               UserPresenceProvider(firebaseFirestore: firebaseFirestore),
         ),
-        Provider<ChatBubbleService>(
-          create: (_) => chatBubbleService,
-        ),
-        Provider<NotificationService>(
-          create: (_) => notificationService,
-        ),
         Provider<LocationProvider>(
           create: (_) => LocationProvider(),
         ),
         Provider<TranslationProvider>(
           create: (_) => TranslationProvider(),
+        ),
+
+        // ✅ Bubble services
+        Provider<ChatBubbleService>(
+          create: (_) => chatBubbleService, // Legacy
+        ),
+        Provider<UnifiedBubbleService>(
+          create: (_) => unifiedBubbleService, // NEW - Primary service
+        ),
+        Provider<NotificationService>(
+          create: (_) => notificationService,
         ),
       ],
       child: Consumer<ThemeProvider>(
@@ -241,7 +257,7 @@ class MyApp extends StatelessWidget {
             themeMode: themeProvider.getFlutterThemeMode(context),
             theme: AppThemes.lightTheme(themeProvider.getPrimaryColor()),
             darkTheme: AppThemes.darkTheme(themeProvider.getPrimaryColor()),
-            // ✅ Bọc MaterialApp bằng BubbleManager và MiniChatOverlayManager
+            // Bọc MaterialApp bằng BubbleManager và MiniChatOverlayManager
             home: BubbleManager(
               child: MiniChatOverlayManager(
                 child: AppInitializer(
@@ -275,6 +291,31 @@ class _AppInitializerState extends State<AppInitializer>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _startNotificationService();
+    // Log bubble implementation being used
+    _logBubbleImplementation();
+  }
+
+  // Log which bubble implementation is active
+  Future<void> _logBubbleImplementation() async {
+    // Đảm bảo widget tree đã sẵn sàng cho context.read
+    await Future.delayed(const Duration(milliseconds: 100));
+    if (!mounted) return;
+
+    final unifiedService = context.read<UnifiedBubbleService>();
+
+    // Wait for initialization to be safer
+    await Future.delayed(const Duration(seconds: 1));
+
+    final impl = unifiedService.getImplementationInfo();
+    print('🎈 Bubble Implementation: $impl');
+
+    if (unifiedService.currentImplementation ==
+        BubbleImplementation.bubbleApi) {
+      print('✅ Using modern Bubble API (Android 11+)');
+    } else if (unifiedService.currentImplementation ==
+        BubbleImplementation.windowManager) {
+      print('⚠️ Using legacy WindowManager (Android < 11)');
+    }
   }
 
   @override
@@ -318,7 +359,7 @@ class _AppInitializerState extends State<AppInitializer>
 }
 
 // ===========================================
-// ✅ FIX 5: Mini Chat Overlay Implementation (Gộp và Cập nhật)
+// MINI CHAT OVERLAY IMPLEMENTATION
 // ===========================================
 
 /// Quản lý MethodChannel và OverlayEntry cho Mini Chat.
@@ -366,7 +407,7 @@ class _MiniChatOverlayManagerState extends State<MiniChatOverlayManager> {
 
         print('💬 Showing mini chat overlay for: $peerNickname');
 
-        // ✅ CRITICAL FIX: Navigate IMMEDIATELY, không delay
+        // CRITICAL FIX: Navigate IMMEDIATELY, không delay
         if (mounted) {
           _showMiniChatOverlay(peerId, peerNickname, peerAvatar ?? '');
         }
@@ -394,13 +435,13 @@ class _MiniChatOverlayManagerState extends State<MiniChatOverlayManager> {
 
     print('📍 Creating MiniChatOverlay for: $userName');
 
-    // ✅ FIX: Tạo overlay TRỰC TIẾP với MiniChatOverlayWidget bên trong
+    // FIX: Tạo overlay TRỰC TIẾP với MiniChatOverlayWidget bên trong
     _miniChatOverlay = OverlayEntry(
       builder: (context) => Material(
         // Sử dụng Material/Colors.transparent để đảm bảo MiniChatOverlayWidget không bị ảnh hưởng bởi theme/widget tree.
         color: Colors.transparent,
         child: Container(
-          // ✅ FIX: Full screen overlay để chứa mini chat
+          // FIX: Full screen overlay để chứa mini chat
           width: MediaQuery.of(context).size.width,
           height: MediaQuery.of(context).size.height,
           alignment: Alignment.center,
@@ -461,7 +502,7 @@ class _MiniChatOverlayManagerState extends State<MiniChatOverlayManager> {
 }
 
 // ===========================================
-// ✅ FIX 6: MiniChatOverlayWidget - Draggable với bounds validation
+// MiniChatOverlayWidget - Draggable với bounds validation
 // ===========================================
 
 /// Widget hiển thị Mini Chat (ChatPage) có thể kéo thả, nằm trong Overlay.
@@ -490,7 +531,7 @@ class _MiniChatOverlayWidgetState extends State<MiniChatOverlayWidget> {
   Offset _position = const Offset(20, 100);
   bool _isDragging = false;
 
-  // ✅ FIX: Kích thước cố định, đủ nhỏ để vừa màn hình
+  // FIX: Kích thước cố định, đủ nhỏ để vừa màn hình
   static const double _width = 340;
   static const double _height = 500;
 
@@ -498,13 +539,12 @@ class _MiniChatOverlayWidgetState extends State<MiniChatOverlayWidget> {
   void initState() {
     super.initState();
     print('🏗️ MiniChatOverlayWidget initialized');
-    // Set vị trí ban đầu là center trong didChangeDependencies
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // ✅ Center vị trí ban đầu
+    // Center vị trí ban đầu
     final size = MediaQuery.of(context).size;
     final centerX = (size.width - _width) / 2;
     final centerY = (size.height - _height) / 2;
@@ -563,10 +603,10 @@ class _MiniChatOverlayWidgetState extends State<MiniChatOverlayWidget> {
             ),
             child: Column(
               children: [
-                // ✅ Header với chức năng kéo thả và nút điều khiển
+                // Header với chức năng kéo thả và nút điều khiển
                 _buildHeader(context),
 
-                // ✅ Nội dung Chat (ChatPage)
+                // Nội dung Chat (ChatPage)
                 Expanded(
                   child: ClipRRect(
                     borderRadius: const BorderRadius.vertical(
@@ -594,13 +634,13 @@ class _MiniChatOverlayWidgetState extends State<MiniChatOverlayWidget> {
 
   Widget _buildHeader(BuildContext context) {
     // Sử dụng màu cố định để dễ nhận biết
-    final primaryColor = const Color(0xff2196f3);
+    const primaryColor = Color(0xff2196f3);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: primaryColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
       ),
       child: Row(
         children: [
