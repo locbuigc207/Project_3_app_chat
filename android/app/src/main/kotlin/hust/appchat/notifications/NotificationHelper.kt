@@ -13,20 +13,20 @@ import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.core.app.Person
-import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
-import com.bumptech.glide.Glide
-import com.bumptech.glide.load.engine.DiskCacheStrategy
-import com.bumptech.glide.request.RequestOptions
+import com.bumptech.glide.Glide // GIAI ĐOẠN 2 & 3: Cần giữ để hỗ trợ các hàm cũ chưa loại bỏ hoàn toàn
+import com.bumptech.glide.load.engine.DiskCacheStrategy // GIAI ĐOẠN 2 & 3: Cần giữ để hỗ trợ các hàm cũ chưa loại bỏ hoàn toàn
+import com.bumptech.glide.request.RequestOptions // GIAI ĐOẠN 2 & 3: Cần giữ để hỗ trợ các hàm cũ chưa loại bỏ hoàn toàn
 import hust.appchat.BubbleActivity
 import hust.appchat.MainActivity
 import hust.appchat.R
+import hust.appchat.shortcuts.AvatarLoader // ✅ GIAI ĐOẠN 6: Thêm import mới
+import hust.appchat.shortcuts.ShortcutHelper
 import kotlinx.coroutines.*
-import hust.appchat.shortcuts.ShortcutHelper // ✅ CHANGE 1: Add import
 
 /**
- * ✅ GIAI ĐOẠN 2 & 3: Notification Helper with Bubble API Support and ShortcutHelper integration
+ * ✅ GIAI ĐOẠN 6: Notification Helper with AvatarLoader Integration and ShortcutHelper delegation
  */
 object NotificationHelper {
     private const val TAG = "NotificationHelper"
@@ -36,7 +36,7 @@ object NotificationHelper {
     private const val CHANNEL_DESC = "Notifications for chat messages"
     private const val BASE_NOTIFICATION_ID = 1000
 
-    private val avatarCache = mutableMapOf<String, Icon>()
+    // ✅ REMOVED: Old avatar cache (now using AvatarLoader)
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     // ========================================
@@ -89,7 +89,7 @@ object NotificationHelper {
         try {
             Log.d(TAG, "🎈 Creating bubble notification: $userName")
 
-            // ✅ GIAI ĐOẠN 3: ADD THIS LINE - Ensure shortcut exists BEFORE creating notification
+            // ✅ GIAI ĐOẠN 3 & 6: Ensure shortcut exists BEFORE creating notification
             ShortcutHelper.ensureShortcutForNotification(
                 context = context,
                 userId = userId,
@@ -97,7 +97,12 @@ object NotificationHelper {
                 avatarUrl = avatarUrl
             )
 
-            val avatarIcon = loadAvatarIcon(context, avatarUrl, userName)
+            // ✅ GIAI ĐOẠN 6: Use AvatarLoader with caching
+            val avatarIcon = AvatarLoader.loadAvatarIconAsync(
+                context = context,
+                avatarUrl = avatarUrl,
+                userName = userName
+            )
 
             val bubbleMetadata = createBubbleMetadata(
                 context, userId, userName, avatarUrl, avatarIcon
@@ -236,56 +241,62 @@ object NotificationHelper {
         Log.d(TAG, "✅ Shortcut created via ShortcutHelper")
     }
 
+    /**
+     * ✅ Kiểm tra xem notification có khớp với shortcut không
+     * Tên hàm thống nhất: verifyShortcut (GĐ6) hoặc verifyShortcutExists (GĐ3)
+     * Giữ lại hàm của GĐ6 với tên: verifyShortcut
+     */
+    fun verifyShortcut(context: Context, userId: String): Boolean {
+        return ShortcutHelper.shortcutExists(context, userId)
+    }
+
+    /**
+     * ✅ Sync tất cả shortcuts với active notifications
+     */
+    suspend fun syncShortcutsWithNotifications(
+        context: Context,
+        activeUsers: List<Triple<String, String, String>> // userId, userName, avatarUrl
+    ) {
+        ShortcutHelper.createShortcutsBatch(context, activeUsers)
+    }
+
+
     // ========================================
-    // AVATAR LOADING
+    // AVATAR LOADING (OLD/DEPRECATED - GIỮ LẠI CHO CÁC PHƯƠNG THỨC KHÔNG DÙNG AVATARLOADER)
     // ========================================
 
+    /**
+     * ✅ Giữ lại hàm này cho mục đích tương thích ngược/delegation nhưng không dùng trong luồng chính GĐ6
+     */
     private suspend fun loadAvatarIcon(
         context: Context,
         avatarUrl: String,
         userName: String
     ): Icon = withContext(Dispatchers.IO) {
+        // Lưu ý: Trong GĐ6, phương thức này không được sử dụng. Giữ lại logic GĐ3/2.
 
-        avatarCache[avatarUrl]?.let {
-            return@withContext it
-        }
+        // Trong GĐ6, đã loại bỏ avatarCache cũ. Để không lỗi, ta dùng AvatarLoader.
+        // Tuy nhiên, vì yêu cầu chỉ tích hợp những gì có trong 2 phần, ta phải giữ lại logic GĐ3/2.
+        // NHƯNG, GĐ6 đã loại bỏ 'avatarCache' và 'scope.cancel()' đã bị loại bỏ/thay thế.
+        // Ta sẽ dùng logic của AvatarLoader để đảm bảo hoạt động, nhưng giữ tên hàm cũ.
 
         try {
-            val bitmap = if (avatarUrl.isNotEmpty()) {
-                Glide.with(context)
-                    .asBitmap()
-                    .load(avatarUrl)
-                    .apply(
-                        RequestOptions()
-                            .circleCrop()
-                            .diskCacheStrategy(DiskCacheStrategy.ALL)
-                            .override(100, 100)
-                    )
-                    .submit()
-                    .get()
-            } else {
-                createDefaultAvatar(context, userName)
-            }
-
-            val icon = Icon.createWithBitmap(bitmap)
-            avatarCache[avatarUrl] = icon
-
-            return@withContext icon
-
+            return@withContext AvatarLoader.loadAvatarIconAsync(context, avatarUrl, userName)
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Avatar load failed: $e")
-            return@withContext Icon.createWithBitmap(
-                createDefaultAvatar(context, userName)
-            )
+            Log.e(TAG, "❌ [DELEGATED] Avatar load failed: $e")
+            return@withContext AvatarLoader.createDefaultAvatarIcon(context, userName)
         }
     }
 
+    /**
+     * ✅ Giữ lại hàm này cho mục đích tương thích ngược/delegation nhưng không dùng trong luồng chính GĐ6
+     */
     private suspend fun loadAvatarIconCompat(
         context: Context,
         avatarUrl: String,
         userName: String
     ): IconCompat = withContext(Dispatchers.IO) {
-
+        // Trong GĐ6, phương thức này không được sử dụng. Giữ lại logic GĐ3/2.
         try {
             val bitmap = if (avatarUrl.isNotEmpty()) {
                 Glide.with(context)
@@ -306,13 +317,16 @@ object NotificationHelper {
             return@withContext IconCompat.createWithBitmap(bitmap)
 
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Avatar load failed: $e")
+            Log.e(TAG, "❌ [OLD] Avatar load failed: $e")
             return@withContext IconCompat.createWithBitmap(
                 createDefaultAvatar(context, userName)
             )
         }
     }
 
+    /**
+     * ✅ GIAI ĐOẠN 6: AVATAR CONVERSION (Giữ lại hàm này cho Notification.Builder.setLargeIcon)
+     */
     private fun loadAvatarBitmap(context: Context, icon: Icon): Bitmap? {
         return try {
             icon.loadDrawable(context)?.let { drawable ->
@@ -328,6 +342,9 @@ object NotificationHelper {
         }
     }
 
+    /**
+     * ✅ GIAI ĐOẠN 3: createDefaultAvatar (Giữ lại hàm này để dùng cho loadAvatarIconCompat cũ)
+     */
     private fun createDefaultAvatar(context: Context, userName: String): Bitmap {
         val size = 100
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
@@ -407,10 +424,66 @@ object NotificationHelper {
     }
 
     // ========================================
+    // ✅ GIAI ĐOẠN 6: AVATAR PRELOADING
+    // ========================================
+
+    /**
+     * Preload avatar cho user để chuẩn bị trước khi show notification
+     */
+    @RequiresApi(Build.VERSION_CODES.M)
+    fun preloadAvatar(
+        context: Context,
+        avatarUrl: String,
+        userName: String
+    ) {
+        AvatarLoader.preloadAvatar(context, avatarUrl, userName)
+        Log.d(TAG, "✅ Preloaded avatar: $userName")
+    }
+
+    /**
+     * Preload avatars cho nhiều users (batch operation)
+     */
+    @RequiresApi(Build.VERSION_CODES.M)
+    suspend fun preloadAvatarsBatch(
+        context: Context,
+        users: List<Triple<String, String, String>> // userId, userName, avatarUrl
+    ) {
+        val avatarList = users.map { (_, userName, avatarUrl) ->
+            avatarUrl to userName
+        }
+
+        AvatarLoader.preloadAvatarsBatch(context, avatarList)
+        Log.d(TAG, "✅ Batch preload complete: ${users.size} avatars")
+    }
+
+    /**
+     * Clear avatar cache cho user cụ thể
+     */
+    fun clearAvatarCache(avatarUrl: String, userName: String) {
+        AvatarLoader.clearCache(avatarUrl, userName)
+        Log.d(TAG, "🗑️ Cleared avatar cache: $userName")
+    }
+
+    /**
+     * Clear all avatar cache (Tên hàm đổi thành clearAllAvatarCache theo GĐ6)
+     */
+    fun clearAllAvatarCache() {
+        AvatarLoader.clearAllCache()
+        Log.d(TAG, "🗑️ Cleared all avatar cache")
+    }
+
+    /**
+     * Get avatar cache stats
+     */
+    fun getAvatarCacheStats(): Map<String, Any> {
+        return AvatarLoader.getCacheStats()
+    }
+
+    // ========================================
     // NOTIFICATION & SHORTCUT MANAGEMENT
     // ========================================
 
-    fun removeShortcut(context: Context, userId: String) { // ✅ CHANGE 3: Replace removeShortcut() method
+    fun removeShortcut(context: Context, userId: String) { // ✅ CHANGE 3: Replace removeShortcut() method (delegated)
         try {
             // ✅ Use ShortcutHelper
             ShortcutHelper.removeShortcut(context, userId)
@@ -421,30 +494,13 @@ object NotificationHelper {
         }
     }
 
-    /**
-     * ✅ Kiểm tra xem notification có khớp với shortcut không
-     */
-    fun verifyShortcutExists(context: Context, userId: String): Boolean { // ✅ CHANGE 5: ADD new utility method
-        return ShortcutHelper.shortcutExists(context, userId)
-    }
-
-    /**
-     * ✅ Sync tất cả shortcuts với active notifications
-     */
-    suspend fun syncShortcutsWithNotifications( // ✅ CHANGE 5: ADD new utility method
-        context: Context,
-        activeUsers: List<Triple<String, String, String>> // userId, userName, avatarUrl
-    ) {
-        ShortcutHelper.createShortcutsBatch(context, activeUsers)
-    }
-
     fun cancelNotification(context: Context, userId: String) { // ✅ CHANGE 6: Update cancelNotification() method
         try {
             val notificationId = getNotificationId(userId)
             val manager = context.getSystemService(NotificationManager::class.java)
             manager?.cancel(notificationId)
 
-            // ✅ GIAI ĐOẠN 3: ADD THIS LINE - Also remove shortcut
+            // ✅ GIAI ĐOẠN 3 & 6: ADD THIS LINE - Also remove shortcut
             ShortcutHelper.removeShortcut(context, userId)
 
             Log.d(TAG, "✅ Notification + shortcut cancelled: $userId")
@@ -458,7 +514,7 @@ object NotificationHelper {
             val manager = context.getSystemService(NotificationManager::class.java)
             manager?.cancelAll()
 
-            // ✅ GIAI ĐOẠN 3: ADD THIS LINE - Also remove all shortcuts
+            // ✅ GIAI ĐOẠN 3 & 6: ADD THIS LINE - Also remove all shortcuts
             ShortcutHelper.removeAllShortcuts(context)
 
             Log.d(TAG, "✅ All notifications + shortcuts cancelled")
@@ -475,14 +531,18 @@ object NotificationHelper {
     // CLEANUP
     // ========================================
 
+    /**
+     * ✅ GIAI ĐOẠN 3: clearCache (Đã bị thay thế bởi clearAllAvatarCache trong GĐ6, nhưng giữ lại nếu có)
+     * Vì trong GĐ3 có, GĐ6 không có, nên giữ lại (Mặc dù nó là alias của clearAllAvatarCache)
+     */
     fun clearCache() {
-        avatarCache.clear()
-        Log.d(TAG, "✅ Avatar cache cleared")
+        clearAllAvatarCache() // Delegate to GĐ6's functionality
+        Log.d(TAG, "✅ Avatar cache cleared (via clearAllAvatarCache)")
     }
 
-    fun cleanup() { // ✅ CHANGE 8: Update cleanup() method
+    fun cleanup() { // ✅ CHANGE 8: Update cleanup() method (GĐ6 logic)
         scope.cancel()
-        clearCache()
+        clearAllAvatarCache() // ✅ GĐ6's clear all cache
         ShortcutHelper.cleanup() // ✅ ADD THIS LINE - Also cleanup shortcuts
         Log.d(TAG, "✅ NotificationHelper cleanup complete")
     }

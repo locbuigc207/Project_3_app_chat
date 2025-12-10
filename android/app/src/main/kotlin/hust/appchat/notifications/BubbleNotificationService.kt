@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Build
 import android.util.Log
 import hust.appchat.bubble.BubbleManager
+import hust.appchat.shortcuts.AvatarLoader
 import hust.appchat.shortcuts.ShortcutHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -12,13 +13,12 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
- * ✅ GIAI ĐOẠN 3: Service với Shortcut Integration
+ * ✅ GIAI ĐOẠN 6: Bubble Notification Service
  *
- * Integration points:
- * 1. showBubbleNotification → Create shortcut + notification
- * 2. updateBubbleNotification → Ensure shortcut exists
- * 3. dismissBubble → Remove notification + shortcut
- * 4. onAppResumed → Sync shortcuts with active bubbles
+ * Tính năng chính:
+ * - Hỗ trợ cả Bubble API (Android 11+) và WindowManager Fallback (< 11).
+ * - Tích hợp quản lý Shortcut (tạo/xóa/sync).
+ * - Tích hợp Avatar Preloading Strategy (sử dụng AvatarLoader).
  */
 object BubbleNotificationService {
     private const val TAG = "BubbleNotifService"
@@ -41,9 +41,14 @@ object BubbleNotificationService {
         try {
             NotificationHelper.createNotificationChannel(context)
 
-            // ✅ GIAI ĐOẠN 3: Check shortcut support
+            // ✅ GIAI ĐOẠN 6: Check shortcut support
             if (ShortcutHelper.isShortcutsSupported()) {
                 Log.d(TAG, "✅ Shortcuts supported")
+
+                // ✅ NEW: Preload avatars for recent conversations
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    preloadRecentAvatars(context)
+                }
             } else {
                 Log.w(TAG, "⚠️ Shortcuts not supported on this device")
             }
@@ -56,7 +61,61 @@ object BubbleNotificationService {
     }
 
     // ========================================
-    // BUBBLE NOTIFICATION WITH SHORTCUT
+    // ✅ GIAI ĐOẠN 6: AVATAR PRELOADING STRATEGY
+    // ========================================
+
+    /**
+     * Preload avatars for recent/active conversations
+     * Call this on app start to prepare cache
+     */
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.M)
+    private fun preloadRecentAvatars(context: Context) {
+        scope.launch {
+            try {
+                Log.d(TAG, "🔄 Preloading recent avatars...")
+
+                // Get active bubbles from BubbleManager
+                val activeBubbles = BubbleManager.getActiveBubbles()
+
+                if (activeBubbles.isNotEmpty()) {
+                    val userList = activeBubbles.map { (_, bubble) ->
+                        bubble.avatarUrl to bubble.userName
+                    }
+
+                    AvatarLoader.preloadAvatarsBatch(context, userList)
+                    Log.d(TAG, "✅ Preloaded ${activeBubbles.size} avatars")
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Avatar preload failed: $e")
+            }
+        }
+    }
+
+    /**
+     * ✅ NEW: Preload avatar before showing notification
+     * This ensures smooth notification creation
+     */
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.M)
+    suspend fun preloadAvatarForNotification(
+        context: Context,
+        avatarUrl: String,
+        userName: String
+    ) {
+        try {
+            AvatarLoader.loadAvatarIconAsync(
+                context = context,
+                avatarUrl = avatarUrl,
+                userName = userName
+            )
+            Log.d(TAG, "✅ Avatar preloaded for: $userName")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Preload failed: $e")
+        }
+    }
+
+    // ========================================
+    // BUBBLE NOTIFICATION WITH PRELOADING (Sử dụng GIAI ĐOẠN 6)
     // ========================================
 
     fun showBubbleNotification(
@@ -76,7 +135,12 @@ object BubbleNotificationService {
                 Log.d(TAG, "🎈 Creating bubble notification: $userName")
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    // ✅ GIAI ĐOẠN 3: Create shortcut FIRST
+                    // ✅ STEP 1: Preload avatar first (if not cached)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        preloadAvatarForNotification(context, avatarUrl, userName)
+                    }
+
+                    // ✅ STEP 2: Create shortcut
                     Log.d(TAG, "🔗 Creating shortcut for: $userName")
                     ShortcutHelper.createShortcut(
                         context = context,
@@ -85,7 +149,7 @@ object BubbleNotificationService {
                         avatarUrl = avatarUrl
                     )
 
-                    // ✅ Then create notification
+                    // ✅ STEP 3: Create notification (avatar already cached)
                     NotificationHelper.showBubbleNotification(
                         context = context,
                         userId = userId,
@@ -141,7 +205,7 @@ object BubbleNotificationService {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
                     activeBubbleNotifications.contains(userId)) {
 
-                    // ✅ GIAI ĐOẠN 3: Ensure shortcut exists
+                    // ✅ GIAI ĐOẠN 6: Ensure shortcut exists
                     ShortcutHelper.ensureShortcutForNotification(
                         context = context,
                         userId = userId,
@@ -174,14 +238,14 @@ object BubbleNotificationService {
     }
 
     // ========================================
-    // DISMISSAL WITH SHORTCUT CLEANUP
+    // DISMISSAL WITH CLEANUP (Sử dụng GIAI ĐOẠN 6)
     // ========================================
 
     fun dismissBubble(context: Context, userId: String) {
         scope.launch {
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    // ✅ GIAI ĐOẠN 3: Remove shortcut
+                    // ✅ GIAI ĐOẠN 6: Remove shortcut
                     Log.d(TAG, "🗑️ Removing shortcut for: $userId")
                     ShortcutHelper.removeShortcut(context, userId)
 
@@ -203,7 +267,7 @@ object BubbleNotificationService {
         scope.launch {
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    // ✅ GIAI ĐOẠN 3: Remove all shortcuts
+                    // ✅ GIAI ĐOẠN 6: Remove all shortcuts
                     Log.d(TAG, "🗑️ Removing all shortcuts")
                     ShortcutHelper.removeAllShortcuts(context)
 
@@ -223,7 +287,7 @@ object BubbleNotificationService {
     }
 
     // ========================================
-    // STATE QUERIES
+    // STATE QUERIES (Giữ nguyên)
     // ========================================
 
     fun isBubbleActive(userId: String): Boolean {
@@ -251,7 +315,59 @@ object BubbleNotificationService {
     }
 
     // ========================================
-    // ✅ GIAI ĐOẠN 3: SHORTCUT UTILITIES
+    // ✅ GIAI ĐOẠN 6: AVATAR CACHE UTILITIES (Lấy từ GIAI ĐOẠN 6)
+    // ========================================
+
+    /**
+     * Get avatar cache stats
+     */
+    fun getAvatarCacheStats(): Map<String, Any> {
+        // Lưu ý: Giả định NotificationHelper.getAvatarCacheStats() gọi đến AvatarLoader.getCacheStats()
+        // Do không có code NotificationHelper, giữ nguyên theo GIAI ĐOẠN 6
+        return NotificationHelper.getAvatarCacheStats()
+    }
+
+    /**
+     * Clear avatar cache
+     */
+    fun clearAvatarCache() {
+        // Lưu ý: Giả định NotificationHelper.clearAllAvatarCache() gọi đến AvatarLoader.clearAllCache()
+        NotificationHelper.clearAllAvatarCache()
+        Log.d(TAG, "🗑️ Avatar cache cleared")
+    }
+
+    /**
+     * Refresh avatar for specific user
+     */
+    fun refreshAvatar(
+        context: Context,
+        userId: String,
+        userName: String,
+        avatarUrl: String
+    ) {
+        scope.launch {
+            try {
+                // Clear cache
+                // Lưu ý: Giả định NotificationHelper.clearAvatarCache() gọi đến AvatarLoader.clearCache()
+                NotificationHelper.clearAvatarCache(avatarUrl, userName)
+
+                // Refresh shortcut
+                ShortcutHelper.refreshShortcutAvatar(
+                    context = context,
+                    userId = userId,
+                    userName = userName,
+                    avatarUrl = avatarUrl
+                )
+
+                Log.d(TAG, "✅ Avatar refreshed for: $userName")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Avatar refresh failed: $e")
+            }
+        }
+    }
+
+    // ========================================
+    // ✅ GIAI ĐOẠN 6: SHORTCUT UTILITIES (Lấy từ GIAI ĐOẠN 6, vì trùng với GIAI ĐOẠN 3)
     // ========================================
 
     fun getShortcutCount(context: Context): Int {
@@ -267,7 +383,7 @@ object BubbleNotificationService {
     }
 
     /**
-     * ✅ Sync shortcuts với active bubbles
+     * ✅ Sync shortcuts với active bubbles (Giữ nguyên)
      */
     fun syncShortcuts(context: Context) {
         scope.launch {
@@ -295,7 +411,7 @@ object BubbleNotificationService {
     }
 
     // ========================================
-    // UTILITIES
+    // UTILITIES (Giữ nguyên)
     // ========================================
 
     fun shouldUseBubbleApi(): Boolean {
@@ -303,15 +419,16 @@ object BubbleNotificationService {
     }
 
     fun getImplementationType(): String {
+        // ✅ GIAI ĐOẠN 6: Cập nhật mô tả
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            "Bubble API + Shortcuts"
+            "Bubble API + Shortcuts + Avatar Cache"
         } else {
             "WindowManager"
         }
     }
 
     // ========================================
-    // LIFECYCLE
+    // LIFECYCLE (Sử dụng GIAI ĐOẠN 6)
     // ========================================
 
     fun onAppPaused() {
@@ -324,6 +441,11 @@ object BubbleNotificationService {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             syncBubbleState(context)
             syncShortcuts(context)
+
+            // ✅ GIAI ĐOẠN 6: Preload avatars on resume
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                preloadRecentAvatars(context)
+            }
         } else {
             BubbleManager.onAppResumed(context)
         }
@@ -346,7 +468,7 @@ object BubbleNotificationService {
     }
 
     // ========================================
-    // CLEANUP
+    // CLEANUP (Giữ nguyên)
     // ========================================
 
     fun cleanup(context: Context) {

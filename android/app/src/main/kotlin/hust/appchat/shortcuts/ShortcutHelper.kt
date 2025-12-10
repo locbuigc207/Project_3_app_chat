@@ -1,14 +1,9 @@
-// android/app/src/main/kotlin/hust/appchat/shortcuts/ShortcutHelper.kt
 package hust.appchat.shortcuts
 
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ShortcutInfo
 import android.content.pm.ShortcutManager
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.util.Log
@@ -16,19 +11,18 @@ import androidx.annotation.RequiresApi
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
-import com.bumptech.glide.Glide
-import com.bumptech.glide.load.engine.DiskCacheStrategy
-import com.bumptech.glide.request.RequestOptions
 import hust.appchat.BubbleActivity
-import hust.appchat.R
 import kotlinx.coroutines.*
+import android.graphics.Bitmap // Giữ lại cho việc chuyển đổi Icon -> IconCompat trong Legacy
+import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
 
 /**
- * ✅ GIAI ĐOẠN 3: SHORTCUT MANAGER
+ * ✅ GIAI ĐOẠN 6: Shortcut Manager with AvatarLoader Integration
  *
  * Quản lý shortcuts cho Bubble API:
  * - Tạo dynamic shortcuts cho conversations
- * - Hỗ trợ avatar loading
+ * - SỬ DỤNG AvatarLoader để tải avatar và quản lý cache.
  * - Integration với launcher
  * - Persistent shortcuts
  */
@@ -37,7 +31,6 @@ object ShortcutHelper {
     private const val MAX_SHORTCUTS = 5
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val avatarCache = mutableMapOf<String, Icon>()
 
     // ========================================
     // PUBLIC API
@@ -61,6 +54,11 @@ object ShortcutHelper {
         scope.launch {
             try {
                 Log.d(TAG, "🔗 Creating shortcut: $userName")
+
+                // ✅ GIAI ĐOẠN 6: Preload avatar first
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    AvatarLoader.preloadAvatar(context, avatarUrl, userName)
+                }
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                     // Android 11+ - Required for Bubble API
@@ -87,8 +85,6 @@ object ShortcutHelper {
                 val manager = context.getSystemService(ShortcutManager::class.java)
                 manager?.removeDynamicShortcuts(listOf(userId))
 
-                avatarCache.remove(userId) // Clear cache
-
                 Log.d(TAG, "✅ Shortcut removed: $userId")
             }
         } catch (e: Exception) {
@@ -105,7 +101,7 @@ object ShortcutHelper {
                 val manager = context.getSystemService(ShortcutManager::class.java)
                 manager?.removeAllDynamicShortcuts()
 
-                avatarCache.clear()
+                AvatarLoader.clearAllCache() // ✅ Dùng AvatarLoader
 
                 Log.d(TAG, "✅ All shortcuts removed")
             }
@@ -123,6 +119,9 @@ object ShortcutHelper {
         userName: String,
         avatarUrl: String
     ) {
+        // ✅ GIAI ĐOẠN 6: Clear cache first
+        AvatarLoader.clearCache(avatarUrl, userName)
+
         // Remove old then create new
         removeShortcut(context, userId)
         createShortcut(context, userId, userName, avatarUrl)
@@ -182,7 +181,13 @@ object ShortcutHelper {
                 removeOldestShortcut(context)
             }
 
-            val avatarIcon = loadAvatarIcon(context, avatarUrl, userName)
+            // ✅ NEW: Use AvatarLoader instead of manual loading
+            val avatarIcon = AvatarLoader.loadAvatarIconAsync(
+                context = context,
+                avatarUrl = avatarUrl,
+                userName = userName
+            )
+
             val person = createPerson(userName, avatarIcon)
 
             val intent = Intent(context, BubbleActivity::class.java).apply {
@@ -207,7 +212,7 @@ object ShortcutHelper {
                 .setRank(0) // Higher priority
                 .build()
 
-            manager.pushDynamicShortcut(shortcut)
+            manager?.pushDynamicShortcut(shortcut)
 
             Log.d(TAG, "✅ Modern shortcut created: $userName")
 
@@ -228,7 +233,35 @@ object ShortcutHelper {
         avatarUrl: String
     ) = withContext(Dispatchers.Main) {
         try {
-            val avatarIcon = loadAvatarIconCompat(context, avatarUrl, userName)
+            // ✅ NEW: Use AvatarLoader for legacy too
+            val avatarIcon = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                // Convert Icon to IconCompat
+                val icon = AvatarLoader.loadAvatarIconAsync(
+                    context = context,
+                    avatarUrl = avatarUrl,
+                    userName = userName
+                )
+
+                // Convert to IconCompat (Tối ưu hóa việc chuyển đổi Icon sang IconCompat)
+                val drawable = icon.loadDrawable(context)
+                val bitmap = if (drawable is BitmapDrawable) {
+                    drawable.bitmap
+                } else {
+                    // Fallback to manual bitmap creation for non-bitmap drawables
+                    val w = drawable?.intrinsicWidth ?: 100
+                    val h = drawable?.intrinsicHeight ?: 100
+                    Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also { bmp ->
+                        val canvas = Canvas(bmp)
+                        drawable?.setBounds(0, 0, canvas.width, canvas.height)
+                        drawable?.draw(canvas)
+                    }
+                }
+
+                IconCompat.createWithBitmap(bitmap)
+            } else {
+                // Fallback for very old Android (< M)
+                IconCompat.createWithResource(context, android.R.drawable.ic_menu_gallery)
+            }
 
             val intent = Intent(context, BubbleActivity::class.java).apply {
                 action = Intent.ACTION_VIEW
@@ -266,114 +299,6 @@ object ShortcutHelper {
             .setIcon(avatarIcon)
             .setImportant(true)
             .build()
-    }
-
-    // ========================================
-    // AVATAR LOADING
-    // ========================================
-
-    private suspend fun loadAvatarIcon(
-        context: Context,
-        avatarUrl: String,
-        userName: String
-    ): Icon = withContext(Dispatchers.IO) {
-
-        // Check cache
-        avatarCache[avatarUrl]?.let {
-            Log.d(TAG, "📦 Using cached avatar: $userName")
-            return@withContext it
-        }
-
-        try {
-            val bitmap = if (avatarUrl.isNotEmpty()) {
-                Glide.with(context)
-                    .asBitmap()
-                    .load(avatarUrl)
-                    .apply(
-                        RequestOptions()
-                            .circleCrop()
-                            .diskCacheStrategy(DiskCacheStrategy.ALL)
-                            .override(100, 100)
-                    )
-                    .submit()
-                    .get()
-            } else {
-                createDefaultAvatar(context, userName)
-            }
-
-            val icon = Icon.createWithBitmap(bitmap)
-
-            // Cache it
-            avatarCache[avatarUrl] = icon
-
-            Log.d(TAG, "✅ Avatar loaded: $userName")
-            return@withContext icon
-
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Avatar load failed, using default: $e")
-            return@withContext Icon.createWithBitmap(
-                createDefaultAvatar(context, userName)
-            )
-        }
-    }
-
-    private suspend fun loadAvatarIconCompat(
-        context: Context,
-        avatarUrl: String,
-        userName: String
-    ): IconCompat = withContext(Dispatchers.IO) {
-
-        try {
-            val bitmap = if (avatarUrl.isNotEmpty()) {
-                Glide.with(context)
-                    .asBitmap()
-                    .load(avatarUrl)
-                    .apply(
-                        RequestOptions()
-                            .circleCrop()
-                            .diskCacheStrategy(DiskCacheStrategy.ALL)
-                            .override(100, 100)
-                    )
-                    .submit()
-                    .get()
-            } else {
-                createDefaultAvatar(context, userName)
-            }
-
-            return@withContext IconCompat.createWithBitmap(bitmap)
-
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Avatar load failed: $e")
-            return@withContext IconCompat.createWithBitmap(
-                createDefaultAvatar(context, userName)
-            )
-        }
-    }
-
-    private fun createDefaultAvatar(context: Context, userName: String): Bitmap {
-        val size = 100
-        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-
-        // Background circle
-        val paint = Paint().apply {
-            color = Color.parseColor("#2196F3")
-            isAntiAlias = true
-        }
-        canvas.drawCircle(size / 2f, size / 2f, size / 2f, paint)
-
-        // Initial letter
-        val initial = userName.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
-        paint.apply {
-            color = Color.WHITE
-            textSize = size * 0.5f
-            textAlign = Paint.Align.CENTER
-        }
-
-        val textY = (size / 2f) - ((paint.descent() + paint.ascent()) / 2)
-        canvas.drawText(initial, size / 2f, textY, paint)
-
-        return bitmap
     }
 
     // ========================================
@@ -443,7 +368,7 @@ object ShortcutHelper {
     }
 
     // ========================================
-    // ✅ SYNC: Shortcut-Notification Integration
+    // SYNC & BATCH OPERATIONS
     // ========================================
 
     /**
@@ -457,25 +382,102 @@ object ShortcutHelper {
     ) {
         if (!shortcutExists(context, userId)) {
             Log.d(TAG, "🔗 Creating missing shortcut for notification")
-            createShortcut(context, userId, userName, avatarUrl)
+
+            // ✅ Use coroutine-safe creation
+            withContext(Dispatchers.IO) {
+                createShortcut(context, userId, userName, avatarUrl)
+
+                // Wait a bit for shortcut to be created
+                delay(300)
+            }
+
+            Log.d(TAG, "✅ Shortcut created for notification")
         } else {
             Log.d(TAG, "✅ Shortcut already exists for notification")
         }
     }
 
     /**
-     * ✅ BATCH: Create shortcuts for multiple users
+     * ✅ BATCH: Create shortcuts for multiple users with preloading
      */
     suspend fun createShortcutsBatch(
         context: Context,
         users: List<Triple<String, String, String>> // userId, userName, avatarUrl
     ) = withContext(Dispatchers.IO) {
-        users.forEach { (userId, userName, avatarUrl) ->
+        try {
+            // ✅ STEP 1: Preload all avatars first (parallel)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                Log.d(TAG, "🔄 Preloading ${users.size} avatars...")
+
+                val avatarList = users.map { (_, userName, avatarUrl) ->
+                    avatarUrl to userName
+                }
+
+                AvatarLoader.preloadAvatarsBatch(context, avatarList)
+                Log.d(TAG, "✅ Avatars preloaded")
+            }
+
+            // ✅ STEP 2: Create shortcuts (now avatars are cached)
+            Log.d(TAG, "🔄 Creating ${users.size} shortcuts...")
+
+            users.forEach { (userId, userName, avatarUrl) ->
+                try {
+                    // Check if already exists
+                    if (!shortcutExists(context, userId)) {
+                        createShortcut(context, userId, userName, avatarUrl)
+                        delay(100) // Avoid overwhelming system
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Batch shortcut creation failed for $userName: $e")
+                }
+            }
+
+            Log.d(TAG, "✅ Batch shortcut creation complete")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Batch operation failed: $e")
+        }
+    }
+
+    // ========================================
+    // AVATAR CACHE MANAGEMENT
+    // ========================================
+
+    /**
+     * Clear avatar cache for specific shortcut
+     */
+    fun clearShortcutAvatarCache(avatarUrl: String, userName: String) {
+        AvatarLoader.clearCache(avatarUrl, userName)
+        Log.d(TAG, "🗑️ Cleared avatar cache for: $userName")
+    }
+
+    /**
+     * Get avatar cache statistics
+     */
+    fun getAvatarCacheStats(): Map<String, Any> {
+        return AvatarLoader.getCacheStats()
+    }
+
+    /**
+     * Refresh shortcut with new avatar
+     */
+    fun refreshShortcutAvatar(
+        context: Context,
+        userId: String,
+        userName: String,
+        avatarUrl: String
+    ) {
+        scope.launch {
             try {
-                createShortcut(context, userId, userName, avatarUrl)
-                delay(100) // Avoid overwhelming system
+                // Clear cache
+                AvatarLoader.clearCache(avatarUrl, userName)
+
+                // Recreate shortcut
+                updateShortcut(context, userId, userName, avatarUrl)
+
+                Log.d(TAG, "✅ Shortcut avatar refreshed: $userName")
             } catch (e: Exception) {
-                Log.e(TAG, "❌ Batch shortcut creation failed for $userName: $e")
+                Log.e(TAG, "❌ Failed to refresh avatar: $e")
             }
         }
     }
@@ -484,14 +486,9 @@ object ShortcutHelper {
     // CLEANUP
     // ========================================
 
-    fun clearCache() {
-        avatarCache.clear()
-        Log.d(TAG, "✅ Avatar cache cleared")
-    }
-
     fun cleanup() {
         scope.cancel()
-        clearCache()
+        AvatarLoader.clearAllCache()
         Log.d(TAG, "✅ ShortcutHelper cleanup complete")
     }
 }
