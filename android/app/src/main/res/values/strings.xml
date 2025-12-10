@@ -43,4 +43,11 @@
     <!-- Notifications -->
     <string name="message_from">Message from %1$s</string>
     <string name="tap_to_open">Tap to open</string>
+    <string name="notification_channel_name">Chat Messages</string>
+    <string name="notification_channel_desc">Notifications for chat messages with bubble support</string>
+    <string name="notification_title">New message</string>
+    <string name="notification_tap_to_reply">Tap to reply</string>
+    <string name="bubble_reply">Reply</string>
+    <string name="bubble_dismiss">Dismiss</string>
+    <string name="bubble_open">Open conversation</string>
 </resources>

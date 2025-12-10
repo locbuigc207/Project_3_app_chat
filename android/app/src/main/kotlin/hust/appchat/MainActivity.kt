@@ -1,4 +1,4 @@
-// android/app/src/main/kotlin/hust/appchat/MainActivity.kt - COMPLETE FIX
+// android/app/src/main/kotlin/hust/appchat/MainActivity.kt - COMPLETE WITH NOTIFICATION SERVICE
 package hust.appchat
 
 import android.content.Intent
@@ -15,6 +15,7 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.EventChannel
 import hust.appchat.bubble.BubbleManager
 import hust.appchat.bubble.BubbleOverlayService
+import hust.appchat.notifications.BubbleNotificationService
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "chat_bubble_overlay"
@@ -29,31 +30,35 @@ class MainActivity : FlutterActivity() {
     private var receiversRegistered = false
     private var isFlutterReady = false
 
-    // ✅ FIX 1: Initialize BubbleManager EARLY
+    // ========================================
+    // ✅ GIAI ĐOẠN 2: INITIALIZATION
+    // ========================================
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // ✅ CRITICAL: Initialize BubbleManager BEFORE Flutter engine
         try {
+            // ✅ STEP 1: Initialize BubbleManager
             BubbleManager.init(this)
-            android.util.Log.d("MainActivity", "✅ BubbleManager initialized in onCreate")
+            android.util.Log.d("MainActivity", "✅ BubbleManager initialized")
+
+            // ✅ STEP 2: Initialize NotificationService (GIAI ĐOẠN 2)
+            BubbleNotificationService.init(this)
+            android.util.Log.d("MainActivity", "✅ BubbleNotificationService initialized")
+
         } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "❌ BubbleManager init failed: $e")
+            android.util.Log.e("MainActivity", "❌ Initialization failed: $e")
         }
     }
 
-    // ✅ FIX 4: Flutter Engine Warmup
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
         android.util.Log.d("MainActivity", "🔧 Configuring Flutter Engine...")
 
-        // ✅ Wait for Flutter engine to be ready
         flutterEngine.dartExecutor.executeDartEntrypoint(
             io.flutter.embedding.engine.dart.DartExecutor.DartEntrypoint.createDefault()
         )
 
-        // ✅ Setup channels AFTER engine is ready
         setupMethodChannel(flutterEngine)
         setupEventChannel(flutterEngine)
 
@@ -89,13 +94,25 @@ class MainActivity : FlutterActivity() {
                             if (userId != null && userName != null) {
                                 android.util.Log.d("MainActivity", "🎈 Creating bubble: $userName")
 
-                                BubbleManager.showBubble(
-                                    this,
-                                    userId,
-                                    userName,
-                                    avatarUrl ?: "",
-                                    lastMessage
-                                )
+                                // ✅ GIAI ĐOẠN 2: Use NotificationService for Android 11+
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                    BubbleNotificationService.showBubbleNotification(
+                                        context = this,
+                                        userId = userId,
+                                        userName = userName,
+                                        message = lastMessage ?: "New message",
+                                        avatarUrl = avatarUrl ?: ""
+                                    )
+                                } else {
+                                    // Fallback to WindowManager for Android < 11
+                                    BubbleManager.showBubble(
+                                        this,
+                                        userId,
+                                        userName,
+                                        avatarUrl ?: "",
+                                        lastMessage
+                                    )
+                                }
                                 result.success(true)
                             } else {
                                 result.success(false)
@@ -105,7 +122,12 @@ class MainActivity : FlutterActivity() {
                         "hideBubble" -> {
                             val userId = call.argument<String>("userId")
                             if (userId != null) {
-                                BubbleManager.removeBubble(this, userId)
+                                // ✅ GIAI ĐOẠN 2: Use NotificationService
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                    BubbleNotificationService.dismissBubble(this, userId)
+                                } else {
+                                    BubbleManager.removeBubble(this, userId)
+                                }
                                 result.success(true)
                             } else {
                                 result.success(false)
@@ -113,9 +135,14 @@ class MainActivity : FlutterActivity() {
                         }
 
                         "hideAllBubbles" -> {
-                            val intent = Intent(this, BubbleOverlayService::class.java)
-                            stopService(intent)
-                            BubbleManager.cleanup()
+                            // ✅ GIAI ĐOẠN 2: Use NotificationService
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                BubbleNotificationService.dismissAllBubbles(this)
+                            } else {
+                                val intent = Intent(this, BubbleOverlayService::class.java)
+                                stopService(intent)
+                                BubbleManager.cleanup()
+                            }
                             result.success(true)
                         }
 
@@ -125,6 +152,7 @@ class MainActivity : FlutterActivity() {
                             val avatarUrl = call.argument<String>("avatarUrl")
 
                             if (userId != null && userName != null) {
+                                // Mini chat still uses WindowManager service
                                 val intent = Intent(this, BubbleOverlayService::class.java).apply {
                                     action = BubbleOverlayService.ACTION_SHOW_MINI_CHAT
                                     putExtra("userId", userId)
@@ -174,7 +202,7 @@ class MainActivity : FlutterActivity() {
     }
 
     // ========================================
-    // ✅ FIX 7: EVENT CHANNEL SETUP (Fixed Broadcasts)
+    // EVENT CHANNEL SETUP
     // ========================================
     private fun setupEventChannel(flutterEngine: FlutterEngine) {
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
@@ -182,8 +210,6 @@ class MainActivity : FlutterActivity() {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                     android.util.Log.d("MainActivity", "✅ EventChannel listener attached")
                     eventSink = events
-
-                    // ✅ Setup receivers AFTER eventSink is ready
                     setupBubbleListeners()
                 }
 
@@ -244,7 +270,7 @@ class MainActivity : FlutterActivity() {
     }
 
     // ========================================
-    // ✅ FIX 7: BROADCAST RECEIVERS (Fixed)
+    // BROADCAST RECEIVERS
     // ========================================
     private fun setupBubbleListeners() {
         if (receiversRegistered) {
@@ -266,7 +292,6 @@ class MainActivity : FlutterActivity() {
 
                     android.util.Log.d("MainActivity", "🫧 Bubble clicked: $userName")
 
-                    // ✅ FIX: Check if eventSink is still valid before sending
                     eventSink?.let { sink ->
                         try {
                             sink.success(
@@ -292,7 +317,6 @@ class MainActivity : FlutterActivity() {
                     val userId = intent.getStringExtra("userId") ?: ""
                     val message = intent.getStringExtra("message") ?: ""
 
-                    // ✅ FIX: Check if eventSink is still valid
                     eventSink?.let { sink ->
                         try {
                             sink.success(
@@ -363,16 +387,26 @@ class MainActivity : FlutterActivity() {
         super.onResume()
         android.util.Log.d("MainActivity", "▶️ App resumed")
 
-        // ✅ Notify BubbleManager only if Flutter is ready
         if (isFlutterReady) {
-            BubbleManager.onAppResumed(this)
+            // ✅ GIAI ĐOẠN 2: Use NotificationService
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                BubbleNotificationService.onAppResumed(this)
+            } else {
+                BubbleManager.onAppResumed(this)
+            }
         }
     }
 
     override fun onPause() {
         super.onPause()
         android.util.Log.d("MainActivity", "⏸️ App paused")
-        BubbleManager.onAppPaused()
+
+        // ✅ GIAI ĐOẠN 2: Use NotificationService
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            BubbleNotificationService.onAppPaused()
+        } else {
+            BubbleManager.onAppPaused()
+        }
     }
 
     override fun onDestroy() {
