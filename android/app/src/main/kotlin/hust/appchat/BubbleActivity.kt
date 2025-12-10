@@ -10,27 +10,33 @@ import androidx.annotation.RequiresApi
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterEngineCache
+import io.flutter.embedding.engine.dart.DartExecutor
 import io.flutter.plugin.common.MethodChannel
 
 /**
- * ✅ BUBBLE API Activity
+ * ✅ GIAI ĐOẠN 5: Bubble Activity với Flutter Content
  *
- * Thay thế cho FlutterMiniChatActivity và WindowManager-based overlays
+ * Thay thế cho FlutterMiniChatActivity và WindowManager-based overlays.
  *
  * Tính năng:
- * - Render Flutter content trong Bubble API notification
- * - Hỗ trợ Android 11+ (API 30+)
- * - Tự động resize và quản lý lifecycle
- * - Tích hợp MethodChannel để giao tiếp với Flutter
- *
- * @since GIAI ĐOẠN 1: Chuẩn bị & Thiết lập cơ bản
+ * - Render Flutter content trong Bubble API notification.
+ * - Hỗ trợ Android 11+ (API 30+).
+ * - Shared Flutter Engine với main app.
+ * - MethodChannel để giao tiếp với Flutter.
+ * - Auto-navigate đến ChatPage khi mở bubble.
+ * - Handle lifecycle properly.
+ * - Support minimize/close actions.
  */
 @RequiresApi(Build.VERSION_CODES.R)
 class BubbleActivity : FlutterActivity() {
 
     companion object {
         private const val TAG = "BubbleActivity"
+
+        // ✅ SHARED ENGINE: Reuse với main app để tránh khởi động lại
         private const val ENGINE_ID = "bubble_chat_engine"
+
+        // ✅ CHANNEL: Giao tiếp với Flutter
         private const val CHANNEL = "bubble_chat_channel"
 
         // ✅ Intent extras
@@ -52,20 +58,25 @@ class BubbleActivity : FlutterActivity() {
                 putExtra(EXTRA_USER_NAME, userName)
                 putExtra(EXTRA_AVATAR_URL, avatarUrl)
 
-                // ✅ Flags for bubble activity
+                // ✅ Flags cho bubble activity
                 addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT)
                 addFlags(Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
             }
         }
     }
 
+    // ========================================
+    // STATE
+    // ========================================
     private var methodChannel: MethodChannel? = null
     private var currentUserId: String? = null
     private var currentUserName: String? = null
     private var currentAvatarUrl: String? = null
 
+    private var isFlutterReady = false
+
     // ========================================
-    // LIFECYCLE OVERRIDES
+    // LIFECYCLE
     // ========================================
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -81,21 +92,35 @@ class BubbleActivity : FlutterActivity() {
         Log.d(TAG, "📋 User: $currentUserName (ID: $currentUserId)")
 
         // ✅ Validate required data
-        if (currentUserId == null || currentUserName == null) {
+        if (currentUserId.isNullOrEmpty() || currentUserName.isNullOrEmpty()) {
             Log.e(TAG, "❌ Missing required user data, finishing activity")
             finish()
             return
         }
     }
 
+    // ========================================
+    // FLUTTER ENGINE SETUP
+    // ========================================
+
     override fun provideFlutterEngine(context: Context): FlutterEngine? {
-        // ✅ Reuse existing engine or create new one
+        // ✅ CRITICAL: Reuse existing engine hoặc tạo mới
         var engine = FlutterEngineCache.getInstance().get(ENGINE_ID)
 
         if (engine == null) {
-            Log.d(TAG, "🔧 Creating new Flutter Engine")
+            Log.d(TAG, "🔧 Creating new Flutter Engine for bubble")
+
             engine = FlutterEngine(context)
+
+            // ✅ Execute Dart entrypoint
+            engine.dartExecutor.executeDartEntrypoint(
+                DartExecutor.DartEntrypoint.createDefault()
+            )
+
+            // ✅ Cache engine cho lần sau
             FlutterEngineCache.getInstance().put(ENGINE_ID, engine)
+
+            Log.d(TAG, "✅ Flutter Engine created and cached")
         } else {
             Log.d(TAG, "♻️ Reusing existing Flutter Engine")
         }
@@ -111,10 +136,14 @@ class BubbleActivity : FlutterActivity() {
         // ✅ Setup MethodChannel
         setupMethodChannel(flutterEngine)
 
-        // ✅ Send initial data to Flutter after short delay
+        // ✅ Wait for Flutter to be ready, then send data
+        // Delay ngắn để đảm bảo Flutter UI đã render
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            sendInitialDataToFlutter()
-        }, 500)
+            if (!isFinishing) {
+                isFlutterReady = true
+                sendInitialDataToFlutter()
+            }
+        }, 800) // Chọn giá trị 800ms từ phần thứ hai
     }
 
     // ========================================
@@ -128,18 +157,21 @@ class BubbleActivity : FlutterActivity() {
                 CHANNEL
             )
 
+            // ✅ Handle calls FROM Flutter
             methodChannel?.setMethodCallHandler { call, result ->
-                Log.d(TAG, "📞 Method called: ${call.method}")
+                Log.d(TAG, "📞 Method called from Flutter: ${call.method}")
 
                 when (call.method) {
                     "minimize" -> {
                         Log.d(TAG, "📦 Minimize bubble")
+                        // Move to back but keep bubble alive
                         moveTaskToBack(true)
                         result.success(true)
                     }
 
                     "close" -> {
                         Log.d(TAG, "❌ Close bubble")
+                        // Finish activity và dismiss bubble
                         finish()
                         result.success(true)
                     }
@@ -151,6 +183,11 @@ class BubbleActivity : FlutterActivity() {
                             "userName" to currentUserName,
                             "avatarUrl" to currentAvatarUrl
                         ))
+                    }
+
+                    "getBubbleMode" -> {
+                        // Flutter checks if running in bubble
+                        result.success(true)
                     }
 
                     else -> {
@@ -166,27 +203,45 @@ class BubbleActivity : FlutterActivity() {
         }
     }
 
+    // ========================================
+    // SEND DATA TO FLUTTER
+    // ========================================
+
     private fun sendInitialDataToFlutter() {
-        if (currentUserId == null || currentUserName == null) {
+        if (currentUserId.isNullOrEmpty() || currentUserName.isNullOrEmpty()) {
             Log.w(TAG, "⚠️ Cannot send data: missing user info")
+            return
+        }
+
+        if (!isFlutterReady) {
+            Log.w(TAG, "⚠️ Flutter not ready yet")
             return
         }
 
         try {
             Log.d(TAG, "📤 Sending initial data to Flutter")
 
+            // ✅ CRITICAL: Invoke method để navigate đến ChatPage
             methodChannel?.invokeMethod(
                 "navigateToChat",
                 mapOf(
-                    "peerId" to currentUserId,
-                    "peerNickname" to currentUserName,
-                    "peerAvatar" to (currentAvatarUrl ?: "")
+                    "peerId" to currentUserId!!,
+                    "peerNickname" to currentUserName!!,
+                    "peerAvatar" to (currentAvatarUrl ?: ""),
+                    "isBubbleMode" to true // ✅ Tell Flutter we're in bubble (từ phần 2)
                 )
             )
 
             Log.d(TAG, "✅ Initial data sent successfully")
         } catch (e: Exception) {
             Log.e(TAG, "❌ Failed to send initial data: $e")
+
+            // Retry after short delay (từ phần 2)
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                if (!isFinishing) {
+                    sendInitialDataToFlutter()
+                }
+            }, 500)
         }
     }
 
@@ -197,6 +252,15 @@ class BubbleActivity : FlutterActivity() {
     override fun onResume() {
         super.onResume()
         Log.d(TAG, "▶️ onResume")
+
+        // Re-send data if Flutter was paused/resumed (từ phần 2)
+        if (isFlutterReady && currentUserId != null) {
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                if (!isFinishing) {
+                    sendInitialDataToFlutter()
+                }
+            }, 300)
+        }
     }
 
     override fun onPause() {
@@ -206,8 +270,12 @@ class BubbleActivity : FlutterActivity() {
 
     override fun onDestroy() {
         Log.d(TAG, "💥 onDestroy")
+
+        // Cleanup
         methodChannel?.setMethodCallHandler(null)
         methodChannel = null
+        isFlutterReady = false // Thêm từ phần 2
+
         super.onDestroy()
     }
 
@@ -215,7 +283,7 @@ class BubbleActivity : FlutterActivity() {
         super.onNewIntent(intent)
         Log.d(TAG, "🔄 onNewIntent")
 
-        // ✅ Update user info if changed
+        // ✅ Update user info if changed (e.g., switching between conversations)
         val newUserId = intent.getStringExtra(EXTRA_USER_ID)
         val newUserName = intent.getStringExtra(EXTRA_USER_NAME)
         val newAvatarUrl = intent.getStringExtra(EXTRA_AVATAR_URL)
@@ -227,7 +295,10 @@ class BubbleActivity : FlutterActivity() {
             currentUserName = newUserName
             currentAvatarUrl = newAvatarUrl
 
-            sendInitialDataToFlutter()
+            // Re-send data to Flutter
+            if (isFlutterReady) {
+                sendInitialDataToFlutter()
+            }
         }
     }
 
@@ -237,22 +308,8 @@ class BubbleActivity : FlutterActivity() {
 
     override fun onBackPressed() {
         Log.d(TAG, "⬅️ Back pressed - minimizing to bubble")
+
+        // Don't finish, just minimize
         moveTaskToBack(true)
-    }
-
-    // ========================================
-    // UTILITY METHODS
-    // ========================================
-
-    /**
-     * Check if running in bubble mode
-     */
-    private fun isInBubbleMode(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            windowManager.currentWindowMetrics.bounds.width() <
-                    resources.displayMetrics.widthPixels
-        } else {
-            false
-        }
     }
 }

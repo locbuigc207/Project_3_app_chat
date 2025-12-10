@@ -21,9 +21,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
-// ✅ Global notification plugin instance để khắc phục lỗi Null Context
+// Global notification plugin instance để khắc phục lỗi Null Context
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
+
+// ADD: Global navigator key để navigate từ bubble
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,6 +38,9 @@ Future<void> main() async {
     print('❌ Firebase initialization error: $e');
   }
 
+  // GIAI ĐOẠN 5: Setup Bubble Chat Channel
+  setupBubbleChatChannel();
+
   // Khởi tạo các dịch vụ cần thiết
   await ErrorLogger.initialize();
   tz.initializeTimeZones();
@@ -44,7 +50,7 @@ Future<void> main() async {
   // Khởi tạo notifications
   await _initializeNotifications(flutterLocalNotificationsPlugin);
 
-  // ✅ Initialize UnifiedBubbleService (Mới)
+  // Initialize UnifiedBubbleService (Mới)
   final unifiedBubbleService = UnifiedBubbleService();
 
   // Legacy services (Cũ)
@@ -60,6 +66,69 @@ Future<void> main() async {
     notificationService: notificationService,
     unifiedBubbleService: unifiedBubbleService, // NEW
   ));
+}
+
+// ========================================
+// GIAI ĐOẠN 5: BUBBLE CHAT CHANNEL HANDLER
+// ========================================
+
+/// Setup channel để nhận navigation commands từ BubbleActivity
+void setupBubbleChatChannel() {
+  const channel = MethodChannel('bubble_chat_channel');
+
+  channel.setMethodCallHandler((call) async {
+    print('📥 Bubble channel received: ${call.method}');
+
+    if (call.method == 'navigateToChat') {
+      // Extract data from BubbleActivity
+      final peerId = call.arguments['peerId'] as String?;
+      final peerNickname = call.arguments['peerNickname'] as String?;
+      final peerAvatar = call.arguments['peerAvatar'] as String?;
+      final isBubbleMode = call.arguments['isBubbleMode'] as bool? ?? false;
+
+      if (peerId == null || peerNickname == null) {
+        print('❌ Missing required arguments for navigation');
+        return null;
+      }
+
+      print('💬 Navigating to chat: $peerNickname (bubble: $isBubbleMode)');
+
+      // CRITICAL: Wait for navigator to be ready
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      // Navigate to ChatPage in bubble mode
+      if (navigatorKey.currentState != null) {
+        navigatorKey.currentState!.pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => ChatPage(
+              arguments: ChatPageArguments(
+                peerId: peerId,
+                peerNickname: peerNickname,
+                peerAvatar: peerAvatar ?? '',
+              ),
+              isBubbleMode: isBubbleMode, // NEW FLAG
+            ),
+          ),
+        );
+
+        print('✅ Navigation complete');
+      } else {
+        print('❌ Navigator not ready');
+      }
+    } else if (call.method == 'onBackPressed') {
+      // Handle back press from BubbleActivity
+      print('⬅️ Back pressed in bubble');
+
+      if (navigatorKey.currentState != null &&
+          navigatorKey.currentState!.canPop()) {
+        navigatorKey.currentState!.pop();
+      }
+    }
+
+    return null;
+  });
+
+  print('✅ Bubble chat channel setup complete');
 }
 
 Future<void> _initializeNotifications(
@@ -238,7 +307,7 @@ class MyApp extends StatelessWidget {
           create: (_) => TranslationProvider(),
         ),
 
-        // ✅ Bubble services
+        // Bubble services
         Provider<ChatBubbleService>(
           create: (_) => chatBubbleService, // Legacy
         ),
@@ -254,6 +323,10 @@ class MyApp extends StatelessWidget {
           return MaterialApp(
             title: AppConstants.appTitle,
             debugShowCheckedModeBanner: false,
+
+            // CRITICAL: Add navigator key
+            navigatorKey: navigatorKey,
+
             themeMode: themeProvider.getFlutterThemeMode(context),
             theme: AppThemes.lightTheme(themeProvider.getPrimaryColor()),
             darkTheme: AppThemes.darkTheme(themeProvider.getPrimaryColor()),
@@ -698,5 +771,23 @@ class _MiniChatOverlayWidgetState extends State<MiniChatOverlayWidget> {
         ],
       ),
     );
+  }
+}
+
+// ========================================
+// BONUS: Bubble Mode Detector
+// ========================================
+
+/// Helper class to detect if app is running in bubble mode
+class BubbleModeDetector {
+  static const MethodChannel _channel = MethodChannel('bubble_chat_channel');
+
+  static Future<bool> isBubbleMode() async {
+    try {
+      final result = await _channel.invokeMethod<bool>('getBubbleMode');
+      return result ?? false;
+    } catch (e) {
+      return false;
+    }
   }
 }

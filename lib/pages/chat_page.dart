@@ -17,15 +17,18 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+// ✅ GIAI ĐOẠN 5: ADD isBubbleMode PARAMETER & ADAPTATIONS
 class ChatPage extends StatefulWidget {
   const ChatPage({
     super.key,
     required this.arguments,
     this.isMiniChat = false,
+    this.isBubbleMode = false, // ✅ NEW: Bubble mode flag
   });
 
   final ChatPageArguments arguments;
   final bool isMiniChat;
+  final bool isBubbleMode; // ✅ NEW
 
   @override
   ChatPageState createState() => ChatPageState();
@@ -38,9 +41,11 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   // ✅ GIAI ĐOẠN 4: Use UnifiedBubbleService instead of ChatBubbleService
   UnifiedBubbleService? _unifiedBubbleService;
 
-  // ✅ ADD: Channel cho giao tiếp Mini Chat
+  // ✅ ADD: Channel cho giao tiếp Mini Chat và Bubble
   static const MethodChannel _miniChatChannel =
       MethodChannel('mini_chat_channel');
+  static const MethodChannel _bubbleChannel =
+      MethodChannel('bubble_chat_channel'); // ✅ NEW
 
   Timer? _typingTimer;
   bool _isTyping = false;
@@ -161,27 +166,6 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         print('❌ Mini chat stream error: $error');
       },
     );
-
-    // Logic từ phần 1 (cũ)
-    /*
-    _miniChatSubscription = _bubbleService?.miniChatMessageStream.listen(
-      (message) {
-        if (message.userId == widget.arguments.peerId) {
-          print('💬 Message from mini chat: ${message.message}');
-
-          // Show notification
-          Fluttertoast.showToast(
-            msg: '📨 ${widget.arguments.peerNickname}: ${message.message}',
-            backgroundColor: Colors.green,
-            toastLength: Toast.LENGTH_SHORT,
-          );
-        }
-      },
-      onError: (error) {
-        print('❌ Mini chat stream error: $error');
-      },
-    );
-    */
 
     try {
       _voiceProvider = VoiceMessageProvider(
@@ -2169,10 +2153,13 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     );
   }
 
-  // ✅ MODIFY: _buildAdvancedInput to auto-focus and restrict features in mini chat
+  // ✅ BUBBLE MODE INPUT ADJUSTMENTS
   Widget _buildAdvancedInput() {
-    // ✅ Auto-focus in mini chat mode
-    if (widget.isMiniChat && !_focusNode.hasFocus) {
+    // ✅ Disable complex features in bubble mode/mini chat
+    final showFullFeatures = !widget.isBubbleMode && !widget.isMiniChat;
+
+    // ✅ Auto-focus in mini chat/bubble mode
+    if ((widget.isMiniChat || widget.isBubbleMode) && !_focusNode.hasFocus) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && !_isDisposed) {
           _focusNode.requestFocus();
@@ -2183,8 +2170,8 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Smart Replies
-        if (_smartReplies.isNotEmpty)
+        // Smart Replies (only in normal mode)
+        if (_smartReplies.isNotEmpty && showFullFeatures)
           Container(
             constraints: BoxConstraints(maxHeight: 60),
             child: SingleChildScrollView(
@@ -2291,63 +2278,54 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              // More options button (Disabled in Mini Chat)
-              Material(
-                color: Colors.white,
-                child: Container(
-                  margin: EdgeInsets.symmetric(horizontal: 1),
-                  child: IconButton(
-                    icon: Icon(
-                      _showFeaturesMenu ? Icons.close : Icons.more_horiz,
-                      color: widget.isMiniChat
-                          ? ColorConstants.greyColor // Dim if disabled
-                          : ColorConstants.primaryColor,
-                      size: 24,
+              // More options button (Disabled in Mini Chat/Bubble Mode)
+              if (showFullFeatures)
+                Material(
+                  color: Colors.white,
+                  child: Container(
+                    margin: EdgeInsets.symmetric(horizontal: 1),
+                    child: IconButton(
+                      icon: Icon(
+                        _showFeaturesMenu ? Icons.close : Icons.more_horiz,
+                        color: ColorConstants.primaryColor,
+                        size: 24,
+                      ),
+                      onPressed: _toggleFeaturesMenu,
+                      padding: EdgeInsets.all(8),
+                      constraints: BoxConstraints(minWidth: 40, minHeight: 40),
                     ),
-                    onPressed: widget.isMiniChat
-                        ? null // ✅ Disable in mini chat to keep it simple
-                        : _toggleFeaturesMenu,
+                  ),
+                ),
+
+              // Image picker (Disabled in Mini Chat/Bubble Mode)
+              if (showFullFeatures)
+                Material(
+                  color: Colors.white,
+                  child: IconButton(
+                    icon: Icon(Icons.image, size: 24),
+                    onPressed: () {
+                      _pickImage().then((isSuccess) {
+                        if (isSuccess) _uploadFile();
+                      });
+                    },
+                    color: ColorConstants.primaryColor,
                     padding: EdgeInsets.all(8),
                     constraints: BoxConstraints(minWidth: 40, minHeight: 40),
                   ),
                 ),
-              ),
 
-              // Image picker (Disabled in Mini Chat)
-              Material(
-                color: Colors.white,
-                child: IconButton(
-                  icon: Icon(Icons.image, size: 24),
-                  onPressed: widget.isMiniChat
-                      ? null // ✅ Disable in mini chat
-                      : () {
-                          _pickImage().then((isSuccess) {
-                            if (isSuccess) _uploadFile();
-                          });
-                        },
-                  color: widget.isMiniChat
-                      ? ColorConstants.greyColor
-                      : ColorConstants.primaryColor,
-                  padding: EdgeInsets.all(8),
-                  constraints: BoxConstraints(minWidth: 40, minHeight: 40),
+              // Sticker button (Disabled in Mini Chat/Bubble Mode)
+              if (showFullFeatures)
+                Material(
+                  color: Colors.white,
+                  child: IconButton(
+                    icon: Icon(Icons.face, size: 24),
+                    onPressed: _getSticker,
+                    color: ColorConstants.primaryColor,
+                    padding: EdgeInsets.all(8),
+                    constraints: BoxConstraints(minWidth: 40, minHeight: 40),
+                  ),
                 ),
-              ),
-
-              // Sticker button (Disabled in Mini Chat)
-              Material(
-                color: Colors.white,
-                child: IconButton(
-                  icon: Icon(Icons.face, size: 24),
-                  onPressed: widget.isMiniChat
-                      ? null // ✅ Disable in mini chat
-                      : _getSticker,
-                  color: widget.isMiniChat
-                      ? ColorConstants.greyColor
-                      : ColorConstants.primaryColor,
-                  padding: EdgeInsets.all(8),
-                  constraints: BoxConstraints(minWidth: 40, minHeight: 40),
-                ),
-              ),
 
               // ✅ KEYBOARD FIX: Text input with better handling
               Expanded(
@@ -2358,8 +2336,8 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   ),
                   padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   child: TextField(
-                    // ✅ CRITICAL: Don't close keyboard on outside tap in mini chat
-                    onTapOutside: widget.isMiniChat
+                    // ✅ CRITICAL: Don't close keyboard on outside tap in mini chat/bubble mode
+                    onTapOutside: (widget.isBubbleMode || widget.isMiniChat)
                         ? null
                         : (_) {
                             Utilities.closeKeyboard();
@@ -2370,8 +2348,8 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                           _chatInputController.text,
                           TypeMessage.text,
                         );
-                        // ✅ Refocus after sending in mini chat
-                        if (widget.isMiniChat) {
+                        // ✅ Refocus after sending in mini chat/bubble mode
+                        if (widget.isMiniChat || widget.isBubbleMode) {
                           Future.delayed(Duration(milliseconds: 100), () {
                             if (mounted) _focusNode.requestFocus();
                           });
@@ -2393,8 +2371,8 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     ),
                     controller: _chatInputController,
                     decoration: InputDecoration.collapsed(
-                      hintText: widget.isMiniChat
-                          ? 'Type...' // ✅ Shorter hint for mini chat
+                      hintText: (widget.isBubbleMode || widget.isMiniChat)
+                          ? 'Type...' // ✅ Shorter hint for mini chat/bubble
                           : 'Type your message...',
                       hintStyle: TextStyle(color: ColorConstants.greyColor),
                     ),
@@ -2402,14 +2380,14 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     maxLines: 4,
                     minLines: 1,
                     textInputAction: TextInputAction.newline,
-                    // ✅ CRITICAL: Auto-focus in mini chat (triggers keyboard)
-                    autofocus: widget.isMiniChat,
+                    // ✅ CRITICAL: Auto-focus in mini chat/bubble mode (triggers keyboard)
+                    autofocus: widget.isMiniChat || widget.isBubbleMode,
                   ),
                 ),
               ),
 
-              // Voice button (disabled in mini chat)
-              if (!_isRecording && _voiceProvider != null && !widget.isMiniChat)
+              // Voice button (disabled in mini chat/bubble mode)
+              if (!_isRecording && _voiceProvider != null && showFullFeatures)
                 Material(
                   color: Colors.white,
                   child: IconButton(
@@ -2432,8 +2410,8 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                         _chatInputController.text,
                         TypeMessage.text,
                       );
-                      // ✅ Keep focus in mini chat
-                      if (widget.isMiniChat) {
+                      // ✅ Keep focus in mini chat/bubble mode
+                      if (widget.isMiniChat || widget.isBubbleMode) {
                         Future.delayed(Duration(milliseconds: 100), () {
                           if (mounted) _focusNode.requestFocus();
                         });
@@ -2468,6 +2446,115 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       );
       Navigator.pop(context);
     }
+  }
+
+  // ✅ BUBBLE ACTIONS
+  void _minimizeBubble() {
+    print('📦 Minimizing bubble');
+
+    // Close keyboard if open
+    _focusNode.unfocus();
+
+    // Tell BubbleActivity to minimize
+    _bubbleChannel.invokeMethod('minimize');
+  }
+
+  void _closeBubble() {
+    print('❌ Closing bubble');
+
+    // Close keyboard
+    _focusNode.unfocus();
+
+    // Tell BubbleActivity to close
+    _bubbleChannel.invokeMethod('close');
+  }
+
+  // ✅ BUBBLE HEADER
+  Widget _buildBubbleHeader() {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: ColorConstants.primaryColor,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 4,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          // Drag handle indicator
+          Container(
+            width: 40,
+            height: 4,
+            margin: EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+
+          // Peer Avatar
+          CircleAvatar(
+            backgroundImage: NetworkImage(widget.arguments.peerAvatar),
+            radius: 18,
+            onBackgroundImageError: (_, __) {},
+            child: widget.arguments.peerAvatar.isEmpty
+                ? Icon(Icons.person, size: 18, color: Colors.grey)
+                : null,
+          ),
+          SizedBox(width: 8),
+
+          // Peer Nickname
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  widget.arguments.peerNickname,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                // ✅ Show online status
+                UserStatusIndicator(
+                  userId: widget.arguments.peerId,
+                  showText: true,
+                  size: 8,
+                  textColor: Colors.white70,
+                ),
+              ],
+            ),
+          ),
+
+          // Minimize button
+          IconButton(
+            icon: Icon(Icons.remove, color: Colors.white, size: 22),
+            onPressed: _minimizeBubble,
+            padding: EdgeInsets.zero,
+            constraints: BoxConstraints(minWidth: 36, minHeight: 36),
+            tooltip: 'Minimize',
+          ),
+          SizedBox(width: 4),
+
+          // Close button
+          IconButton(
+            icon: Icon(Icons.close, color: Colors.white, size: 22),
+            onPressed: _closeBubble,
+            padding: EdgeInsets.zero,
+            constraints: BoxConstraints(minWidth: 36, minHeight: 36),
+            tooltip: 'Close',
+          ),
+        ],
+      ),
+    );
   }
 
   // ✅ MODIFY: _buildMiniChatHeader to use the correct buttons and close keyboard
@@ -2550,9 +2637,15 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             _buildPinnedMessages(),
             _buildListMessage(),
             _buildTypingIndicator(),
-            // Sticker và Feature Menu chỉ nên hiển thị trong main app (đã bị disable trong _buildAdvancedInput)
-            if (_isShowSticker && !widget.isMiniChat) _buildStickers(),
-            if (_showFeaturesMenu && !widget.isMiniChat) _buildFeaturesMenu(),
+            // Sticker và Feature Menu chỉ nên hiển thị trong main app (Normal Mode)
+            if (_isShowSticker &&
+                !widget.isMiniChat &&
+                !widget.isBubbleMode) // ✅ Check Bubble Mode
+              _buildStickers(),
+            if (_showFeaturesMenu &&
+                !widget.isMiniChat &&
+                !widget.isBubbleMode) // ✅ Check Bubble Mode
+              _buildFeaturesMenu(),
             _buildAdvancedInput(),
           ],
         ),
@@ -2565,25 +2658,40 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    // ✅ BUBBLE MODE: Use custom header
+    if (widget.isBubbleMode) {
+      return Scaffold(
+        body: PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, result) {
+            if (didPop) return;
+            // Minimize bubble instead of popping
+            _minimizeBubble();
+          },
+          child: Column(
+            children: [
+              _buildBubbleHeader(), // ✅ Custom header for bubble
+              Expanded(child: _buildChatContent()),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // MINI CHAT MODE (existing)
     if (widget.isMiniChat) {
       return Scaffold(
         body: PopScope(
           canPop: false,
           onPopInvokedWithResult: (didPop, result) {
             if (didPop) return;
-            // Xử lý nút back vật lý bằng cách minimize chat
             _miniChatChannel.invokeMethod('minimize');
           },
           child: Container(
-            // NOTE: Không cần SafeArea hay Container có BoxDecoration ở đây
-            // vì logic đã được bọc trong MiniChatOverlayWidget bên ngoài (lib/main.dart)
             child: Column(
               children: [
                 _buildMiniChatHeader(),
-                // Dùng Expanded để _buildChatContent chiếm hết phần còn lại
-                Expanded(
-                  child: _buildChatContent(),
-                ),
+                Expanded(child: _buildChatContent()),
               ],
             ),
           ),
@@ -2591,7 +2699,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       );
     }
 
-    // ✅ NORMAL MODE: Original UI
+    // NORMAL MODE (Original UI)
     return Scaffold(
       appBar: AppBar(
         title: InkWell(
