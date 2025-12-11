@@ -1,5 +1,4 @@
 // android/app/src/main/kotlin/hust/appchat/MainActivity.kt
-// ✅ GIAI ĐOẠN 4: ADD BUBBLE API V2 CHANNEL
 
 package hust.appchat
 
@@ -18,7 +17,8 @@ import io.flutter.plugin.common.EventChannel
 import hust.appchat.bubble.BubbleManager
 import hust.appchat.bubble.BubbleOverlayService
 import hust.appchat.notifications.BubbleNotificationService
-import hust.appchat.notifications.BubbleNotificationManager // IMPORT BỔ SUNG CHO GIAI ĐOẠN 7
+import hust.appchat.notifications.BubbleNotificationManager
+import hust.appchat.notifications.showBubbleNotification // ✅ IMPORT BỔ SUNG CHO FIX
 import hust.appchat.shortcuts.ShortcutHelper
 
 class MainActivity : FlutterActivity() {
@@ -120,8 +120,8 @@ class MainActivity : FlutterActivity() {
                             if (userId != null && userName != null && message != null) {
                                 android.util.Log.d("MainActivity", "🎈 Creating Bubble API notification: $userName")
 
-                                // Show bubble notification
-                                BubbleNotificationService.showBubbleNotification(
+                                // Show bubble notification (FIX: Use imported function)
+                                showBubbleNotification(
                                     context = this,
                                     userId = userId,
                                     userName = userName,
@@ -352,8 +352,8 @@ class MainActivity : FlutterActivity() {
                                 android.util.Log.d("MainActivity", "🎈 Legacy showBubble: $userName")
 
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                                    // Use Bubble API
-                                    BubbleNotificationService.showBubbleNotification(
+                                    // Use Bubble API (FIX: Use imported function)
+                                    showBubbleNotification(
                                         context = this,
                                         userId = userId,
                                         userName = userName,

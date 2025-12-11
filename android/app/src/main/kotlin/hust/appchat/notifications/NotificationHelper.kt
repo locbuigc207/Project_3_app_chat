@@ -12,21 +12,23 @@ import android.graphics.drawable.Icon
 import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
+import androidx.core.app.NotificationCompat // Thêm từ phần FIX
 import androidx.core.app.Person
-import androidx.core.content.pm.ShortcutManagerCompat
+import androidx.core.content.pm.ShortcutManagerCompat // Phần 1 có, phần 2 không (không dùng nhưng giữ theo phần 1)
 import androidx.core.graphics.drawable.IconCompat
-import com.bumptech.glide.Glide // GIAI ĐOẠN 2 & 3: Cần giữ để hỗ trợ các hàm cũ chưa loại bỏ hoàn toàn
-import com.bumptech.glide.load.engine.DiskCacheStrategy // GIAI ĐOẠN 2 & 3: Cần giữ để hỗ trợ các hàm cũ chưa loại bỏ hoàn toàn
-import com.bumptech.glide.request.RequestOptions // GIAI ĐOẠN 2 & 3: Cần giữ để hỗ trợ các hàm cũ chưa loại bỏ hoàn toàn
+import com.bumptech.glide.Glide
+import com.bumptech.glide.load.engine.DiskCacheStrategy
+import com.bumptech.glide.request.RequestOptions
 import hust.appchat.BubbleActivity
 import hust.appchat.MainActivity
 import hust.appchat.R
-import hust.appchat.shortcuts.AvatarLoader // ✅ GIAI ĐOẠN 6: Thêm import mới
+import hust.appchat.shortcuts.AvatarLoader
 import hust.appchat.shortcuts.ShortcutHelper
 import kotlinx.coroutines.*
 
 /**
- * ✅ GIAI ĐOẠN 6: Notification Helper with AvatarLoader Integration and ShortcutHelper delegation
+ * ✅ Notification Helper with AvatarLoader Integration and ShortcutHelper delegation
+ * Hợp nhất GIAI ĐOẠN 6 (logic chung) và FIX (cải tiến builder)
  */
 object NotificationHelper {
     private const val TAG = "NotificationHelper"
@@ -36,8 +38,7 @@ object NotificationHelper {
     private const val CHANNEL_DESC = "Notifications for chat messages"
     private const val BASE_NOTIFICATION_ID = 1000
 
-    // ✅ REMOVED: Old avatar cache (now using AvatarLoader)
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob()) // Giữ lại scope từ phần 2/FIX (Phần 1 REMOVED nhưng vẫn có hàm gọi scope.cancel() trong cleanup)
 
     // ========================================
     // INITIALIZATION
@@ -159,7 +160,7 @@ object NotificationHelper {
     }
 
     // ========================================
-    // NOTIFICATION BUILDER
+    // NOTIFICATION BUILDER (Sử dụng logic FIX từ phần 2)
     // ========================================
 
     @RequiresApi(Build.VERSION_CODES.R)
@@ -172,16 +173,26 @@ object NotificationHelper {
         bubbleMetadata: Notification.BubbleMetadata
     ): Notification {
 
-        val person = Person.Builder()
-            .setName(userName)
-            .setIcon(avatarIcon)
-            .setKey(userId)
-            .setImportant(true)
-            .build()
+        // ✅ FIX 1: Create Person properly
+        val person = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            Person.Builder()
+                .setName(userName)
+                .setIcon(avatarIcon)
+                .setKey(userId)
+                .setImportant(true)
+                .build()
+        } else {
+            null
+        }
 
-        val messagingStyle = Notification.MessagingStyle(person)
-            .setConversationTitle(userName)
-            .addMessage(message, System.currentTimeMillis(), person)
+        // ✅ FIX 2: Build MessagingStyle correctly
+        val messagingStyle = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && person != null) {
+            Notification.MessagingStyle(person)
+                .addMessage(message, System.currentTimeMillis(), person)
+        } else {
+            Notification.MessagingStyle(userName)
+                .addMessage(message, System.currentTimeMillis(), null as CharSequence?)
+        }
 
         val tapIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -243,8 +254,7 @@ object NotificationHelper {
 
     /**
      * ✅ Kiểm tra xem notification có khớp với shortcut không
-     * Tên hàm thống nhất: verifyShortcut (GĐ6) hoặc verifyShortcutExists (GĐ3)
-     * Giữ lại hàm của GĐ6 với tên: verifyShortcut
+     * Tên hàm thống nhất: verifyShortcut (GĐ6)
      */
     fun verifyShortcut(context: Context, userId: String): Boolean {
         return ShortcutHelper.shortcutExists(context, userId)
@@ -273,13 +283,6 @@ object NotificationHelper {
         avatarUrl: String,
         userName: String
     ): Icon = withContext(Dispatchers.IO) {
-        // Lưu ý: Trong GĐ6, phương thức này không được sử dụng. Giữ lại logic GĐ3/2.
-
-        // Trong GĐ6, đã loại bỏ avatarCache cũ. Để không lỗi, ta dùng AvatarLoader.
-        // Tuy nhiên, vì yêu cầu chỉ tích hợp những gì có trong 2 phần, ta phải giữ lại logic GĐ3/2.
-        // NHƯNG, GĐ6 đã loại bỏ 'avatarCache' và 'scope.cancel()' đã bị loại bỏ/thay thế.
-        // Ta sẽ dùng logic của AvatarLoader để đảm bảo hoạt động, nhưng giữ tên hàm cũ.
-
         try {
             return@withContext AvatarLoader.loadAvatarIconAsync(context, avatarUrl, userName)
         } catch (e: Exception) {
@@ -296,7 +299,7 @@ object NotificationHelper {
         avatarUrl: String,
         userName: String
     ): IconCompat = withContext(Dispatchers.IO) {
-        // Trong GĐ6, phương thức này không được sử dụng. Giữ lại logic GĐ3/2.
+        // Sử dụng logic GĐ3/2 vì logic này có trong phần 1
         try {
             val bitmap = if (avatarUrl.isNotEmpty()) {
                 Glide.with(context)
@@ -326,6 +329,7 @@ object NotificationHelper {
 
     /**
      * ✅ GIAI ĐOẠN 6: AVATAR CONVERSION (Giữ lại hàm này cho Notification.Builder.setLargeIcon)
+     * Sử dụng phiên bản gọn hơn (từ phần 2/FIX)
      */
     private fun loadAvatarBitmap(context: Context, icon: Icon): Bitmap? {
         return try {
@@ -370,7 +374,7 @@ object NotificationHelper {
     }
 
     // ========================================
-    // LEGACY NOTIFICATION
+    // LEGACY NOTIFICATION (Sử dụng logic từ phần 2/FIX để đảm bảo tính gọn)
     // ========================================
 
     private fun showLegacyNotification(
@@ -532,8 +536,7 @@ object NotificationHelper {
     // ========================================
 
     /**
-     * ✅ GIAI ĐOẠN 3: clearCache (Đã bị thay thế bởi clearAllAvatarCache trong GĐ6, nhưng giữ lại nếu có)
-     * Vì trong GĐ3 có, GĐ6 không có, nên giữ lại (Mặc dù nó là alias của clearAllAvatarCache)
+     * ✅ GIAI ĐOẠN 3: clearCache (Đã bị thay thế bởi clearAllAvatarCache trong GĐ6, nhưng giữ lại)
      */
     fun clearCache() {
         clearAllAvatarCache() // Delegate to GĐ6's functionality
