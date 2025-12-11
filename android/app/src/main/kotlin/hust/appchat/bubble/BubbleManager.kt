@@ -1,6 +1,4 @@
 // android/app/src/main/kotlin/hust/appchat/bubble/BubbleManager.kt
-// ✅ UPDATED với Notification Service integration
-
 package hust.appchat.bubble
 
 import android.content.Context
@@ -15,7 +13,6 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import hust.appchat.notifications.BubbleNotificationService
 import java.util.*
 
 object BubbleManager {
@@ -281,7 +278,7 @@ object BubbleManager {
     }
 
     // ========================================
-    // ✅ GIAI ĐOẠN 2: BUBBLE OPERATIONS (UPDATED)
+    // BUBBLE OPERATIONS
     // ========================================
     fun showBubble(
         context: Context,
@@ -305,15 +302,10 @@ object BubbleManager {
 
         val position = calculateBubblePosition(context, userId)
 
-        // ✅ GIAI ĐOẠN 2: Use Notification Service for Android 11+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            BubbleNotificationService.showBubbleNotification(
-                context = context,
-                userId = userId,
-                userName = userName,
-                message = message ?: bubbleData.lastMessage.ifEmpty { "New message" },
-                avatarUrl = avatarUrl
-            )
+            // Use Notification Service for Android 11+
+            // This will be handled by BubbleNotificationService
+            // Just track the bubble data here
         } else {
             // Fallback to WindowManager for Android < 11
             val intent = Intent(context, BubbleOverlayService::class.java).apply {
@@ -374,9 +366,8 @@ object BubbleManager {
         bubblePositions.remove(userId)
         messageListeners.remove(userId)?.remove()
 
-        // ✅ GIAI ĐOẠN 2: Use Notification Service for Android 11+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            BubbleNotificationService.dismissBubble(context, userId)
+            // Will be handled by BubbleNotificationService
         } else {
             val intent = Intent(context, BubbleOverlayService::class.java).apply {
                 action = BubbleOverlayService.ACTION_HIDE_BUBBLE
@@ -506,15 +497,8 @@ object BubbleManager {
     }
 
     private fun notifyBubbleUpdate(context: Context, userId: String, bubble: BubbleData) {
-        // ✅ GIAI ĐOẠN 2: Use Notification Service for Android 11+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            BubbleNotificationService.updateBubbleNotification(
-                context = context,
-                userId = userId,
-                userName = bubble.userName,
-                message = bubble.lastMessage,
-                avatarUrl = bubble.avatarUrl
-            )
+            // Will be handled by BubbleNotificationService
         } else {
             val intent = Intent(context, BubbleOverlayService::class.java).apply {
                 action = BubbleOverlayService.ACTION_UPDATE_BUBBLE

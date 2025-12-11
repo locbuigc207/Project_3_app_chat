@@ -18,18 +18,14 @@ import hust.appchat.bubble.BubbleManager
 import hust.appchat.bubble.BubbleOverlayService
 import hust.appchat.notifications.BubbleNotificationService
 import hust.appchat.notifications.BubbleNotificationManager
-import hust.appchat.notifications.showBubbleNotification // ✅ IMPORT BỔ SUNG CHO FIX
 import hust.appchat.shortcuts.ShortcutHelper
 
 class MainActivity : FlutterActivity() {
     // ========================================
-    // ✅ GIAI ĐOẠN 4: CHANNELS
+    // CHANNELS
     // ========================================
-    // Legacy channel (WindowManager) - Keep for backward compatibility
     private val CHANNEL = "chat_bubble_overlay"
     private val EVENT_CHANNEL = "chat_bubble_events"
-
-    // ✅ NEW: Bubble API V2 channel
     private val CHANNEL_V2 = "chat_bubbles_v2"
     private val EVENT_CHANNEL_V2 = "chat_bubble_events_v2"
 
@@ -38,7 +34,7 @@ class MainActivity : FlutterActivity() {
     private var bubbleClickReceiver: BroadcastReceiver? = null
     private var bubbleMessageReceiver: BroadcastReceiver? = null
     private var eventSink: EventChannel.EventSink? = null
-    private var eventSinkV2: EventChannel.EventSink? = null // ✅ NEW
+    private var eventSinkV2: EventChannel.EventSink? = null
     private var pendingPermissionResult: MethodChannel.Result? = null
 
     private var receiversRegistered = false
@@ -77,11 +73,8 @@ class MainActivity : FlutterActivity() {
             io.flutter.embedding.engine.dart.DartExecutor.DartEntrypoint.createDefault()
         )
 
-        // Setup legacy channel
         setupMethodChannel(flutterEngine)
         setupEventChannel(flutterEngine)
-
-        // ✅ GIAI ĐOẠN 4: Setup V2 channels
         setupMethodChannelV2(flutterEngine)
         setupEventChannelV2(flutterEngine)
 
@@ -90,7 +83,7 @@ class MainActivity : FlutterActivity() {
     }
 
     // ========================================
-    // ✅ GIAI ĐOẠN 4: V2 METHOD CHANNEL
+    // V2 METHOD CHANNEL
     // ========================================
     private fun setupMethodChannelV2(flutterEngine: FlutterEngine) {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_V2)
@@ -99,13 +92,11 @@ class MainActivity : FlutterActivity() {
 
                 try {
                     when (call.method) {
-                        // ✅ Check if Bubble API is supported
                         "checkBubbleApiSupport" -> {
                             val isSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
                             result.success(isSupported)
                         }
 
-                        // ✅ Show bubble using Bubble API
                         "showBubble" -> {
                             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
                                 result.error("UNSUPPORTED", "Bubble API requires Android 11+", null)
@@ -120,8 +111,7 @@ class MainActivity : FlutterActivity() {
                             if (userId != null && userName != null && message != null) {
                                 android.util.Log.d("MainActivity", "🎈 Creating Bubble API notification: $userName")
 
-                                // Show bubble notification (FIX: Use imported function)
-                                showBubbleNotification(
+                                BubbleNotificationService.showBubbleNotification(
                                     context = this,
                                     userId = userId,
                                     userName = userName,
@@ -135,7 +125,6 @@ class MainActivity : FlutterActivity() {
                             }
                         }
 
-                        // ✅ Update bubble message
                         "updateBubble" -> {
                             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
                                 result.success(false)
@@ -149,7 +138,7 @@ class MainActivity : FlutterActivity() {
                                 BubbleNotificationService.updateBubbleNotification(
                                     context = this,
                                     userId = userId,
-                                    userName = "", // Will fetch from existing
+                                    userName = "",
                                     message = message,
                                     avatarUrl = ""
                                 )
@@ -159,7 +148,6 @@ class MainActivity : FlutterActivity() {
                             }
                         }
 
-                        // ✅ Hide bubble
                         "hideBubble" -> {
                             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
                                 result.success(false)
@@ -175,7 +163,6 @@ class MainActivity : FlutterActivity() {
                             }
                         }
 
-                        // ✅ Hide all bubbles
                         "hideAllBubbles" -> {
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                                 BubbleNotificationService.dismissAllBubbles(this)
@@ -183,13 +170,11 @@ class MainActivity : FlutterActivity() {
                             result.success(true)
                         }
 
-                        // ✅ Get shortcut count
                         "getShortcutCount" -> {
                             val count = ShortcutHelper.getShortcutCount(this)
                             result.success(count)
                         }
 
-                        // ✅ Verify shortcut exists
                         "verifyShortcut" -> {
                             val userId = call.argument<String>("userId")
                             if (userId != null) {
@@ -200,9 +185,6 @@ class MainActivity : FlutterActivity() {
                             }
                         }
 
-                        // ========================================
-                        // ✅ GIAI ĐOẠN 7: Send message from user
-                        // ========================================
                         "sendMessage" -> {
                             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
                                 result.success(false)
@@ -240,9 +222,6 @@ class MainActivity : FlutterActivity() {
                             }
                         }
 
-                        // ========================================
-                        // ✅ GIAI ĐOẠN 7: Get message count
-                        // ========================================
                         "getMessageCount" -> {
                             val userId = call.argument<String>("userId")
                             if (userId != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -254,18 +233,12 @@ class MainActivity : FlutterActivity() {
                             }
                         }
 
-                        // ========================================
-                        // ✅ GIAI ĐOẠN 7: Get bubble statistics
-                        // ========================================
                         "getBubbleStats" -> {
                             val stats = BubbleNotificationService.getBubbleStats()
                             android.util.Log.d("MainActivity", "📊 Bubble stats: $stats")
                             result.success(stats)
                         }
 
-                        // ========================================
-                        // ✅ GIAI ĐOẠN 7: Clear message history
-                        // ========================================
                         "clearMessageHistory" -> {
                             val userId = call.argument<String>("userId")
                             if (userId != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -277,9 +250,6 @@ class MainActivity : FlutterActivity() {
                             }
                         }
 
-                        // ========================================
-                        // ✅ GIAI ĐOẠN 7: Debug - Log bubble state
-                        // ========================================
                         "logBubbleState" -> {
                             BubbleNotificationService.logBubbleState()
                             android.util.Log.d("MainActivity", "📊 Logged bubble state")
@@ -301,7 +271,7 @@ class MainActivity : FlutterActivity() {
     }
 
     // ========================================
-    // ✅ GIAI ĐOẠN 4: V2 EVENT CHANNEL
+    // V2 EVENT CHANNEL
     // ========================================
     private fun setupEventChannelV2(flutterEngine: FlutterEngine) {
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL_V2)
@@ -309,9 +279,6 @@ class MainActivity : FlutterActivity() {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                     android.util.Log.d("MainActivity", "✅ V2 EventChannel listener attached")
                     eventSinkV2 = events
-
-                    // Reuse existing broadcast receivers
-                    // They will forward events to both eventSink and eventSinkV2
                 }
 
                 override fun onCancel(arguments: Any?) {
@@ -324,7 +291,7 @@ class MainActivity : FlutterActivity() {
     }
 
     // ========================================
-    // LEGACY METHOD CHANNEL (Keep for backward compatibility)
+    // LEGACY METHOD CHANNEL
     // ========================================
     private fun setupMethodChannel(flutterEngine: FlutterEngine) {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
@@ -352,8 +319,7 @@ class MainActivity : FlutterActivity() {
                                 android.util.Log.d("MainActivity", "🎈 Legacy showBubble: $userName")
 
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                                    // Use Bubble API (FIX: Use imported function)
-                                    showBubbleNotification(
+                                    BubbleNotificationService.showBubbleNotification(
                                         context = this,
                                         userId = userId,
                                         userName = userName,
@@ -361,7 +327,6 @@ class MainActivity : FlutterActivity() {
                                         avatarUrl = avatarUrl ?: ""
                                     )
                                 } else {
-                                    // Fallback to WindowManager
                                     BubbleManager.showBubble(
                                         this,
                                         userId,
@@ -457,7 +422,7 @@ class MainActivity : FlutterActivity() {
     }
 
     // ========================================
-    // EVENT CHANNEL SETUP (Forward to both sinks)
+    // EVENT CHANNEL SETUP
     // ========================================
     private fun setupEventChannel(flutterEngine: FlutterEngine) {
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
@@ -479,7 +444,7 @@ class MainActivity : FlutterActivity() {
     }
 
     // ========================================
-    // PERMISSION HANDLING (Legacy)
+    // PERMISSION HANDLING
     // ========================================
     private fun checkOverlayPermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -526,7 +491,7 @@ class MainActivity : FlutterActivity() {
     }
 
     // ========================================
-    // BROADCAST RECEIVERS (Forward to both sinks)
+    // BROADCAST RECEIVERS
     // ========================================
     private fun setupBubbleListeners() {
         if (receiversRegistered) {
@@ -555,7 +520,6 @@ class MainActivity : FlutterActivity() {
                         "avatarUrl" to avatarUrl
                     )
 
-                    // ✅ Forward to both sinks
                     try {
                         eventSink?.success(eventData)
                         eventSinkV2?.success(eventData)
@@ -665,7 +629,7 @@ class MainActivity : FlutterActivity() {
     override fun onDestroy() {
         unsetupBubbleListeners()
         eventSink = null
-        eventSinkV2 = null // ✅ NEW
+        eventSinkV2 = null
         super.onDestroy()
     }
 }
