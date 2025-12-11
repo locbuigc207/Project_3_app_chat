@@ -1,29 +1,16 @@
 // lib/services/bubble_service_v2.dart
-// ✅ GIAI ĐOẠN 4: BUBBLE API SERVICE
-
 import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:flutter_chat_demo/models/bubble_models.dart'; // ✅ Import shared models
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 🎯 SERVICE MỚI - Sử dụng Bubble API (Android 11+)
-///
-/// Features:
-/// - Bubble API notifications thay vì WindowManager overlays
-/// - Automatic shortcut management
-/// - Better system integration
-/// - Improved battery efficiency
 class BubbleServiceV2 {
-  // ========================================
-  // CHANNELS
-  // ========================================
   static const MethodChannel _channel = MethodChannel('chat_bubbles_v2');
-  static const EventChannel _eventChannel = EventChannel('chat_bubble_events_v2');
+  static const EventChannel _eventChannel =
+      EventChannel('chat_bubble_events_v2');
 
-  // ========================================
-  // SINGLETON
-  // ========================================
   static final BubbleServiceV2 _instance = BubbleServiceV2._internal();
   factory BubbleServiceV2() => _instance;
 
@@ -31,32 +18,26 @@ class BubbleServiceV2 {
     _initialize();
   }
 
-  // ========================================
-  // STATE
-  // ========================================
   bool _isInitialized = false;
   bool _isBubbleApiSupported = false;
   StreamSubscription? _eventSubscription;
   SharedPreferences? _prefs;
 
-  // Active bubbles tracking
   final Map<String, BubbleData> _activeBubbles = {};
 
-  // Stream controllers
   final _bubbleClickController = StreamController<BubbleClickEvent>.broadcast();
-  Stream<BubbleClickEvent> get bubbleClickStream => _bubbleClickController.stream;
+  Stream<BubbleClickEvent> get bubbleClickStream =>
+      _bubbleClickController.stream;
 
-  final _activeBubblesController = StreamController<Map<String, BubbleData>>.broadcast();
-  Stream<Map<String, BubbleData>> get activeBubblesStream => _activeBubblesController.stream;
+  final _activeBubblesController =
+      StreamController<Map<String, BubbleData>>.broadcast();
+  Stream<Map<String, BubbleData>> get activeBubblesStream =>
+      _activeBubblesController.stream;
 
-  // ========================================
-  // INITIALIZATION
-  // ========================================
   Future<void> _initialize() async {
     if (_isInitialized) return;
 
     try {
-      // Check if Bubble API is supported
       _isBubbleApiSupported = await checkBubbleApiSupport();
 
       if (!_isBubbleApiSupported) {
@@ -65,14 +46,8 @@ class BubbleServiceV2 {
       }
 
       print('✅ Bubble API is supported');
-
-      // Setup event listener
       _setupEventListener();
-
-      // Initialize SharedPreferences
       _prefs = await SharedPreferences.getInstance();
-
-      // Restore saved bubbles
       await _restoreBubbles();
 
       _isInitialized = true;
@@ -82,7 +57,6 @@ class BubbleServiceV2 {
     }
   }
 
-  /// Check if device supports Bubble API (Android 11+)
   Future<bool> checkBubbleApiSupport() async {
     if (!Platform.isAndroid) return false;
 
@@ -95,12 +69,11 @@ class BubbleServiceV2 {
     }
   }
 
-  /// Setup event listener for bubble interactions
   void _setupEventListener() {
     try {
       _eventSubscription?.cancel();
       _eventSubscription = _eventChannel.receiveBroadcastStream().listen(
-            (event) {
+        (event) {
           if (event is Map) {
             _handleBubbleEvent(event);
           }
@@ -122,26 +95,19 @@ class BubbleServiceV2 {
       final userId = event['userId'] as String?;
       final userName = event['userName'] as String?;
       final avatarUrl = event['avatarUrl'] as String?;
+      final message = event['message'] as String? ?? '';
 
       if (userId != null) {
         _bubbleClickController.add(BubbleClickEvent(
           userId: userId,
           userName: userName ?? '',
           avatarUrl: avatarUrl ?? '',
+          message: message,
         ));
       }
     }
   }
 
-  // ========================================
-  // CORE BUBBLE OPERATIONS
-  // ========================================
-
-  /// Show a chat bubble notification
-  ///
-  /// This creates:
-  /// 1. A dynamic shortcut (required for Bubble API)
-  /// 2. A bubble notification with the chat interface
   Future<bool> showBubble({
     required String userId,
     required String userName,
@@ -156,16 +122,11 @@ class BubbleServiceV2 {
     try {
       print('🎈 Showing bubble for: $userName');
 
-      // Check if bubble already exists
       if (_activeBubbles.containsKey(userId)) {
         print('ℹ️ Bubble already exists, updating message');
-        return await updateBubble(
-          userId: userId,
-          message: message,
-        );
+        return await updateBubble(userId: userId, message: message);
       }
 
-      // Invoke native method
       final result = await _channel.invokeMethod<bool>('showBubble', {
         'userId': userId,
         'userName': userName,
@@ -174,7 +135,6 @@ class BubbleServiceV2 {
       });
 
       if (result == true) {
-        // Track active bubble
         _activeBubbles[userId] = BubbleData(
           userId: userId,
           userName: userName,
@@ -198,7 +158,6 @@ class BubbleServiceV2 {
     }
   }
 
-  /// Update existing bubble with new message
   Future<bool> updateBubble({
     required String userId,
     required String message,
@@ -218,7 +177,6 @@ class BubbleServiceV2 {
       });
 
       if (result == true) {
-        // Update local state
         _activeBubbles[userId] = BubbleData(
           userId: bubble.userId,
           userName: bubble.userName,
@@ -242,7 +200,6 @@ class BubbleServiceV2 {
     }
   }
 
-  /// Hide a specific bubble
   Future<bool> hideBubble(String userId) async {
     if (!_isBubbleApiSupported) return false;
 
@@ -269,7 +226,6 @@ class BubbleServiceV2 {
     }
   }
 
-  /// Hide all active bubbles
   Future<void> hideAllBubbles() async {
     if (!_isBubbleApiSupported) return;
 
@@ -286,11 +242,6 @@ class BubbleServiceV2 {
     }
   }
 
-  // ========================================
-  // SHORTCUT MANAGEMENT
-  // ========================================
-
-  /// Get current shortcut count
   Future<int> getShortcutCount() async {
     try {
       final result = await _channel.invokeMethod<int>('getShortcutCount');
@@ -301,7 +252,6 @@ class BubbleServiceV2 {
     }
   }
 
-  /// Check if can create more shortcuts (max 5)
   Future<bool> canCreateMoreShortcuts() async {
     try {
       final count = await getShortcutCount();
@@ -311,7 +261,6 @@ class BubbleServiceV2 {
     }
   }
 
-  /// Verify shortcut exists for user
   Future<bool> verifyShortcut(String userId) async {
     try {
       final result = await _channel.invokeMethod<bool>('verifyShortcut', {
@@ -324,14 +273,10 @@ class BubbleServiceV2 {
     }
   }
 
-  // ========================================
-  // PERSISTENCE
-  // ========================================
-
   Future<void> _saveBubbles() async {
     try {
       final bubblesData = _activeBubbles.map(
-            (key, value) => MapEntry(key, value.toJson()),
+        (key, value) => MapEntry(key, value.toJson()),
       );
 
       await _prefs?.setString('bubbles_v2', bubblesData.toString());
@@ -346,8 +291,6 @@ class BubbleServiceV2 {
       final savedData = _prefs?.getString('bubbles_v2');
       if (savedData == null) return;
 
-      // Parse and restore bubbles
-      // Implementation depends on your data structure
       print('📦 Restoring saved bubbles');
     } catch (e) {
       print('❌ Error restoring bubbles: $e');
@@ -363,10 +306,6 @@ class BubbleServiceV2 {
     }
   }
 
-  // ========================================
-  // GETTERS
-  // ========================================
-
   bool get isSupported => _isBubbleApiSupported;
   bool get isInitialized => _isInitialized;
 
@@ -376,72 +315,10 @@ class BubbleServiceV2 {
 
   int get activeBubbleCount => _activeBubbles.length;
 
-  // ========================================
-  // CLEANUP
-  // ========================================
-
   void dispose() {
     _eventSubscription?.cancel();
     _bubbleClickController.close();
     _activeBubblesController.close();
     _isInitialized = false;
   }
-}
-
-// ========================================
-// DATA MODELS
-// ========================================
-
-class BubbleData {
-  final String userId;
-  final String userName;
-  final String avatarUrl;
-  final String lastMessage;
-  final DateTime timestamp;
-  final int unreadCount;
-
-  BubbleData({
-    required this.userId,
-    required this.userName,
-    required this.avatarUrl,
-    required this.lastMessage,
-    required this.timestamp,
-    this.unreadCount = 0,
-  });
-
-  Map<String, dynamic> toJson() {
-    return {
-      'userId': userId,
-      'userName': userName,
-      'avatarUrl': avatarUrl,
-      'lastMessage': lastMessage,
-      'timestamp': timestamp.millisecondsSinceEpoch,
-      'unreadCount': unreadCount,
-    };
-  }
-
-  factory BubbleData.fromJson(Map<String, dynamic> json) {
-    return BubbleData(
-      userId: json['userId'] ?? '',
-      userName: json['userName'] ?? '',
-      avatarUrl: json['avatarUrl'] ?? '',
-      lastMessage: json['lastMessage'] ?? '',
-      timestamp: DateTime.fromMillisecondsSinceEpoch(
-        json['timestamp'] ?? DateTime.now().millisecondsSinceEpoch,
-      ),
-      unreadCount: json['unreadCount'] ?? 0,
-    );
-  }
-}
-
-class BubbleClickEvent {
-  final String userId;
-  final String userName;
-  final String avatarUrl;
-
-  BubbleClickEvent({
-    required this.userId,
-    required this.userName,
-    required this.avatarUrl,
-  });
 }

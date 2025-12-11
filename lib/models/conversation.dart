@@ -38,7 +38,7 @@ class Conversation {
     };
   }
 
-  // ✅ FIX: Properly handle Timestamp conversion
+  // ✅ FIX 5: Properly handle Timestamp conversion
   factory Conversation.fromDocument(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>?;
 
@@ -46,11 +46,18 @@ class Conversation {
       throw Exception('Conversation document data is null');
     }
 
-    // ✅ Helper function to convert Timestamp to String
+    // ✅ FIX 5: Helper function to convert Timestamp to String safely
     String _getStringValue(dynamic value, {String defaultValue = '0'}) {
       if (value == null) return defaultValue;
       if (value is String) return value;
-      if (value is Timestamp) return value.millisecondsSinceEpoch.toString();
+      if (value is Timestamp) {
+        try {
+          return value.millisecondsSinceEpoch.toString();
+        } catch (e) {
+          print('⚠️ Error converting Timestamp: $e');
+          return defaultValue;
+        }
+      }
       if (value is int) return value.toString();
       return defaultValue;
     }
@@ -58,7 +65,14 @@ class Conversation {
     String? _getOptionalStringValue(dynamic value) {
       if (value == null) return null;
       if (value is String) return value;
-      if (value is Timestamp) return value.millisecondsSinceEpoch.toString();
+      if (value is Timestamp) {
+        try {
+          return value.millisecondsSinceEpoch.toString();
+        } catch (e) {
+          print('⚠️ Error converting optional Timestamp: $e');
+          return null;
+        }
+      }
       if (value is int) return value.toString();
       return null;
     }
@@ -66,24 +80,42 @@ class Conversation {
     List<String> _getParticipants(dynamic value) {
       if (value == null) return [];
       if (value is List) {
-        return value.map((e) => e.toString()).toList();
+        try {
+          return value.map((e) => e.toString()).toList();
+        } catch (e) {
+          print('⚠️ Error converting participants: $e');
+          return [];
+        }
       }
       return [];
     }
 
-    return Conversation(
-      id: doc.id,
-      isGroup: data[FirestoreConstants.isGroup] ?? false,
-      participants: _getParticipants(data[FirestoreConstants.participants]),
-      lastMessage: data[FirestoreConstants.lastMessage] ?? '',
-      lastMessageTime: _getStringValue(
-        data[FirestoreConstants.lastMessageTime],
-        defaultValue: '0',
-      ),
-      lastMessageType: data[FirestoreConstants.lastMessageType] ?? 0,
-      isPinned: data['isPinned'] ?? false,
-      pinnedAt: _getOptionalStringValue(data['pinnedAt']),
-      isMuted: data['isMuted'] ?? false,
-    );
+    try {
+      return Conversation(
+        id: doc.id,
+        isGroup: data[FirestoreConstants.isGroup] ?? false,
+        participants: _getParticipants(data[FirestoreConstants.participants]),
+        lastMessage: data[FirestoreConstants.lastMessage] ?? '',
+        lastMessageTime: _getStringValue(
+          data[FirestoreConstants.lastMessageTime],
+          defaultValue: '0',
+        ),
+        lastMessageType: data[FirestoreConstants.lastMessageType] ?? 0,
+        isPinned: data['isPinned'] ?? false,
+        pinnedAt: _getOptionalStringValue(data['pinnedAt']),
+        isMuted: data['isMuted'] ?? false,
+      );
+    } catch (e) {
+      print('❌ Error creating Conversation from document: $e');
+      // Return a minimal valid conversation on error
+      return Conversation(
+        id: doc.id,
+        isGroup: false,
+        participants: [],
+        lastMessage: '',
+        lastMessageTime: '0',
+        lastMessageType: 0,
+      );
+    }
   }
 }

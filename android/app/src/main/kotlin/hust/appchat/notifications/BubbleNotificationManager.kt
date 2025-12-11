@@ -34,6 +34,9 @@ object BubbleNotificationManager {
     private const val MAX_MESSAGE_HISTORY = 10
     private const val BASE_NOTIFICATION_ID = 1000
 
+    // ✅ FIX 2: Add CHANNEL_ID constant (required for notifications)
+    private const val CHANNEL_ID = "chat_messages"
+
     // Thread-safe message storage
     private val messageHistory = ConcurrentHashMap<String, MutableList<Message>>()
 
@@ -238,7 +241,7 @@ object BubbleNotificationManager {
             )
 
             // Build notification
-            val notification = Notification.Builder(context, NotificationHelper.CHANNEL_ID)
+            val notification = Notification.Builder(context, CHANNEL_ID) // ✅ FIX 3: Use local CHANNEL_ID
                 .setSmallIcon(R.drawable.ic_notification)
                 .setLargeIcon(loadAvatarBitmap(context, avatarIcon))
                 .setStyle(style)

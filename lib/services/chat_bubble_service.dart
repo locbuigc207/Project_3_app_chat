@@ -1,9 +1,10 @@
-// lib/services/chat_bubble_service.dart - COMPLETE FIXED (Prevent Crashes)
+// lib/services/chat_bubble_service.dart
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:flutter_chat_demo/models/bubble_models.dart'; // ✅ Import shared models
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ChatBubbleService {
@@ -20,7 +21,6 @@ class ChatBubbleService {
     });
   }
 
-  // Stream Controllers
   final _activeBubblesController =
       StreamController<Map<String, BubbleData>>.broadcast();
   Stream<Map<String, BubbleData>> get activeBubblesStream =>
@@ -35,15 +35,13 @@ class ChatBubbleService {
   Stream<MiniChatMessage> get miniChatMessageStream =>
       _miniChatMessageController.stream;
 
-  // State Management
   final Map<String, BubbleData> _activeBubbles = {};
   StreamSubscription? _eventSubscription;
   bool _isInitialized = false;
 
   DateTime? _lastBubbleOperation;
-  static const _minOperationInterval = Duration(milliseconds: 500); // ✅ Reduced
+  static const _minOperationInterval = Duration(milliseconds: 500);
 
-  // Persistence Storage
   SharedPreferences? _prefs;
   static const _storageKey = 'active_bubbles';
 
@@ -80,6 +78,7 @@ class ChatBubbleService {
     final userId = event['userId'] as String?;
     final userName = event['userName'] as String?;
     final avatarUrl = event['avatarUrl'] as String?;
+    final message = event['message'] as String? ?? '';
 
     if (userId != null && !_bubbleClickController.isClosed) {
       print('✅ Bubble click detected: $userName');
@@ -87,6 +86,7 @@ class ChatBubbleService {
         userId: userId,
         userName: userName ?? '',
         avatarUrl: avatarUrl ?? '',
+        message: message,
       ));
     }
   }
@@ -106,9 +106,6 @@ class ChatBubbleService {
     }
   }
 
-  // ===========================================
-  // PERSISTENCE
-  // ===========================================
   Future<void> _initPrefs() async {
     _prefs ??= await SharedPreferences.getInstance();
   }
@@ -183,9 +180,6 @@ class ChatBubbleService {
     }
   }
 
-  // ===========================================
-  // CORE BUBBLE OPERATIONS
-  // ===========================================
   Future<bool> _canPerformOperation() async {
     if (_lastBubbleOperation != null) {
       final elapsed = DateTime.now().difference(_lastBubbleOperation!);
@@ -261,7 +255,7 @@ class ChatBubbleService {
             'avatarUrl': avatarUrl,
             'lastMessage': lastMessage ?? '',
           }).timeout(
-            Duration(seconds: 5), // ✅ Increased timeout
+            Duration(seconds: 5),
             onTimeout: () {
               print('⏱️ Timeout creating bubble');
               return false;
@@ -358,9 +352,6 @@ class ChatBubbleService {
     }
   }
 
-  // ===========================================
-  // MINI CHAT OPERATIONS
-  // ===========================================
   Future<bool> showMiniChat({
     required String userId,
     required String userName,
@@ -417,9 +408,6 @@ class ChatBubbleService {
     }
   }
 
-  // ===========================================
-  // UTILITY METHODS
-  // ===========================================
   Future<void> updateBubbleMessage({
     required String userId,
     required String message,
@@ -461,73 +449,4 @@ class ChatBubbleService {
     }
     _isInitialized = false;
   }
-}
-
-// ===========================================
-// DATA MODELS
-// ===========================================
-class BubbleData {
-  final String userId;
-  final String userName;
-  final String avatarUrl;
-  final String? lastMessage;
-  final DateTime timestamp;
-  final int unreadCount;
-
-  BubbleData({
-    required this.userId,
-    required this.userName,
-    required this.avatarUrl,
-    this.lastMessage,
-    required this.timestamp,
-    this.unreadCount = 0,
-  });
-
-  Map<String, dynamic> toJson() {
-    return {
-      'userId': userId,
-      'userName': userName,
-      'avatarUrl': avatarUrl,
-      'lastMessage': lastMessage,
-      'timestamp': timestamp.millisecondsSinceEpoch,
-      'unreadCount': unreadCount,
-    };
-  }
-
-  factory BubbleData.fromJson(Map<String, dynamic> json) {
-    return BubbleData(
-      userId: json['userId'] ?? '',
-      userName: json['userName'] ?? '',
-      avatarUrl: json['avatarUrl'] ?? '',
-      lastMessage: json['lastMessage'],
-      timestamp: DateTime.fromMillisecondsSinceEpoch(
-        json['timestamp'] ?? DateTime.now().millisecondsSinceEpoch,
-      ),
-      unreadCount: json['unreadCount'] ?? 0,
-    );
-  }
-}
-
-class BubbleClickEvent {
-  final String userId;
-  final String userName;
-  final String avatarUrl;
-
-  BubbleClickEvent({
-    required this.userId,
-    required this.userName,
-    required this.avatarUrl,
-  });
-}
-
-class MiniChatMessage {
-  final String userId;
-  final String message;
-  final DateTime timestamp;
-
-  MiniChatMessage({
-    required this.userId,
-    required this.message,
-    required this.timestamp,
-  });
 }

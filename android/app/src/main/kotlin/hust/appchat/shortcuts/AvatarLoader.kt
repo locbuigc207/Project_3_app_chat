@@ -162,6 +162,16 @@ object AvatarLoader {
         return iconCache.size()
     }
 
+    /**
+     * ✅ FIX 1: Create default avatar icon (public helper)
+     *
+     * Used when avatar loading fails or for fallback scenarios
+     */
+    @RequiresApi(Build.VERSION_CODES.M)
+    fun createDefaultAvatarIcon(context: Context, name: String): Icon {
+        return createDefaultIcon(context, name)
+    }
+
     // ========================================
     // PRIVATE IMPLEMENTATION
     // ========================================

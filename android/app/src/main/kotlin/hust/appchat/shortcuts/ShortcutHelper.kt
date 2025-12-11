@@ -491,4 +491,30 @@ object ShortcutHelper {
         AvatarLoader.clearAllCache()
         Log.d(TAG, "✅ ShortcutHelper cleanup complete")
     }
+
+    /**
+     * ✅ FIX 7: Get shortcuts as simple data (for Flutter/debugging)
+     */
+    fun getShortcutsInfo(context: Context): List<Map<String, String>> {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) {
+                val manager = context.getSystemService(ShortcutManager::class.java)
+                val shortcuts = manager?.dynamicShortcuts ?: emptyList()
+
+                shortcuts.map { shortcut ->
+                    mapOf(
+                        "id" to shortcut.id,
+                        "label" to (shortcut.shortLabel?.toString() ?: ""),
+                        "rank" to shortcut.rank.toString()
+                    )
+                }
+            } else {
+                emptyList()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error getting shortcuts info: $e")
+            emptyList()
+        }
+    }
 }
+

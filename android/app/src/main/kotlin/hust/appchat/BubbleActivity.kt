@@ -6,6 +6,8 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
 import androidx.annotation.RequiresApi
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -84,10 +86,14 @@ class BubbleActivity : FlutterActivity() {
 
         Log.d(TAG, "✅ onCreate: BubbleActivity initialized")
 
-        // ✅ Extract user info from intent
-        currentUserId = intent.getStringExtra(EXTRA_USER_ID)
-        currentUserName = intent.getStringExtra(EXTRA_USER_NAME)
-        currentAvatarUrl = intent.getStringExtra(EXTRA_AVATAR_URL)
+        // ✅ Extract user info from intent hoặc restored state
+        if (savedInstanceState == null) {
+            currentUserId = intent.getStringExtra(EXTRA_USER_ID)
+            currentUserName = intent.getStringExtra(EXTRA_USER_NAME)
+            currentAvatarUrl = intent.getStringExtra(EXTRA_AVATAR_URL)
+        } else {
+            // Will be restored in onRestoreInstanceState
+        }
 
         Log.d(TAG, "📋 User: $currentUserName (ID: $currentUserId)")
 
@@ -133,6 +139,15 @@ class BubbleActivity : FlutterActivity() {
 
         Log.d(TAG, "🔧 Configuring Flutter Engine for Bubble")
 
+        // ✅ FIX 8: Clear FLAG_NOT_FOCUSABLE to allow keyboard input
+        window.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+
+        // ✅ FIX 8: Ensure window can receive input
+        window.setSoftInputMode(
+            WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or
+                    WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
+        )
+
         // ✅ Setup MethodChannel
         setupMethodChannel(flutterEngine)
 
@@ -142,8 +157,11 @@ class BubbleActivity : FlutterActivity() {
             if (!isFinishing) {
                 isFlutterReady = true
                 sendInitialDataToFlutter()
+
+                // ✅ FIX 8: Show keyboard after data is sent
+                showKeyboard()
             }
-        }, 800) // Chọn giá trị 800ms từ phần thứ hai
+        }, 800)
     }
 
     // ========================================
@@ -246,8 +264,49 @@ class BubbleActivity : FlutterActivity() {
     }
 
     // ========================================
+    // ✅ FIX 8: KEYBOARD MANAGEMENT
+    // ========================================
+
+    /**
+     * Show keyboard for input
+     */
+    private fun showKeyboard() {
+        try {
+            // Request focus on the window
+            window.decorView.requestFocus()
+
+            // Show soft keyboard
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            imm?.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)
+
+            Log.d(TAG, "⌨️ Keyboard show requested")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to show keyboard: $e")
+        }
+    }
+
+    /**
+     * Hide keyboard
+     */
+    private fun hideKeyboard() {
+        try {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            imm?.hideSoftInputFromWindow(window.decorView.windowToken, 0)
+
+            Log.d(TAG, "⌨️ Keyboard hidden")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to hide keyboard: $e")
+        }
+    }
+
+    // ========================================
     // LIFECYCLE CALLBACKS
     // ========================================
+
+    override fun onStart() {
+        super.onStart()
+        Log.d(TAG, "▶️ onStart")
+    }
 
     override fun onResume() {
         super.onResume()
@@ -266,15 +325,26 @@ class BubbleActivity : FlutterActivity() {
     override fun onPause() {
         super.onPause()
         Log.d(TAG, "⏸️ onPause")
+
+        // ✅ FIX 9: Hide keyboard when pausing
+        hideKeyboard()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        Log.d(TAG, "⏹️ onStop")
     }
 
     override fun onDestroy() {
         Log.d(TAG, "💥 onDestroy")
 
+        // ✅ FIX 9: Hide keyboard before cleanup
+        hideKeyboard()
+
         // Cleanup
         methodChannel?.setMethodCallHandler(null)
         methodChannel = null
-        isFlutterReady = false // Thêm từ phần 2
+        isFlutterReady = false
 
         super.onDestroy()
     }
@@ -299,6 +369,35 @@ class BubbleActivity : FlutterActivity() {
             if (isFlutterReady) {
                 sendInitialDataToFlutter()
             }
+        }
+    }
+
+    // ========================================
+    // ✅ FIX 9: SAVE/RESTORE STATE
+    // ========================================
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+
+        outState.putString("userId", currentUserId)
+        outState.putString("userName", currentUserName)
+        outState.putString("avatarUrl", currentAvatarUrl)
+
+        Log.d(TAG, "💾 State saved")
+    }
+
+    override fun onRestoreInstanceState(savedInstanceState: Bundle) {
+        super.onRestoreInstanceState(savedInstanceState)
+
+        currentUserId = savedInstanceState.getString("userId")
+        currentUserName = savedInstanceState.getString("userName")
+        currentAvatarUrl = savedInstanceState.getString("avatarUrl")
+
+        Log.d(TAG, "📦 State restored")
+
+        // Re-initialize if needed
+        if (isFlutterReady && currentUserId != null) {
+            sendInitialDataToFlutter()
         }
     }
 

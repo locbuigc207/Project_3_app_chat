@@ -1,33 +1,16 @@
 // lib/services/unified_bubble_service.dart
-// ✅ GIAI ĐOẠN 4 & 7: UNIFIED SERVICE - Auto-select best API & Message Operations
-
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/services.dart'; // Thêm để sử dụng MethodChannel cho GIAI ĐOẠN 7
+import 'package:flutter/services.dart';
+import 'package:flutter_chat_demo/models/bubble_models.dart'; // ✅ Import shared models
 import 'package:flutter_chat_demo/services/bubble_service_v2.dart';
 import 'package:flutter_chat_demo/services/chat_bubble_service.dart';
 
-/// 🎯 UNIFIED SERVICE - Automatically uses best API for device
-///
-/// Strategy:
-/// - Android 11+ (API 30+): Use Bubble API (BubbleServiceV2)
-/// - Android < 11: Use WindowManager (ChatBubbleService)
-///
-/// This provides:
-/// - Seamless migration path
-/// - Automatic API selection
-/// - Unified interface for app code
 class UnifiedBubbleService {
-  // ========================================
-  // SERVICES
-  // ========================================
   late final BubbleServiceV2 _bubbleApiService;
   late final ChatBubbleService _windowManagerService;
 
-  // ========================================
-  // SINGLETON
-  // ========================================
   static final UnifiedBubbleService _instance =
       UnifiedBubbleService._internal();
   factory UnifiedBubbleService() => _instance;
@@ -44,6 +27,10 @@ class UnifiedBubbleService {
   bool _isInitialized = false;
   BubbleImplementation _currentImplementation = BubbleImplementation.unknown;
 
+  // ✅ FIX 6: Operation queue to prevent race conditions
+  final List<Future<void> Function()> _operationQueue = [];
+  bool _isProcessingQueue = false;
+
   // Forwarded streams
   StreamController<BubbleClickEvent>? _clickController;
   StreamController<Map<String, dynamic>>? _bubblesController;
@@ -56,19 +43,14 @@ class UnifiedBubbleService {
     return _bubblesController?.stream ?? Stream.empty();
   }
 
-  // ========================================
-  // INITIALIZATION
-  // ========================================
   Future<void> _initialize() async {
     if (_isInitialized) return;
 
     try {
-      // Detect best implementation
       _currentImplementation = await _detectBestImplementation();
 
       print('✅ Using implementation: ${_currentImplementation.name}');
 
-      // Setup stream forwarding
       _setupStreamForwarding();
 
       _isInitialized = true;
@@ -78,13 +60,11 @@ class UnifiedBubbleService {
     }
   }
 
-  /// Detect which implementation to use
   Future<BubbleImplementation> _detectBestImplementation() async {
     if (!Platform.isAndroid) {
       return BubbleImplementation.none;
     }
 
-    // Check if Bubble API is supported
     final supportsBubbleApi = await _bubbleApiService.checkBubbleApiSupport();
 
     if (supportsBubbleApi) {
@@ -92,18 +72,15 @@ class UnifiedBubbleService {
       return BubbleImplementation.bubbleApi;
     }
 
-    // Fallback to WindowManager
     print('⚠️ Falling back to WindowManager');
     return BubbleImplementation.windowManager;
   }
 
-  /// Setup stream forwarding from active service
   void _setupStreamForwarding() {
     _clickController = StreamController<BubbleClickEvent>.broadcast();
     _bubblesController = StreamController<Map<String, dynamic>>.broadcast();
 
     if (_currentImplementation == BubbleImplementation.bubbleApi) {
-      // Forward from Bubble API service
       _bubbleApiService.bubbleClickStream.listen(
         (event) => _clickController?.add(event),
       );
@@ -117,13 +94,8 @@ class UnifiedBubbleService {
         },
       );
     } else if (_currentImplementation == BubbleImplementation.windowManager) {
-      // Forward from WindowManager service
       _windowManagerService.bubbleClickStream.listen(
-        (event) => _clickController?.add(BubbleClickEvent(
-          userId: event.userId,
-          userName: event.userName,
-          avatarUrl: event.avatarUrl,
-        )),
+        (event) => _clickController?.add(event),
       );
 
       _windowManagerService.activeBubblesStream.listen(
@@ -137,54 +109,49 @@ class UnifiedBubbleService {
     }
   }
 
-  // ========================================
-  // UNIFIED API
-  // ========================================
-
-  /// Check if overlay permission is granted
   Future<bool> hasOverlayPermission() async {
     if (_currentImplementation == BubbleImplementation.bubbleApi) {
-      // Bubble API doesn't need overlay permission
       return true;
     }
 
     return await _windowManagerService.hasOverlayPermission();
   }
 
-  /// Request overlay permission (only for WindowManager)
   Future<bool> requestOverlayPermission() async {
     if (_currentImplementation == BubbleImplementation.bubbleApi) {
-      // Bubble API doesn't need overlay permission
       return true;
     }
 
     return await _windowManagerService.requestOverlayPermission();
   }
 
-  /// Show a chat bubble
   Future<bool> showChatBubble({
     required String userId,
     required String userName,
     required String avatarUrl,
     String? lastMessage,
   }) async {
-    if (_currentImplementation == BubbleImplementation.bubbleApi) {
-      return await _bubbleApiService.showBubble(
-        userId: userId,
-        userName: userName,
-        message: lastMessage ?? 'New message',
-        avatarUrl: avatarUrl,
-      );
-    } else if (_currentImplementation == BubbleImplementation.windowManager) {
-      return await _windowManagerService.showChatBubble(
-        userId: userId,
-        userName: userName,
-        avatarUrl: avatarUrl,
-        lastMessage: lastMessage,
-      );
-    }
-
-    return false;
+    // ✅ FIX 6: Queue operation to prevent race conditions
+    return await _queueOperation<bool>(() async {
+          if (_currentImplementation == BubbleImplementation.bubbleApi) {
+            return await _bubbleApiService.showBubble(
+              userId: userId,
+              userName: userName,
+              message: lastMessage ?? 'New message',
+              avatarUrl: avatarUrl,
+            );
+          } else if (_currentImplementation ==
+              BubbleImplementation.windowManager) {
+            return await _windowManagerService.showChatBubble(
+              userId: userId,
+              userName: userName,
+              avatarUrl: avatarUrl,
+              lastMessage: lastMessage,
+            );
+          }
+          return false;
+        }) ??
+        false;
   }
 
   /// Update bubble with new message
@@ -192,37 +159,47 @@ class UnifiedBubbleService {
     required String userId,
     required String message,
   }) async {
-    if (_currentImplementation == BubbleImplementation.bubbleApi) {
-      await _bubbleApiService.updateBubble(
-        userId: userId,
-        message: message,
-      );
-    } else if (_currentImplementation == BubbleImplementation.windowManager) {
-      await _windowManagerService.updateBubbleMessage(
-        userId: userId,
-        message: message,
-      );
-    }
+    // ✅ FIX 6: Queue operation to prevent race conditions
+    await _queueOperation(() async {
+      if (_currentImplementation == BubbleImplementation.bubbleApi) {
+        await _bubbleApiService.updateBubble(
+          userId: userId,
+          message: message,
+        );
+      } else if (_currentImplementation == BubbleImplementation.windowManager) {
+        await _windowManagerService.updateBubbleMessage(
+          userId: userId,
+          message: message,
+        );
+      }
+    });
   }
 
   /// Hide a specific bubble
   Future<bool> hideChatBubble(String userId) async {
-    if (_currentImplementation == BubbleImplementation.bubbleApi) {
-      return await _bubbleApiService.hideBubble(userId);
-    } else if (_currentImplementation == BubbleImplementation.windowManager) {
-      return await _windowManagerService.hideChatBubble(userId);
-    }
-
-    return false;
+    // ✅ FIX 6: Queue operation to prevent race conditions
+    return await _queueOperation<bool>(() async {
+          if (_currentImplementation == BubbleImplementation.bubbleApi) {
+            return await _bubbleApiService.hideBubble(userId);
+          } else if (_currentImplementation ==
+              BubbleImplementation.windowManager) {
+            return await _windowManagerService.hideChatBubble(userId);
+          }
+          return false;
+        }) ??
+        false;
   }
 
   /// Hide all bubbles
   Future<void> hideAllBubbles() async {
-    if (_currentImplementation == BubbleImplementation.bubbleApi) {
-      await _bubbleApiService.hideAllBubbles();
-    } else if (_currentImplementation == BubbleImplementation.windowManager) {
-      await _windowManagerService.hideAllBubbles();
-    }
+    // ✅ FIX 6: Queue operation to prevent race conditions
+    await _queueOperation(() async {
+      if (_currentImplementation == BubbleImplementation.bubbleApi) {
+        await _bubbleApiService.hideAllBubbles();
+      } else if (_currentImplementation == BubbleImplementation.windowManager) {
+        await _windowManagerService.hideAllBubbles();
+      }
+    });
   }
 
   /// Show mini chat window
@@ -233,25 +210,31 @@ class UnifiedBubbleService {
   }) async {
     // Mini chat only works with WindowManager for now
     // TODO: Implement mini chat for Bubble API
-    if (_currentImplementation == BubbleImplementation.windowManager) {
-      return await _windowManagerService.showMiniChat(
-        userId: userId,
-        userName: userName,
-        avatarUrl: avatarUrl,
-      );
-    }
-
-    print('⚠️ Mini chat not supported with Bubble API yet');
-    return false;
+    // ✅ FIX 6: Queue operation to prevent race conditions
+    return await _queueOperation<bool>(() async {
+          if (_currentImplementation == BubbleImplementation.windowManager) {
+            return await _windowManagerService.showMiniChat(
+              userId: userId,
+              userName: userName,
+              avatarUrl: avatarUrl,
+            );
+          }
+          print('⚠️ Mini chat not supported with Bubble API yet');
+          return false;
+        }) ??
+        false;
   }
 
   /// Hide mini chat
   Future<bool> hideMiniChat() async {
-    if (_currentImplementation == BubbleImplementation.windowManager) {
-      return await _windowManagerService.hideMiniChat();
-    }
-
-    return false;
+    // ✅ FIX 6: Queue operation to prevent race conditions
+    return await _queueOperation<bool>(() async {
+          if (_currentImplementation == BubbleImplementation.windowManager) {
+            return await _windowManagerService.hideMiniChat();
+          }
+          return false;
+        }) ??
+        false;
   }
 
   // ========================================
@@ -314,33 +297,37 @@ class UnifiedBubbleService {
 
     print('🔄 Migrating to Bubble API...');
 
-    try {
-      // Get current bubbles from WindowManager
-      final currentBubbles = _windowManagerService.activeBubbles;
+    // ✅ FIX 6: Queue operation to prevent race conditions during migration
+    return await _queueOperation<bool>(() async {
+          try {
+            // Get current bubbles from WindowManager
+            final currentBubbles = _windowManagerService.activeBubbles;
 
-      // Hide all WindowManager bubbles
-      await _windowManagerService.hideAllBubbles();
+            // Hide all WindowManager bubbles
+            await _windowManagerService.hideAllBubbles();
 
-      // Switch implementation
-      _currentImplementation = BubbleImplementation.bubbleApi;
-      _setupStreamForwarding();
+            // Switch implementation
+            _currentImplementation = BubbleImplementation.bubbleApi;
+            _setupStreamForwarding();
 
-      // Recreate bubbles with Bubble API
-      for (var bubble in currentBubbles.values) {
-        await _bubbleApiService.showBubble(
-          userId: bubble.userId,
-          userName: bubble.userName,
-          message: bubble.lastMessage ?? 'New message',
-          avatarUrl: bubble.avatarUrl,
-        );
-      }
+            // Recreate bubbles with Bubble API
+            for (var bubble in currentBubbles.values) {
+              await _bubbleApiService.showBubble(
+                userId: bubble.userId,
+                userName: bubble.userName,
+                message: bubble.lastMessage ?? 'New message',
+                avatarUrl: bubble.avatarUrl,
+              );
+            }
 
-      print('✅ Migration complete');
-      return true;
-    } catch (e) {
-      print('❌ Migration failed: $e');
-      return false;
-    }
+            print('✅ Migration complete');
+            return true;
+          } catch (e) {
+            print('❌ Migration failed: $e');
+            return false;
+          }
+        }) ??
+        false;
   }
 
   Future<bool> sendMessage({
@@ -440,25 +427,96 @@ class UnifiedBubbleService {
     }
   }
 
-  /// Helper to determine message type from content
+  // ========================================
+  // ✅ FIX 10: MESSAGE TYPE HELPER
+  // ========================================
+
+  /// Helper to determine message type from content and type code
+  ///
+  /// TypeMessage constants:
+  /// 0 = text, 1 = image, 2 = sticker, 3 = voice, 4 = location
   String _getMessageType(String content, int typeCode) {
-    // typeCode from TypeMessage constants:
-    // 0 = text, 1 = image, 2 = sticker, 3 = voice, 4 = location
     switch (typeCode) {
       case 1:
         return 'image';
+      case 2:
+        return 'text'; // Stickers treated as text for bubble
       case 3:
         return 'voice';
       case 4:
         return 'location';
+      case 0:
       default:
         // Check if content contains location data
         if (content.contains('maps.google.com') ||
-            content.contains('Location:')) {
+            content.contains('Location:') ||
+            content.contains('📍')) {
           return 'location';
         }
         return 'text';
     }
+  }
+
+  /// ✅ FIX 10: Public helper for external use
+  String getMessageTypeFromContent(String content, int typeCode) {
+    return _getMessageType(content, typeCode);
+  }
+
+  /// ✅ FIX 10: Send message with auto-detected type
+  Future<bool> sendMessageAuto({
+    required String userId,
+    required String userName,
+    required String message,
+    required String avatarUrl,
+    required int typeCode,
+  }) async {
+    final messageType = _getMessageType(message, typeCode);
+
+    return await sendMessage(
+      userId: userId,
+      userName: userName,
+      message: message,
+      avatarUrl: avatarUrl,
+      messageType: messageType,
+    );
+  }
+
+  // ========================================
+  // ✅ FIX 6: OPERATION QUEUE IMPLEMENTATION
+  // ========================================
+
+  Future<T?> _queueOperation<T>(Future<T> Function() operation) async {
+    final completer = Completer<T?>();
+    _operationQueue.add(() async {
+      try {
+        final result = await operation();
+        completer.complete(result);
+      } catch (e) {
+        completer.completeError(e);
+      }
+    });
+
+    if (!_isProcessingQueue) {
+      _processQueue();
+    }
+
+    return completer.future;
+  }
+
+  Future<void> _processQueue() async {
+    if (_isProcessingQueue) return;
+    _isProcessingQueue = true;
+
+    while (_operationQueue.isNotEmpty) {
+      final operation = _operationQueue.removeAt(0);
+      try {
+        await operation();
+      } catch (e) {
+        print('❌ Operation failed in queue: $e');
+      }
+    }
+
+    _isProcessingQueue = false;
   }
 
   void dispose() {

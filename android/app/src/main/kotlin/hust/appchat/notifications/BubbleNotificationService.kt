@@ -11,6 +11,7 @@ import hust.appchat.shortcuts.ShortcutHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay // Cần import delay nếu sử dụng trong scope.launch
 import kotlinx.coroutines.launch
 
 /**
@@ -120,82 +121,7 @@ object BubbleNotificationService {
     // ✅ GIAI ĐOẠN 7: BUBBLE NOTIFICATION WITH MESSAGE HISTORY
     // ========================================
 
-    fun showBubbleNotification(
-        context: Context,
-        userId: String,
-        userName: String,
-        message: String,
-        avatarUrl: String
-    ) {
-        if (!isInitialized) {
-            Log.w(TAG, "⚠️ Service not initialized, initializing now...")
-            init(context)
-        }
-
-        scope.launch {
-            try {
-                Log.d(TAG, "🎈 Creating bubble notification: $userName")
-
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    // Preload avatar first
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        preloadAvatarForNotification(context, avatarUrl, userName)
-                    }
-
-                    // Create shortcut
-                    Log.d(TAG, "🔗 Creating shortcut for: $userName")
-                    ShortcutHelper.createShortcut(
-                        context = context,
-                        userId = userId,
-                        userName = userName,
-                        avatarUrl = avatarUrl
-                    )
-
-                    // ✅ GIAI ĐOẠN 7: Use BubbleNotificationManager to add message and show notification
-                    BubbleNotificationManager.addMessage(
-                        context = context,
-                        userId = userId,
-                        userName = userName,
-                        message = message,
-                        avatarUrl = avatarUrl,
-                        isFromUser = false, // Received message
-                        messageType = BubbleNotificationManager.MessageType.TEXT
-                    )
-
-                    activeBubbleNotifications.add(userId)
-                    Log.d(TAG, "✅ Bubble notification created with message history")
-
-                } else {
-                    // Fallback for Android < 11
-                    Log.d(TAG, "⚠️ Android < 11, using WindowManager fallback")
-                    BubbleManager.showBubble(
-                        context = context,
-                        userId = userId,
-                        userName = userName,
-                        avatarUrl = avatarUrl,
-                        message = message
-                    )
-                }
-
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Failed to create bubble notification: $e")
-
-                // Fallback to WindowManager
-                try {
-                    BubbleManager.showBubble(
-                        context = context,
-                        userId = userId,
-                        userName = userName,
-                        avatarUrl = avatarUrl,
-                        message = message
-                    )
-                    Log.d(TAG, "✅ Fallback to WindowManager successful")
-                } catch (fallbackError: Exception) {
-                    Log.e(TAG, "❌ Fallback also failed: $fallbackError")
-                }
-            }
-        }
-    }
+    // Loại bỏ hàm showBubbleNotification trùng lặp ở đây để sử dụng hàm ngoài cùng (có logic FIX 11)
 
     fun updateBubbleNotification(
         context: Context,
@@ -441,7 +367,7 @@ object BubbleNotificationService {
     ) {
         scope.launch {
             try {
-                // Clear cache (Sử dụng AvatarLoader trực tiếp như GIAI ĐOẠN 7)
+                // Clear cache (Sử dụng AvatarLoader trực tiếp như GIAI ĐOẠAN 7)
                 AvatarLoader.clearCache(avatarUrl, userName)
 
                 // Refresh shortcut
@@ -580,3 +506,108 @@ object BubbleNotificationService {
         }
     }
 }
+
+fun showBubbleNotification(
+    context: Context,
+    userId: String,
+    userName: String,
+    message: String,
+    avatarUrl: String
+) {
+    if (!BubbleNotificationService.isInitialized) {
+        Log.w(BubbleNotificationService.TAG, "⚠️ Service not initialized, initializing now...")
+        BubbleNotificationService.init(context)
+    }
+
+    BubbleNotificationService.scope.launch {
+        try {
+            Log.d(BubbleNotificationService.TAG, "🎈 Creating bubble notification: $userName")
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // Preload avatar first
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    BubbleNotificationService.preloadAvatarForNotification(context, avatarUrl, userName)
+                }
+
+                // ✅ FIX 11: Verify shortcut exists before creating notification
+                val shortcutExists = ShortcutHelper.shortcutExists(context, userId)
+
+                if (!shortcutExists) {
+                    Log.d(BubbleNotificationService.TAG, "🔗 Shortcut missing, creating for: $userName")
+
+                    // Create shortcut first
+                    ShortcutHelper.createShortcut(
+                        context = context,
+                        userId = userId,
+                        userName = userName,
+                        avatarUrl = avatarUrl
+                    )
+
+                    // Wait for shortcut to be created
+                    delay(500)
+
+                    // Verify again
+                    val verifyShortcut = ShortcutHelper.shortcutExists(context, userId)
+                    if (!verifyShortcut) {
+                        Log.e(BubbleNotificationService.TAG, "❌ Failed to create shortcut for: $userName")
+                        // Fallback to WindowManager
+                        BubbleManager.showBubble(
+                            context = context,
+                            userId = userId,
+                            userName = userName,
+                            avatarUrl = avatarUrl,
+                            message = message
+                        )
+                        return@launch
+                    }
+                } else {
+                    Log.d(BubbleNotificationService.TAG, "✅ Shortcut already exists for: $userName")
+                }
+
+                // ✅ GIAI ĐOẠN 7: Use BubbleNotificationManager to add message and show notification
+                BubbleNotificationManager.addMessage(
+                    context = context,
+                    userId = userId,
+                    userName = userName,
+                    message = message,
+                    avatarUrl = avatarUrl,
+                    isFromUser = false, // Received message
+                    messageType = BubbleNotificationManager.MessageType.TEXT
+                )
+
+                BubbleNotificationService.activeBubbleNotifications.add(userId)
+                Log.d(BubbleNotificationService.TAG, "✅ Bubble notification created with message history")
+
+            } else {
+                // Fallback for Android < 11
+                Log.d(BubbleNotificationService.TAG, "⚠️ Android < 11, using WindowManager fallback")
+                BubbleManager.showBubble(
+                    context = context,
+                    userId = userId,
+                    userName = userName,
+                    avatarUrl = avatarUrl,
+                    message = message
+                )
+            }
+
+        } catch (e: Exception) {
+            Log.e(BubbleNotificationService.TAG, "❌ Failed to create bubble notification: $e")
+
+            // Fallback to WindowManager
+            try {
+                BubbleManager.showBubble(
+                    context = context,
+                    userId = userId,
+                    userName = userName,
+                    avatarUrl = avatarUrl,
+                    message = message
+                )
+                Log.d(BubbleNotificationService.TAG, "✅ Fallback to WindowManager successful")
+            } catch (fallbackError: Exception) {
+                Log.e(BubbleNotificationService.TAG, "❌ Fallback also failed: $fallbackError")
+            }
+        }
+    }
+}
+
+
