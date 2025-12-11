@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart'; // ✅ Imported for kDebugMode
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_chat_demo/constants/constants.dart';
@@ -359,6 +360,10 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     });
   }
 
+  // ========================================
+  // STEP 3: Update _setupIncomingMessageListener (with GIAI ĐOẠN 7)
+  // ========================================
+
   void _setupIncomingMessageListener() {
     _incomingMessagesSubscription?.cancel();
 
@@ -378,6 +383,16 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       (snapshot) {
         for (var change in snapshot.docChanges) {
           if (change.type == DocumentChangeType.added) {
+            // ✅ GIAI ĐOẠN 7: Update bubble with received message
+            final data = change.doc.data();
+            if (data != null) {
+              final content = data[FirestoreConstants.content] as String? ?? '';
+              final type = data[FirestoreConstants.type] as int? ?? 0;
+
+              // Update bubble if it exists
+              _updateBubbleWithMessage(content, type, isFromUser: false);
+            }
+
             _showChatBubbleIfNeeded();
           }
         }
@@ -499,6 +514,10 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
   }
 
+  // ========================================
+  // STEP 1: Update _onSendMessageWithAutoDelete (with GIAI ĐOẠN 7)
+  // ========================================
+
   Future<void> _onSendMessageWithAutoDelete(String content, int type) async {
     if (_isDisposed) return;
 
@@ -539,6 +558,9 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         conversationId: _groupChatId,
         messageType: type,
       );
+
+      // ✅ GIAI ĐOẠN 7: Update bubble with sent message
+      await _updateBubbleWithMessage(finalContent, type, isFromUser: true);
     } catch (e) {
       ErrorLogger.logError(e, null, context: 'Send Message');
       Fluttertoast.showToast(msg: 'Send failed');
@@ -566,6 +588,63 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         duration: Duration(milliseconds: 300),
         curve: Curves.easeOut,
       );
+    }
+  }
+
+  // ========================================
+  // STEP 2: Add NEW METHOD - _updateBubbleWithMessage (GIAI ĐOẠN 7)
+  // ========================================
+
+  /// ✅ GIAI ĐOẠN 7: Update bubble notification with message
+  Future<void> _updateBubbleWithMessage(String content, int type,
+      {required bool isFromUser}) async {
+    if (_unifiedBubbleService == null) return;
+
+    try {
+      // Check if bubble exists for this conversation
+      if (!_unifiedBubbleService!.isBubbleActive(widget.arguments.peerId)) {
+        return; // No bubble, skip update
+      }
+
+      // Determine message type
+      String messageType = 'text';
+      String displayMessage = content;
+
+      switch (type) {
+        case TypeMessage.text:
+          messageType = 'text';
+          // Check if it's a location
+          if (content.contains('maps.google.com') ||
+              content.contains('Location:')) {
+            messageType = 'location';
+            displayMessage = '📍 Location';
+          }
+          break;
+        case TypeMessage.image:
+          messageType = 'image';
+          displayMessage = '📷 Photo';
+          break;
+        case 3: // Voice
+          messageType = 'voice';
+          displayMessage = '🎤 Voice message';
+          break;
+        default:
+          messageType = 'text';
+      }
+
+      // Send to bubble
+      await _unifiedBubbleService!.sendMessage(
+        userId: widget.arguments.peerId,
+        userName: widget.arguments.peerNickname,
+        message: displayMessage,
+        avatarUrl: widget.arguments.peerAvatar,
+        messageType: messageType,
+      );
+
+      print(
+          '✅ Bubble updated with ${isFromUser ? "sent" : "received"} message');
+    } catch (e) {
+      print('❌ Error updating bubble: $e');
     }
   }
 
@@ -1132,6 +1211,10 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     ];
   }
 
+  // ========================================
+  // STEP 5: Update _buildChatOptionsMenu (with GIAI ĐOẠN 7)
+  // ========================================
+
   void _showChatOptionsMenu() {
     if (_isDisposed) return;
 
@@ -1189,6 +1272,18 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 onTap: () {
                   Navigator.pop(context);
                   _showBubbleInfo();
+                },
+              ),
+
+            // ✅ GIAI ĐOẠN 7: Add debug option
+            if (kDebugMode) // Only in debug mode
+              ListTile(
+                leading: Icon(Icons.bug_report, color: Colors.orange),
+                title: Text('Bubble Debug'),
+                subtitle: Text('View message history & stats'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showBubbleDebugInfo();
                 },
               ),
           ],
@@ -1251,6 +1346,68 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         ],
       ),
     );
+  }
+
+  // ========================================
+  // STEP 4: Add _showBubbleDebugInfo (GIAI ĐOẠN 7)
+  // ========================================
+
+  void _showBubbleDebugInfo() async {
+    if (_unifiedBubbleService == null) return;
+
+    try {
+      // Get message count
+      final count = await _unifiedBubbleService!.getMessageCount(
+        widget.arguments.peerId,
+      );
+
+      // Get stats
+      final stats = await _unifiedBubbleService!.getBubbleStats();
+
+      // Log state
+      await _unifiedBubbleService!.logBubbleState();
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Bubble Debug Info'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Message count: $count'),
+              SizedBox(height: 8),
+              Text('Active conversations: ${stats['activeConversations']}'),
+              Text('Total messages: ${stats['totalMessages']}'),
+              Text('Average messages: ${stats['averageMessages']}'),
+              SizedBox(height: 8),
+              Text('Check Android logs for detailed state',
+                  style: TextStyle(fontSize: 12, color: Colors.grey)),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                await _unifiedBubbleService!.clearMessageHistory(
+                  widget.arguments.peerId,
+                );
+                Navigator.pop(context);
+                Fluttertoast.showToast(msg: 'History cleared');
+              },
+              child: Text('Clear History'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Close'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      print('❌ Error showing debug info: $e');
+    }
   }
 
   void _showLockOptions() async {

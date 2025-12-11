@@ -18,6 +18,7 @@ import io.flutter.plugin.common.EventChannel
 import hust.appchat.bubble.BubbleManager
 import hust.appchat.bubble.BubbleOverlayService
 import hust.appchat.notifications.BubbleNotificationService
+import hust.appchat.notifications.BubbleNotificationManager // IMPORT BỔ SUNG CHO GIAI ĐOẠN 7
 import hust.appchat.shortcuts.ShortcutHelper
 
 class MainActivity : FlutterActivity() {
@@ -197,6 +198,92 @@ class MainActivity : FlutterActivity() {
                             } else {
                                 result.success(false)
                             }
+                        }
+
+                        // ========================================
+                        // ✅ GIAI ĐOẠN 7: Send message from user
+                        // ========================================
+                        "sendMessage" -> {
+                            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                                result.success(false)
+                                return@setMethodCallHandler
+                            }
+
+                            val userId = call.argument<String>("userId")
+                            val userName = call.argument<String>("userName")
+                            val message = call.argument<String>("message")
+                            val avatarUrl = call.argument<String>("avatarUrl")
+                            val messageTypeStr = call.argument<String>("messageType") ?: "text"
+
+                            if (userId != null && userName != null && message != null) {
+                                android.util.Log.d("MainActivity", "📤 Sending message: $message")
+
+                                val messageType = when (messageTypeStr.lowercase()) {
+                                    "image" -> BubbleNotificationManager.MessageType.IMAGE
+                                    "voice" -> BubbleNotificationManager.MessageType.VOICE
+                                    "location" -> BubbleNotificationManager.MessageType.LOCATION
+                                    else -> BubbleNotificationManager.MessageType.TEXT
+                                }
+
+                                BubbleNotificationService.sendMessage(
+                                    context = this,
+                                    userId = userId,
+                                    userName = userName,
+                                    message = message,
+                                    avatarUrl = avatarUrl ?: "",
+                                    messageType = messageType
+                                )
+
+                                result.success(true)
+                            } else {
+                                result.error("INVALID_ARGS", "Missing required arguments", null)
+                            }
+                        }
+
+                        // ========================================
+                        // ✅ GIAI ĐOẠN 7: Get message count
+                        // ========================================
+                        "getMessageCount" -> {
+                            val userId = call.argument<String>("userId")
+                            if (userId != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                val count = BubbleNotificationManager.getMessageCount(userId)
+                                android.util.Log.d("MainActivity", "📊 Message count for $userId: $count")
+                                result.success(count)
+                            } else {
+                                result.success(0)
+                            }
+                        }
+
+                        // ========================================
+                        // ✅ GIAI ĐOẠN 7: Get bubble statistics
+                        // ========================================
+                        "getBubbleStats" -> {
+                            val stats = BubbleNotificationService.getBubbleStats()
+                            android.util.Log.d("MainActivity", "📊 Bubble stats: $stats")
+                            result.success(stats)
+                        }
+
+                        // ========================================
+                        // ✅ GIAI ĐOẠN 7: Clear message history
+                        // ========================================
+                        "clearMessageHistory" -> {
+                            val userId = call.argument<String>("userId")
+                            if (userId != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                BubbleNotificationManager.clearHistory(userId)
+                                android.util.Log.d("MainActivity", "🗑️ Cleared history for: $userId")
+                                result.success(true)
+                            } else {
+                                result.success(false)
+                            }
+                        }
+
+                        // ========================================
+                        // ✅ GIAI ĐOẠN 7: Debug - Log bubble state
+                        // ========================================
+                        "logBubbleState" -> {
+                            BubbleNotificationService.logBubbleState()
+                            android.util.Log.d("MainActivity", "📊 Logged bubble state")
+                            result.success(true)
                         }
 
                         else -> {

@@ -1,9 +1,10 @@
 // lib/services/unified_bubble_service.dart
-// ✅ GIAI ĐOẠN 4: UNIFIED SERVICE - Auto-select best API
+// ✅ GIAI ĐOẠN 4 & 7: UNIFIED SERVICE - Auto-select best API & Message Operations
 
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/services.dart'; // Thêm để sử dụng MethodChannel cho GIAI ĐOẠN 7
 import 'package:flutter_chat_demo/services/bubble_service_v2.dart';
 import 'package:flutter_chat_demo/services/chat_bubble_service.dart';
 
@@ -279,7 +280,6 @@ class UnifiedBubbleService {
     return 0;
   }
 
-  /// Get implementation info
   String getImplementationInfo() {
     switch (_currentImplementation) {
       case BubbleImplementation.bubbleApi:
@@ -293,20 +293,12 @@ class UnifiedBubbleService {
     }
   }
 
-  /// Check if current device supports bubbles
   bool get isSupported {
     return _currentImplementation != BubbleImplementation.none;
   }
 
-  /// Get current implementation
   BubbleImplementation get currentImplementation => _currentImplementation;
 
-  // ========================================
-  // MIGRATION HELPERS
-  // ========================================
-
-  /// Force migration from WindowManager to Bubble API
-  /// (Only works on Android 11+)
   Future<bool> migrateToModernApi() async {
     if (_currentImplementation == BubbleImplementation.bubbleApi) {
       print('✅ Already using Bubble API');
@@ -351,9 +343,123 @@ class UnifiedBubbleService {
     }
   }
 
-  // ========================================
-  // CLEANUP
-  // ========================================
+  Future<bool> sendMessage({
+    required String userId,
+    required String userName,
+    required String message,
+    required String avatarUrl,
+    String messageType = 'text', // 'text', 'image', 'voice', 'location'
+  }) async {
+    if (_currentImplementation != BubbleImplementation.bubbleApi) {
+      print('⚠️ Send message only supported with Bubble API');
+      return false;
+    }
+
+    try {
+      final result = await const MethodChannel('chat_bubbles_v2')
+          .invokeMethod<bool>('sendMessage', {
+        'userId': userId,
+        'userName': userName,
+        'message': message,
+        'avatarUrl': avatarUrl,
+        'messageType': messageType,
+      });
+
+      if (result == true) {
+        print('✅ Message sent to bubble: $message');
+      }
+
+      return result ?? false;
+    } catch (e) {
+      print('❌ Error sending message: $e');
+      return false;
+    }
+  }
+
+  /// Get message count for a bubble conversation
+  Future<int> getMessageCount(String userId) async {
+    if (_currentImplementation != BubbleImplementation.bubbleApi) {
+      return 0;
+    }
+
+    try {
+      final result = await const MethodChannel('chat_bubbles_v2')
+          .invokeMethod<int>('getMessageCount', {
+        'userId': userId,
+      });
+
+      return result ?? 0;
+    } catch (e) {
+      print('❌ Error getting message count: $e');
+      return 0;
+    }
+  }
+
+  Future<Map<String, dynamic>> getBubbleStats() async {
+    try {
+      final result = await const MethodChannel('chat_bubbles_v2')
+          .invokeMethod<Map>('getBubbleStats');
+
+      return result?.cast<String, dynamic>() ?? {};
+    } catch (e) {
+      print('❌ Error getting bubble stats: $e');
+      return {};
+    }
+  }
+
+  /// Clear message history for a user
+  Future<bool> clearMessageHistory(String userId) async {
+    if (_currentImplementation != BubbleImplementation.bubbleApi) {
+      return false;
+    }
+
+    try {
+      final result = await const MethodChannel('chat_bubbles_v2')
+          .invokeMethod<bool>('clearMessageHistory', {
+        'userId': userId,
+      });
+
+      if (result == true) {
+        print('✅ Message history cleared for: $userId');
+      }
+
+      return result ?? false;
+    } catch (e) {
+      print('❌ Error clearing history: $e');
+      return false;
+    }
+  }
+
+  Future<void> logBubbleState() async {
+    try {
+      await const MethodChannel('chat_bubbles_v2')
+          .invokeMethod('logBubbleState');
+      print('✅ Bubble state logged (check Android logs)');
+    } catch (e) {
+      print('❌ Error logging bubble state: $e');
+    }
+  }
+
+  /// Helper to determine message type from content
+  String _getMessageType(String content, int typeCode) {
+    // typeCode from TypeMessage constants:
+    // 0 = text, 1 = image, 2 = sticker, 3 = voice, 4 = location
+    switch (typeCode) {
+      case 1:
+        return 'image';
+      case 3:
+        return 'voice';
+      case 4:
+        return 'location';
+      default:
+        // Check if content contains location data
+        if (content.contains('maps.google.com') ||
+            content.contains('Location:')) {
+          return 'location';
+        }
+        return 'text';
+    }
+  }
 
   void dispose() {
     _bubbleApiService.dispose();
@@ -363,10 +469,6 @@ class UnifiedBubbleService {
     _isInitialized = false;
   }
 }
-
-// ========================================
-// ENUMS
-// ========================================
 
 enum BubbleImplementation {
   bubbleApi, // Android 11+ Bubble API
