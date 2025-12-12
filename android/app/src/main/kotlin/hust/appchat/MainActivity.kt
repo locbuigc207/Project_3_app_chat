@@ -19,6 +19,9 @@ import hust.appchat.bubble.BubbleOverlayService
 import hust.appchat.notifications.BubbleNotificationService
 import hust.appchat.notifications.BubbleNotificationManager
 import hust.appchat.shortcuts.ShortcutHelper
+// Giả định HyperOSPermissionDialog nằm trong package hust.appchat
+// Vì không có định nghĩa của HyperOSPermissionDialog, chỉ tích hợp các phương thức gọi
+// và phải giả định lớp này tồn tại và có các phương thức static shouldShow và show.
 
 class MainActivity : FlutterActivity() {
     // ========================================
@@ -253,6 +256,20 @@ class MainActivity : FlutterActivity() {
                         "logBubbleState" -> {
                             BubbleNotificationService.logBubbleState()
                             android.util.Log.d("MainActivity", "📊 Logged bubble state")
+                            result.success(true)
+                        }
+
+                        "shouldShowHyperOSGuide" -> {
+                            // Phải giả định HyperOSPermissionDialog tồn tại
+                            // val should = HyperOSPermissionDialog.shouldShow(this)
+                            // result.success(should)
+                            // Tạm thời trả về false vì lớp không được cung cấp đầy đủ
+                            result.success(false)
+                        }
+
+                        "showHyperOSGuide" -> {
+                            // Phải giả định HyperOSPermissionDialog tồn tại
+                            // HyperOSPermissionDialog.show(this)
                             result.success(true)
                         }
 

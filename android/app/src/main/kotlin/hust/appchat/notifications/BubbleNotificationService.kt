@@ -8,6 +8,7 @@ import androidx.annotation.RequiresApi
 import hust.appchat.bubble.BubbleManager
 import hust.appchat.shortcuts.AvatarLoader
 import hust.appchat.shortcuts.ShortcutHelper
+import hust.appchat.services.BubbleForegroundService // ✅ Import service
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -118,6 +119,10 @@ object BubbleNotificationService {
                 Log.d(TAG, "🎈 Creating bubble notification: $userName")
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    // ✅ CRITICAL: Start foreground service FIRST
+                    BubbleForegroundService.start(context)
+
+                    // Preload avatar
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                         preloadAvatarForNotification(context, avatarUrl, userName)
                     }
@@ -291,6 +296,11 @@ object BubbleNotificationService {
 
                     activeBubbleNotifications.remove(userId)
                     Log.d(TAG, "✅ Bubble dismissed")
+
+                    // Kiểm tra xem còn bubble nào đang hoạt động không, nếu không thì dừng service
+                    if (activeBubbleNotifications.isEmpty()) {
+                        BubbleForegroundService.stop(context)
+                    }
                 }
 
                 BubbleManager.removeBubble(context, userId)
@@ -313,6 +323,9 @@ object BubbleNotificationService {
                     NotificationHelper.cancelAllNotifications(context)
 
                     activeBubbleNotifications.clear()
+
+                    // ✅ Stop foreground service when no bubbles
+                    BubbleForegroundService.stop(context)
                 }
 
                 BubbleManager.cleanup()

@@ -2,13 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="hust.appchat">
 
-    <!-- ========================================= -->
-    <!-- EXISTING PERMISSIONS -->
-    <!-- ========================================= -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- ✅ GIAI ĐOẠN 1: Thêm permission cho Bubble API -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <uses-permission android:name="android.permission.VIBRATE" />
@@ -35,7 +31,6 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
-    <!-- ⚠️ GIỮ LẠI SYSTEM_ALERT_WINDOW để backward compatibility -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -82,9 +77,6 @@
             android:name="io.flutter.embedding.android.RenderingBackend"
             android:value="software" />
 
-        <!-- ========================================= -->
-        <!-- EXISTING SERVICE (sẽ được migrate dần) -->
-        <!-- ========================================= -->
         <service
             android:name=".bubble.BubbleOverlayService"
             android:exported="false"
@@ -96,6 +88,17 @@
                 android:value="Chat bubble overlay for quick messaging" />
         </service>
 
+        <service
+            android:name=".services.BubbleForegroundService"
+            android:exported="false"
+            android:enabled="true"
+            android:foregroundServiceType="specialUse"
+            android:stopWithTask="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keep chat bubbles active in background" />
+        </service>
+
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@mipmap/ic_launcher" />
@@ -103,9 +106,6 @@
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="message_reminders" />
 
-        <!-- ========================================= -->
-        <!-- MAIN ACTIVITY (giữ nguyên) -->
-        <!-- ========================================= -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -132,9 +132,6 @@
             </intent-filter>
         </activity>
 
-        <!-- ========================================= -->
-        <!-- ✅ GIAI ĐOẠN 1: BubbleActivity MỚI -->
-        <!-- ========================================= -->
         <activity
             android:name=".BubbleActivity"
             android:theme="@style/LaunchTheme"
@@ -152,9 +149,6 @@
                 android:resource="@style/NormalTheme" />
         </activity>
 
-        <!-- ========================================= -->
-        <!-- EXISTING ACTIVITY (giữ nguyên để backward compat) -->
-        <!-- ========================================= -->
         <activity
             android:name=".FlutterMiniChatActivity"
             android:exported="false"
@@ -164,9 +158,6 @@
             android:windowSoftInputMode="adjustResize"
             android:launchMode="singleInstance" />
 
-        <!-- ========================================= -->
-        <!-- NOTIFICATION RECEIVERS (giữ nguyên) -->
-        <!-- ========================================= -->
         <receiver
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver"
             android:exported="true">
@@ -181,6 +172,16 @@
         <receiver
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
             android:exported="true" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <meta-data
             android:name="flutterEmbedding"
