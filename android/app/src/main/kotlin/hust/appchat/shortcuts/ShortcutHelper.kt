@@ -1,5 +1,5 @@
 // android/app/src/main/kotlin/hust/appchat/shortcuts/ShortcutHelper.kt
-// ✅ OPTIMIZED FOR HYPEROS - Use Person with TYPE_URI icon
+// ✅ COMPLETE FIXED VERSION - All missing methods added
 
 package hust.appchat.shortcuts
 
@@ -9,7 +9,6 @@ import android.content.Intent
 import android.content.pm.ShortcutInfo
 import android.content.pm.ShortcutManager
 import android.graphics.drawable.Icon
-import android.net.Uri
 import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
@@ -26,7 +25,7 @@ object ShortcutHelper {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     /**
-     * ✅ FIX: Create shortcut with Person using TYPE_URI icon
+     * Create shortcut with Person using TYPE_URI icon
      */
     fun createShortcut(
         context: Context,
@@ -43,18 +42,15 @@ object ShortcutHelper {
             try {
                 Log.d(TAG, "🔗 Creating shortcut with Person: $userName")
 
-                // ✅ Step 1: Load avatar and save to internal storage
                 val avatarIcon = loadAvatarAsUri(context, avatarUrl, userName, userId)
 
-                // ✅ Step 2: Create Person with TYPE_URI icon
                 val person = Person.Builder()
                     .setName(userName)
-                    .setIcon(avatarIcon) // ✅ This will be TYPE_URI
+                    .setIcon(avatarIcon)
                     .setKey(userId)
                     .setImportant(true)
                     .build()
 
-                // ✅ Step 3: Create shortcut with Person
                 createShortcutWithPerson(context, userId, userName, avatarUrl, person)
 
                 Log.d(TAG, "✅ Shortcut created with Person: $userName")
@@ -66,7 +62,7 @@ object ShortcutHelper {
     }
 
     /**
-     * ✅ FIX: Load avatar and return as TYPE_URI Icon
+     * Load avatar and return as TYPE_URI Icon
      */
     @RequiresApi(Build.VERSION_CODES.M)
     private suspend fun loadAvatarAsUri(
@@ -76,13 +72,11 @@ object ShortcutHelper {
         userId: String
     ): Icon = withContext(Dispatchers.IO) {
         try {
-            // Load bitmap from URL
             val bitmap = AvatarLoader.loadAvatarIconAsync(
                 context = context,
                 avatarUrl = avatarUrl,
                 userName = userName
             ).loadDrawable(context)?.let { drawable ->
-                // Convert drawable to bitmap
                 val width = drawable.intrinsicWidth
                 val height = drawable.intrinsicHeight
                 val bitmap = android.graphics.Bitmap.createBitmap(
@@ -99,7 +93,6 @@ object ShortcutHelper {
                 return@withContext AvatarLoader.createDefaultAvatarIcon(context, userName)
             }
 
-            // ✅ Save bitmap to internal storage
             val avatarFile = File(context.filesDir, "avatars/$userId.png")
             avatarFile.parentFile?.mkdirs()
 
@@ -109,7 +102,6 @@ object ShortcutHelper {
 
             Log.d(TAG, "✅ Avatar saved to: ${avatarFile.absolutePath}")
 
-            // ✅ Create URI using FileProvider
             val avatarUri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.fileprovider",
@@ -118,7 +110,6 @@ object ShortcutHelper {
 
             Log.d(TAG, "✅ Avatar URI created: $avatarUri")
 
-            // ✅ Return Icon with TYPE_URI
             return@withContext Icon.createWithContentUri(avatarUri)
 
         } catch (e: Exception) {
@@ -128,7 +119,7 @@ object ShortcutHelper {
     }
 
     /**
-     * ✅ Create shortcut with Person
+     * Create shortcut with Person
      */
     @RequiresApi(Build.VERSION_CODES.R)
     private suspend fun createShortcutWithPerson(
@@ -141,7 +132,6 @@ object ShortcutHelper {
         try {
             val manager = context.getSystemService(ShortcutManager::class.java)
 
-            // Check limit
             val currentCount = manager?.dynamicShortcuts?.size ?: 0
             if (currentCount >= MAX_SHORTCUTS) {
                 Log.w(TAG, "⚠️ Max shortcuts reached, removing oldest")
@@ -160,10 +150,10 @@ object ShortcutHelper {
             val shortcut = ShortcutInfo.Builder(context, userId)
                 .setShortLabel(userName)
                 .setLongLabel("Chat with $userName")
-                .setIcon(person.icon) // ✅ Use same icon as Person
+                .setIcon(person.icon)
                 .setIntent(intent)
                 .setLongLived(true)
-                .setPerson(person) // ✅ CRITICAL
+                .setPerson(person)
                 .setCategories(setOf("android.app.shortcuts.CONVERSATION"))
                 .setRank(0)
                 .build()
@@ -187,7 +177,6 @@ object ShortcutHelper {
                 val manager = context.getSystemService(ShortcutManager::class.java)
                 manager?.removeDynamicShortcuts(listOf(userId))
 
-                // ✅ Also delete avatar file
                 val avatarFile = File(context.filesDir, "avatars/$userId.png")
                 if (avatarFile.exists()) {
                     avatarFile.delete()
@@ -198,6 +187,27 @@ object ShortcutHelper {
             }
         } catch (e: Exception) {
             Log.e(TAG, "❌ Failed to remove shortcut: $e")
+        }
+    }
+
+    /**
+     * ✅ NEW: Remove all shortcuts
+     */
+    fun removeAllShortcuts(context: Context) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) {
+                val manager = context.getSystemService(ShortcutManager::class.java)
+                manager?.removeAllDynamicShortcuts()
+
+                val avatarsDir = File(context.filesDir, "avatars")
+                if (avatarsDir.exists() && avatarsDir.isDirectory) {
+                    avatarsDir.listFiles()?.forEach { it.delete() }
+                }
+
+                Log.d(TAG, "✅ All shortcuts removed")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to remove all shortcuts: $e")
         }
     }
 
@@ -258,6 +268,23 @@ object ShortcutHelper {
     }
 
     /**
+     * ✅ NEW: Check if can create more shortcuts
+     */
+    fun canCreateMoreShortcuts(context: Context): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) {
+                val currentCount = getShortcutCount(context)
+                currentCount < MAX_SHORTCUTS
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error checking shortcuts capacity: $e")
+            false
+        }
+    }
+
+    /**
      * Check if device supports shortcuts
      */
     fun isShortcutsSupported(): Boolean {
@@ -276,7 +303,31 @@ object ShortcutHelper {
         if (!shortcutExists(context, userId)) {
             Log.d(TAG, "🔗 Creating missing shortcut for notification")
             createShortcut(context, userId, userName, avatarUrl)
-            delay(500) // Wait for shortcut to be created
+            delay(500)
+        }
+    }
+
+    /**
+     * ✅ NEW: Refresh shortcut avatar
+     */
+    fun refreshShortcutAvatar(
+        context: Context,
+        userId: String,
+        userName: String,
+        avatarUrl: String
+    ) {
+        scope.launch {
+            try {
+                Log.d(TAG, "🔄 Refreshing avatar for shortcut: $userName")
+
+                removeShortcut(context, userId)
+                delay(200)
+                createShortcut(context, userId, userName, avatarUrl)
+
+                Log.d(TAG, "✅ Shortcut avatar refreshed: $userName")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Failed to refresh shortcut avatar: $e")
+            }
         }
     }
 
