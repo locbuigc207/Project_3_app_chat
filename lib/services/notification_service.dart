@@ -64,18 +64,21 @@ class NotificationService {
     try {
       final messageId = messageDoc.id;
 
-      // Check if already processed
+      // ✅ FIX #2: Check if already processed
       if (_processedMessages.contains(messageId)) {
+        print('ℹ️ Message already processed: $messageId');
         return;
       }
-      _processedMessages.add(messageId);
 
-      // Clean old processed messages (keep last 100)
+      _processedMessages.add(messageId);
+      print('✅ Processing new message: $messageId');
+
+      // ✅ FIX #2: Cleanup old processed messages (keep last 100)
       if (_processedMessages.length > 100) {
         final toRemove = _processedMessages.length - 100;
-        _processedMessages.removeAll(
-          _processedMessages.take(toRemove),
-        );
+        final oldIds = _processedMessages.take(toRemove).toList();
+        _processedMessages.removeAll(oldIds);
+        print('🗑️ Cleaned ${oldIds.length} old message IDs');
       }
 
       final data = messageDoc.data() as Map<String, dynamic>?;

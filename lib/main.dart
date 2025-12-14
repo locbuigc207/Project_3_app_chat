@@ -69,7 +69,7 @@ Future<void> main() async {
 }
 
 // ========================================
-// GIAI ĐOẠN 5: BUBBLE CHAT CHANNEL HANDLER
+// GIAI ĐOẠN 5: BUBBLE CHAT CHANNEL HANDLER (Phiên bản FIX #3)
 // ========================================
 
 /// Setup channel để nhận navigation commands từ BubbleActivity
@@ -80,7 +80,6 @@ void setupBubbleChatChannel() {
     print('📥 Bubble channel received: ${call.method}');
 
     if (call.method == 'navigateToChat') {
-      // Extract data from BubbleActivity
       final peerId = call.arguments['peerId'] as String?;
       final peerNickname = call.arguments['peerNickname'] as String?;
       final peerAvatar = call.arguments['peerAvatar'] as String?;
@@ -91,32 +90,76 @@ void setupBubbleChatChannel() {
         return null;
       }
 
-      print('💬 Navigating to chat: $peerNickname (bubble: $isBubbleMode)');
+      print('💬 Smart navigation to: $peerNickname (bubble: $isBubbleMode)');
 
-      // CRITICAL: Wait for navigator to be ready
-      await Future.delayed(const Duration(milliseconds: 100));
+      // ✅ FIX #3: Wait for navigator with exponential backoff
+      int retries = 0;
+      const maxRetries = 5;
 
-      // Navigate to ChatPage in bubble mode
-      if (navigatorKey.currentState != null) {
-        navigatorKey.currentState!.pushReplacement(
+      while (navigatorKey.currentState == null && retries < maxRetries) {
+        final delay = Duration(
+            milliseconds: 100 * (1 << retries)); // 100, 200, 400, 800, 1600ms
+        print(
+            '⏳ Navigator not ready, retry $retries/$maxRetries (waiting ${delay.inMilliseconds}ms)');
+        await Future.delayed(delay);
+        retries++;
+      }
+
+      if (navigatorKey.currentState == null) {
+        print('❌ Navigator failed to initialize after $maxRetries retries');
+        return null;
+      }
+
+      // ✅ FIX #3: Check current route to avoid duplicate navigation
+      try {
+        final currentContext = navigatorKey.currentContext;
+        if (currentContext != null) {
+          final currentRoute = ModalRoute.of(currentContext);
+          final routeName = currentRoute?.settings.name ?? '';
+
+          print('📍 Current route: $routeName');
+
+          // Check if already on this specific chat
+          if (routeName == '/chat') {
+            final currentArgs = currentRoute?.settings.arguments;
+            if (currentArgs is ChatPageArguments &&
+                currentArgs.peerId == peerId) {
+              print('ℹ️ Already on this chat, ignoring navigation');
+              return null;
+            }
+          }
+        }
+      } catch (e) {
+        print('⚠️ Error checking current route: $e');
+      }
+
+      // ✅ FIX #3: Navigate with proper route handling
+      try {
+        navigatorKey.currentState!.push(
           MaterialPageRoute(
+            settings: RouteSettings(
+                name: '/chat',
+                arguments: ChatPageArguments(
+                  peerId: peerId,
+                  peerNickname: peerNickname,
+                  peerAvatar: peerAvatar ?? '',
+                )),
             builder: (_) => ChatPage(
               arguments: ChatPageArguments(
                 peerId: peerId,
                 peerNickname: peerNickname,
                 peerAvatar: peerAvatar ?? '',
               ),
-              isBubbleMode: isBubbleMode, // NEW FLAG
+              isBubbleMode: isBubbleMode,
             ),
           ),
         );
 
         print('✅ Navigation complete');
-      } else {
-        print('❌ Navigator not ready');
+      } catch (e) {
+        print('❌ Navigation failed: $e');
       }
     } else if (call.method == 'onBackPressed') {
-      // Handle back press from BubbleActivity
       print('⬅️ Back pressed in bubble');
 
       if (navigatorKey.currentState != null &&

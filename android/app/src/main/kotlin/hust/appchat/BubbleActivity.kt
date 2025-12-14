@@ -16,39 +16,28 @@ import io.flutter.embedding.engine.dart.DartExecutor
 import io.flutter.plugin.common.MethodChannel
 
 /**
- * ✅ GIAI ĐOẠN 5: Bubble Activity với Flutter Content
+ * ✅ CRITICAL FIX #1: KEYBOARD INPUT WORKING
+ * ✅ CRITICAL FIX #3: SMART NAVIGATION
  *
- * Thay thế cho FlutterMiniChatActivity và WindowManager-based overlays.
- *
- * Tính năng:
- * - Render Flutter content trong Bubble API notification.
- * - Hỗ trợ Android 11+ (API 30+).
- * - Shared Flutter Engine với main app.
- * - MethodChannel để giao tiếp với Flutter.
- * - Auto-navigate đến ChatPage khi mở bubble.
- * - Handle lifecycle properly.
- * - Support minimize/close actions.
+ * Changes:
+ * - Removed FLAG_NOT_FOCUSABLE to allow keyboard input
+ * - Added proper window focus management
+ * - Force keyboard show after data sent
+ * - Better lifecycle handling
+ * - Smart navigation state management
  */
 @RequiresApi(Build.VERSION_CODES.R)
 class BubbleActivity : FlutterActivity() {
 
     companion object {
         private const val TAG = "BubbleActivity"
-
-        // ✅ SHARED ENGINE: Reuse với main app để tránh khởi động lại
         private const val ENGINE_ID = "bubble_chat_engine"
-
-        // ✅ CHANNEL: Giao tiếp với Flutter
         private const val CHANNEL = "bubble_chat_channel"
 
-        // ✅ Intent extras
         private const val EXTRA_USER_ID = "userId"
         private const val EXTRA_USER_NAME = "userName"
         private const val EXTRA_AVATAR_URL = "avatarUrl"
 
-        /**
-         * Tạo Intent để mở BubbleActivity
-         */
         fun createIntent(
             context: Context,
             userId: String,
@@ -59,8 +48,6 @@ class BubbleActivity : FlutterActivity() {
                 putExtra(EXTRA_USER_ID, userId)
                 putExtra(EXTRA_USER_NAME, userName)
                 putExtra(EXTRA_AVATAR_URL, avatarUrl)
-
-                // ✅ Flags cho bubble activity
                 addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT)
                 addFlags(Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
             }
@@ -76,6 +63,7 @@ class BubbleActivity : FlutterActivity() {
     private var currentAvatarUrl: String? = null
 
     private var isFlutterReady = false
+    private var navigationAttempted = false // ✅ FIX #3: Track navigation
 
     // ========================================
     // LIFECYCLE
@@ -83,21 +71,18 @@ class BubbleActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         Log.d(TAG, "✅ onCreate: BubbleActivity initialized")
 
-        // ✅ Extract user info from intent hoặc restored state
+        // Extract user info
         if (savedInstanceState == null) {
             currentUserId = intent.getStringExtra(EXTRA_USER_ID)
             currentUserName = intent.getStringExtra(EXTRA_USER_NAME)
             currentAvatarUrl = intent.getStringExtra(EXTRA_AVATAR_URL)
-        } else {
-            // Will be restored in onRestoreInstanceState
         }
 
         Log.d(TAG, "📋 User: $currentUserName (ID: $currentUserId)")
 
-        // ✅ Validate required data
+        // Validate
         if (currentUserId.isNullOrEmpty() || currentUserName.isNullOrEmpty()) {
             Log.e(TAG, "❌ Missing required user data, finishing activity")
             finish()
@@ -110,22 +95,15 @@ class BubbleActivity : FlutterActivity() {
     // ========================================
 
     override fun provideFlutterEngine(context: Context): FlutterEngine? {
-        // ✅ CRITICAL: Reuse existing engine hoặc tạo mới
         var engine = FlutterEngineCache.getInstance().get(ENGINE_ID)
 
         if (engine == null) {
             Log.d(TAG, "🔧 Creating new Flutter Engine for bubble")
-
             engine = FlutterEngine(context)
-
-            // ✅ Execute Dart entrypoint
             engine.dartExecutor.executeDartEntrypoint(
                 DartExecutor.DartEntrypoint.createDefault()
             )
-
-            // ✅ Cache engine cho lần sau
             FlutterEngineCache.getInstance().put(ENGINE_ID, engine)
-
             Log.d(TAG, "✅ Flutter Engine created and cached")
         } else {
             Log.d(TAG, "♻️ Reusing existing Flutter Engine")
@@ -136,32 +114,45 @@ class BubbleActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-
         Log.d(TAG, "🔧 Configuring Flutter Engine for Bubble")
 
-        // ✅ FIX 8: Clear FLAG_NOT_FOCUSABLE to allow keyboard input
-        window.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+        // ✅ CRITICAL FIX #1: ENABLE KEYBOARD INPUT
+        setupWindowForInput()
 
-        // ✅ FIX 8: Ensure window can receive input
-        window.setSoftInputMode(
-            WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or
-                    WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
-        )
-
-        // ✅ Setup MethodChannel
+        // Setup MethodChannel
         setupMethodChannel(flutterEngine)
 
-        // ✅ Wait for Flutter to be ready, then send data
-        // Delay ngắn để đảm bảo Flutter UI đã render
+        // Wait for Flutter to be ready, then send data
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
             if (!isFinishing) {
                 isFlutterReady = true
                 sendInitialDataToFlutter()
-
-                // ✅ FIX 8: Show keyboard after data is sent
-                showKeyboard()
             }
         }, 800)
+    }
+
+    // ========================================
+    // ✅ CRITICAL FIX #1: WINDOW SETUP FOR KEYBOARD
+    // ========================================
+
+    private fun setupWindowForInput() {
+        try {
+            // ✅ CRITICAL: Clear FLAG_NOT_FOCUSABLE to allow input
+            window.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+
+            // ✅ CRITICAL: Enable soft input adjustment
+            window.setSoftInputMode(
+                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or
+                        WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
+            )
+
+            // ✅ CRITICAL: Request window focus
+            window.decorView.requestFocus()
+
+            Log.d(TAG, "✅ Window configured for keyboard input")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to configure window: $e")
+        }
     }
 
     // ========================================
@@ -175,21 +166,18 @@ class BubbleActivity : FlutterActivity() {
                 CHANNEL
             )
 
-            // ✅ Handle calls FROM Flutter
             methodChannel?.setMethodCallHandler { call, result ->
                 Log.d(TAG, "📞 Method called from Flutter: ${call.method}")
 
                 when (call.method) {
                     "minimize" -> {
                         Log.d(TAG, "📦 Minimize bubble")
-                        // Move to back but keep bubble alive
                         moveTaskToBack(true)
                         result.success(true)
                     }
 
                     "close" -> {
                         Log.d(TAG, "❌ Close bubble")
-                        // Finish activity và dismiss bubble
                         finish()
                         result.success(true)
                     }
@@ -204,7 +192,6 @@ class BubbleActivity : FlutterActivity() {
                     }
 
                     "getBubbleMode" -> {
-                        // Flutter checks if running in bubble
                         result.success(true)
                     }
 
@@ -222,41 +209,59 @@ class BubbleActivity : FlutterActivity() {
     }
 
     // ========================================
-    // SEND DATA TO FLUTTER
+    // ✅ CRITICAL FIX #3: SMART NAVIGATION
     // ========================================
 
     private fun sendInitialDataToFlutter() {
+        // Validate data
         if (currentUserId.isNullOrEmpty() || currentUserName.isNullOrEmpty()) {
             Log.w(TAG, "⚠️ Cannot send data: missing user info")
             return
         }
 
+        // Check Flutter readiness
         if (!isFlutterReady) {
             Log.w(TAG, "⚠️ Flutter not ready yet")
             return
         }
 
+        // Prevent duplicate navigation
+        if (navigationAttempted) {
+            Log.w(TAG, "ℹ️ Navigation already attempted, skipping")
+            return
+        }
+
+        navigationAttempted = true
+
         try {
             Log.d(TAG, "📤 Sending initial data to Flutter")
 
-            // ✅ CRITICAL: Invoke method để navigate đến ChatPage
             methodChannel?.invokeMethod(
                 "navigateToChat",
                 mapOf(
                     "peerId" to currentUserId!!,
                     "peerNickname" to currentUserName!!,
                     "peerAvatar" to (currentAvatarUrl ?: ""),
-                    "isBubbleMode" to true // ✅ Tell Flutter we're in bubble (từ phần 2)
+                    "isBubbleMode" to true
                 )
             )
 
             Log.d(TAG, "✅ Initial data sent successfully")
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Failed to send initial data: $e")
 
-            // Retry after short delay (từ phần 2)
+            // ✅ CRITICAL FIX #1: Show keyboard after data sent
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                 if (!isFinishing) {
+                    showKeyboard()
+                }
+            }, 500)
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to send initial data: $e")
+            navigationAttempted = false // Reset on failure
+
+            // Retry once after delay
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                if (!isFinishing && !navigationAttempted) {
                     sendInitialDataToFlutter()
                 }
             }, 500)
@@ -264,18 +269,13 @@ class BubbleActivity : FlutterActivity() {
     }
 
     // ========================================
-    // ✅ FIX 8: KEYBOARD MANAGEMENT
+    // ✅ CRITICAL FIX #1: KEYBOARD MANAGEMENT
     // ========================================
 
-    /**
-     * Show keyboard for input
-     */
     private fun showKeyboard() {
         try {
-            // Request focus on the window
             window.decorView.requestFocus()
 
-            // Show soft keyboard
             val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
             imm?.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)
 
@@ -285,9 +285,6 @@ class BubbleActivity : FlutterActivity() {
         }
     }
 
-    /**
-     * Hide keyboard
-     */
     private fun hideKeyboard() {
         try {
             val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
@@ -303,17 +300,12 @@ class BubbleActivity : FlutterActivity() {
     // LIFECYCLE CALLBACKS
     // ========================================
 
-    override fun onStart() {
-        super.onStart()
-        Log.d(TAG, "▶️ onStart")
-    }
-
     override fun onResume() {
         super.onResume()
         Log.d(TAG, "▶️ onResume")
 
-        // Re-send data if Flutter was paused/resumed (từ phần 2)
-        if (isFlutterReady && currentUserId != null) {
+        // Re-send data if Flutter was paused/resumed
+        if (isFlutterReady && currentUserId != null && !navigationAttempted) {
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                 if (!isFinishing) {
                     sendInitialDataToFlutter()
@@ -325,26 +317,18 @@ class BubbleActivity : FlutterActivity() {
     override fun onPause() {
         super.onPause()
         Log.d(TAG, "⏸️ onPause")
-
-        // ✅ FIX 9: Hide keyboard when pausing
         hideKeyboard()
-    }
-
-    override fun onStop() {
-        super.onStop()
-        Log.d(TAG, "⏹️ onStop")
     }
 
     override fun onDestroy() {
         Log.d(TAG, "💥 onDestroy")
-
-        // ✅ FIX 9: Hide keyboard before cleanup
         hideKeyboard()
 
         // Cleanup
         methodChannel?.setMethodCallHandler(null)
         methodChannel = null
         isFlutterReady = false
+        navigationAttempted = false
 
         super.onDestroy()
     }
@@ -353,7 +337,7 @@ class BubbleActivity : FlutterActivity() {
         super.onNewIntent(intent)
         Log.d(TAG, "🔄 onNewIntent")
 
-        // ✅ Update user info if changed (e.g., switching between conversations)
+        // Update user info if changed
         val newUserId = intent.getStringExtra(EXTRA_USER_ID)
         val newUserName = intent.getStringExtra(EXTRA_USER_NAME)
         val newAvatarUrl = intent.getStringExtra(EXTRA_AVATAR_URL)
@@ -364,6 +348,7 @@ class BubbleActivity : FlutterActivity() {
             currentUserId = newUserId
             currentUserName = newUserName
             currentAvatarUrl = newAvatarUrl
+            navigationAttempted = false // ✅ FIX #3: Reset for new user
 
             // Re-send data to Flutter
             if (isFlutterReady) {
@@ -373,30 +358,28 @@ class BubbleActivity : FlutterActivity() {
     }
 
     // ========================================
-    // ✅ FIX 9: SAVE/RESTORE STATE
+    // STATE PERSISTENCE
     // ========================================
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-
         outState.putString("userId", currentUserId)
         outState.putString("userName", currentUserName)
         outState.putString("avatarUrl", currentAvatarUrl)
-
+        outState.putBoolean("navigationAttempted", navigationAttempted) // ✅ FIX #3
         Log.d(TAG, "💾 State saved")
     }
 
     override fun onRestoreInstanceState(savedInstanceState: Bundle) {
         super.onRestoreInstanceState(savedInstanceState)
-
         currentUserId = savedInstanceState.getString("userId")
         currentUserName = savedInstanceState.getString("userName")
         currentAvatarUrl = savedInstanceState.getString("avatarUrl")
-
+        navigationAttempted = savedInstanceState.getBoolean("navigationAttempted", false) // ✅ FIX #3
         Log.d(TAG, "📦 State restored")
 
         // Re-initialize if needed
-        if (isFlutterReady && currentUserId != null) {
+        if (isFlutterReady && currentUserId != null && !navigationAttempted) {
             sendInitialDataToFlutter()
         }
     }
@@ -407,8 +390,6 @@ class BubbleActivity : FlutterActivity() {
 
     override fun onBackPressed() {
         Log.d(TAG, "⬅️ Back pressed - minimizing to bubble")
-
-        // Don't finish, just minimize
         moveTaskToBack(true)
     }
 }

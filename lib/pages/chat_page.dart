@@ -44,9 +44,9 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   // ✅ ADD: Channel cho giao tiếp Mini Chat và Bubble
   static const MethodChannel _miniChatChannel =
-  MethodChannel('mini_chat_channel');
+      MethodChannel('mini_chat_channel');
   static const MethodChannel _bubbleChannel =
-  MethodChannel('bubble_chat_channel'); // ✅ NEW
+      MethodChannel('bubble_chat_channel'); // ✅ NEW
 
   Timer? _typingTimer;
   bool _isTyping = false;
@@ -155,7 +155,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
     // Setup mini chat message listener (Gộp từ cả 2 phần, dùng bubbleClickStream)
     _miniChatSubscription = _unifiedBubbleService?.bubbleClickStream.listen(
-          (event) {
+      (event) {
         if (event.userId == widget.arguments.peerId) {
           print('💬 Bubble clicked for: ${event.userName}');
 
@@ -251,7 +251,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     } else {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => LoginPage()),
-            (_) => false,
+        (_) => false,
       );
       return;
     }
@@ -282,7 +282,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   void _loadPinnedMessages() {
     _pinnedSub?.cancel();
     _pinnedSub = _messageProvider.getPinnedMessages(_groupChatId).listen(
-          (snapshot) {
+      (snapshot) {
         if (!mounted || _isDisposed) return;
         setState(() {
           _pinnedMessages = snapshot.docs;
@@ -384,7 +384,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         .where('isRead', isEqualTo: false)
         .snapshots()
         .listen(
-          (snapshot) async {
+      (snapshot) async {
         // ✅ FIX 14: Prevent concurrent processing
         if (_isProcessingMessage) {
           print('⚠️ Already processing messages, skipping...');
@@ -400,26 +400,31 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
               // ✅ FIX 14: Deduplication check
               if (_processedMessageIds.contains(docId)) {
+                print('ℹ️ Message already processed: $docId');
                 continue;
               }
 
               _processedMessageIds.add(docId);
+              print('✅ Processing new message: $docId');
 
               // ✅ FIX 14: Cleanup old processed IDs (keep last 100)
               if (_processedMessageIds.length > 100) {
                 final toRemove = _processedMessageIds.length - 100;
                 final oldIds = _processedMessageIds.take(toRemove).toList();
                 _processedMessageIds.removeAll(oldIds);
+                print('🗑️ Cleaned ${oldIds.length} old message IDs');
               }
 
               // Process message
               final data = change.doc.data();
               if (data != null) {
-                final content = data[FirestoreConstants.content] as String? ?? '';
+                final content =
+                    data[FirestoreConstants.content] as String? ?? '';
                 final type = data[FirestoreConstants.type] as int? ?? 0;
 
                 // Update bubble if it exists
-                await _updateBubbleWithMessage(content, type, isFromUser: false);
+                await _updateBubbleWithMessage(content, type,
+                    isFromUser: false);
               }
 
               _showChatBubbleIfNeeded();
@@ -438,6 +443,8 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         );
       },
     );
+
+    print('✅ Incoming message listener setup with deduplication');
   }
 
   /// Open location in Google Maps
@@ -449,7 +456,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         await launchUrl(
           uri,
           mode:
-          LaunchMode.externalApplication, // Mở bằng app Google Maps nếu có
+              LaunchMode.externalApplication, // Mở bằng app Google Maps nếu có
         );
         print('✅ Opened Maps: $mapsUrl');
       } else {
@@ -509,7 +516,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         .where('isRead', isEqualTo: false)
         .snapshots()
         .listen(
-          (snapshot) {
+      (snapshot) {
         if (snapshot.docs.isNotEmpty && !_isDisposed) {
           _markMessagesAsRead();
         }
@@ -922,9 +929,9 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Future<void> _setMessageReminder(
-      MessageChat message,
-      String messageId,
-      ) async {
+    MessageChat message,
+    String messageId,
+  ) async {
     if (_isDisposed) return;
 
     final reminderTime = await _pickTimeWithWheel();
@@ -1287,7 +1294,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             // Show Reminders
             ListTile(
               leading:
-              Icon(Icons.notifications, color: ColorConstants.primaryColor),
+                  Icon(Icons.notifications, color: ColorConstants.primaryColor),
               title: Text('Reminders'),
               subtitle: Text('View all reminders'),
               onTap: () {
@@ -1356,7 +1363,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               onPressed: () async {
                 Navigator.pop(context);
                 final success =
-                await _unifiedBubbleService!.migrateToModernApi();
+                    await _unifiedBubbleService!.migrateToModernApi();
 
                 if (success) {
                   Fluttertoast.showToast(
@@ -1656,7 +1663,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     try {
       // ✅ Request permission first
       final hasPermission =
-      await _locationProvider!.requestLocationPermission();
+          await _locationProvider!.requestLocationPermission();
 
       if (!hasPermission) {
         if (mounted && !_isDisposed) setState(() => _isLoading = false);
@@ -1669,7 +1676,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
       // ✅ Get location with full details
       final locationData =
-      await _locationProvider!.getCurrentLocationWithDetails();
+          await _locationProvider!.getCurrentLocationWithDetails();
 
       if (mounted && !_isDisposed) setState(() => _isLoading = false);
 
@@ -1744,7 +1751,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     if (mounted) {
       Fluttertoast.showToast(
         msg:
-        '📅 Message scheduled for ${DateFormat('HH:mm').format(scheduledTime)}',
+            '📅 Message scheduled for ${DateFormat('HH:mm').format(scheduledTime)}',
         backgroundColor: Colors.green,
       );
     }
@@ -1880,36 +1887,36 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     return Flexible(
       child: _groupChatId.isNotEmpty
           ? StreamBuilder<QuerySnapshot>(
-        stream: _chatProvider.getChatStream(_groupChatId, _limit),
-        builder: (_, snapshot) {
-          if (snapshot.hasData) {
-            _listMessage = snapshot.data!.docs;
-            if (_listMessage.isNotEmpty) {
-              return ListView.builder(
-                padding: EdgeInsets.all(10),
-                itemBuilder: (_, index) =>
-                    _buildItemMessage(index, snapshot.data?.docs[index]),
-                itemCount: snapshot.data?.docs.length,
-                reverse: true,
-                controller: _listScrollController,
-              );
-            } else {
-              return Center(child: Text("No message here yet..."));
-            }
-          } else {
-            return Center(
+              stream: _chatProvider.getChatStream(_groupChatId, _limit),
+              builder: (_, snapshot) {
+                if (snapshot.hasData) {
+                  _listMessage = snapshot.data!.docs;
+                  if (_listMessage.isNotEmpty) {
+                    return ListView.builder(
+                      padding: EdgeInsets.all(10),
+                      itemBuilder: (_, index) =>
+                          _buildItemMessage(index, snapshot.data?.docs[index]),
+                      itemCount: snapshot.data?.docs.length,
+                      reverse: true,
+                      controller: _listScrollController,
+                    );
+                  } else {
+                    return Center(child: Text("No message here yet..."));
+                  }
+                } else {
+                  return Center(
+                    child: CircularProgressIndicator(
+                      color: ColorConstants.themeColor,
+                    ),
+                  );
+                }
+              },
+            )
+          : Center(
               child: CircularProgressIndicator(
                 color: ColorConstants.themeColor,
               ),
-            );
-          }
-        },
-      )
-          : Center(
-        child: CircularProgressIndicator(
-          color: ColorConstants.themeColor,
-        ),
-      ),
+            ),
     );
   }
 
@@ -1928,7 +1935,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         margin: EdgeInsets.only(bottom: 10),
         child: Row(
           mainAxisAlignment:
-          isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
+              isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
           children: [
             ViewOnceMessageWidget(
               groupChatId: _groupChatId,
@@ -1950,7 +1957,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         margin: EdgeInsets.only(bottom: 10),
         child: Row(
           mainAxisAlignment:
-          isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
+              isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
           children: [
             VoiceMessageWidget(
               voiceUrl: messageChat.content,
@@ -1965,17 +1972,17 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     // Text Message
     if (messageChat.type == TypeMessage.text) {
       final location =
-      _locationProvider?.parseLocationFromMessage(messageChat.content);
+          _locationProvider?.parseLocationFromMessage(messageChat.content);
 
       return Container(
         margin: EdgeInsets.only(bottom: 10),
         child: Column(
           crossAxisAlignment:
-          isMyMessage ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              isMyMessage ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
             Row(
               mainAxisAlignment:
-              isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
+                  isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
               children: [
                 GestureDetector(
                   onLongPress: () =>
@@ -2014,7 +2021,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                                   Icon(
                                     Icons.location_on,
                                     color:
-                                    isMyMessage ? Colors.white : Colors.red,
+                                        isMyMessage ? Colors.white : Colors.red,
                                     size: 20,
                                   ),
                                   SizedBox(width: 4),
@@ -2057,13 +2064,13 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                                     color: isMyMessage
                                         ? Colors.white.withOpacity(0.2)
                                         : ColorConstants.primaryColor
-                                        .withOpacity(0.1),
+                                            .withOpacity(0.1),
                                     borderRadius: BorderRadius.circular(8),
                                     border: Border.all(
                                       color: isMyMessage
                                           ? Colors.white.withOpacity(0.3)
                                           : ColorConstants.primaryColor
-                                          .withOpacity(0.3),
+                                              .withOpacity(0.3),
                                     ),
                                   ),
                                   child: Row(
@@ -2107,7 +2114,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                             messageChat.content,
                             style: TextStyle(
                               color:
-                              isMyMessage ? Colors.white : Colors.black87,
+                                  isMyMessage ? Colors.white : Colors.black87,
                             ),
                           ),
                         if (messageChat.editedAt != null)
@@ -2206,7 +2213,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         margin: EdgeInsets.only(bottom: 10),
         child: Row(
           mainAxisAlignment:
-          isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
+              isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
           children: [
             GestureDetector(
               onTap: () {
@@ -2239,7 +2246,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                         child: CircularProgressIndicator(
                           value: loadingProgress.expectedTotalBytes != null
                               ? loadingProgress.cumulativeBytesLoaded /
-                              loadingProgress.expectedTotalBytes!
+                                  loadingProgress.expectedTotalBytes!
                               : null,
                         ),
                       ),
@@ -2264,7 +2271,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         margin: EdgeInsets.only(bottom: 10),
         child: Row(
           mainAxisAlignment:
-          isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
+              isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
           children: [
             GestureDetector(
               onLongPress: () =>
@@ -2530,8 +2537,8 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     onTapOutside: (widget.isBubbleMode || widget.isMiniChat)
                         ? null
                         : (_) {
-                      Utilities.closeKeyboard();
-                    },
+                            Utilities.closeKeyboard();
+                          },
                     onSubmitted: (_) {
                       if (!_isDisposed) {
                         _onSendMessageWithAutoDelete(
@@ -3008,7 +3015,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
     // ✅ FIX 4: Dispose controllers with existence checks
     try {
-      if (!_chatInputController.hasListeners) {
+      if (_chatInputController.hasListeners) {
         _chatInputController.dispose();
       }
     } catch (e) {
