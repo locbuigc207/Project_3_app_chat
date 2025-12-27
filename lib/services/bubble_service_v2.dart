@@ -9,7 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class BubbleServiceV2 {
   static const MethodChannel _channel = MethodChannel('chat_bubbles_v2');
   static const EventChannel _eventChannel =
-      EventChannel('chat_bubble_events_v2');
+  EventChannel('chat_bubble_events_v2');
 
   static final BubbleServiceV2 _instance = BubbleServiceV2._internal();
   factory BubbleServiceV2() => _instance;
@@ -30,7 +30,7 @@ class BubbleServiceV2 {
       _bubbleClickController.stream;
 
   final _activeBubblesController =
-      StreamController<Map<String, BubbleData>>.broadcast();
+  StreamController<Map<String, BubbleData>>.broadcast();
   Stream<Map<String, BubbleData>> get activeBubblesStream =>
       _activeBubblesController.stream;
 
@@ -73,7 +73,7 @@ class BubbleServiceV2 {
     try {
       _eventSubscription?.cancel();
       _eventSubscription = _eventChannel.receiveBroadcastStream().listen(
-        (event) {
+            (event) {
           if (event is Map) {
             _handleBubbleEvent(event);
           }
@@ -276,7 +276,7 @@ class BubbleServiceV2 {
   Future<void> _saveBubbles() async {
     try {
       final bubblesData = _activeBubbles.map(
-        (key, value) => MapEntry(key, value.toJson()),
+            (key, value) => MapEntry(key, value.toJson()),
       );
 
       await _prefs?.setString('bubbles_v2', bubblesData.toString());
